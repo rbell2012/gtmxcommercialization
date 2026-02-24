@@ -35,7 +35,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-semibold">GTMX Commercialization — Findings</h1>
+        <h1 className="text-xl font-semibold">GTMX Commercialization</h1>
         <p className="mt-1 text-sm text-slate-500">
           Data from Hex (Snowflake, Sheets, Chorus). Write findings to Supabase.
         </p>
