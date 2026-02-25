@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-02-25 (Superhex `activity_week` Column Changed to Date Type)
+
+### Location – Database (Supabase `superhex` table), `supabase/migrations/20250225240000_create_superhex.sql`
+
+**Rationale:** The `activity_week` column was storing full ISO timestamps (e.g. `2026-02-23T07:00:00.000Z`) instead of clean `yyyy-mm-dd` dates. Changing the column from `text` to `date` ensures Postgres always stores and returns the `yyyy-mm-dd` format regardless of input.
+
+**Changes:**
+- **Altered column type**: Changed `activity_week` from `text` to `date` in the live Supabase database. Existing timestamp values were cast to date automatically.
+- **Updated local migration**: `supabase/migrations/20250225240000_create_superhex.sql` updated to reflect `date` type for `activity_week`.
+---
+
 ## 2026-02-25 (Superhex Table Added to Supabase)
 
 ### Location – Database (Supabase `superhex` table), `src/lib/database.types.ts`
@@ -7,7 +18,7 @@
 **Rationale:** A new `superhex` table was needed to store weekly rep activity metrics (calls, connects, demos, wins, and total activity count) for reporting and analytics. This is a backend-only schema addition with no front-end page impact.
 
 **Changes:**
-- **New Supabase table `superhex`**: Created with columns `rep_name` (text), `activity_week` (text), `total_activity_count` (integer), `calls_count` (integer), `connects_count` (integer), `total_demos` (integer), `total_wins` (integer), plus `id`, `created_at`, and `updated_at` metadata fields.
+- **New Supabase table `superhex`**: Created with columns `rep_name` (text), `activity_week` (date), `total_activity_count` (integer), `calls_count` (integer), `connects_count` (integer), `total_demos` (integer), `total_wins` (integer), plus `id`, `created_at`, and `updated_at` metadata fields.
 - **Indexes**: Added indexes on `rep_name` and `activity_week` for efficient querying.
 - **Row-level security**: Enabled with open select/insert/update/delete policies, matching the project's existing RLS pattern.
 - **Auto-updating trigger**: `trg_superhex_updated_at` fires on update using the shared `set_updated_at()` function.

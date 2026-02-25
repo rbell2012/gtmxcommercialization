@@ -5,7 +5,7 @@
 create table if not exists public.superhex (
   id                    uuid        primary key default gen_random_uuid(),
   rep_name              text        not null,
-  activity_week         text        not null,
+  activity_week         date        not null,
   total_activity_count  integer     not null default 0,
   calls_count           integer     not null default 0,
   connects_count        integer     not null default 0,
