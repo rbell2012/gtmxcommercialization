@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-02-25 (Per-Project Total TAM)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Hook (`src/hooks/useManagerInputs.ts`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225230000_add_total_tam_to_teams.sql`)
+
+**Rationale:** Total TAM was stored in a single-row global `tam_config` table, so every project/team shared the same value. When a manager set or submitted TAM on one pilot, it applied to all pilots. Each project operates in a different market and needs its own independent TAM figure.
+
+**Changes:**
+- Added `total_tam` (integer, default 0) and `tam_submitted` (boolean, default false) columns to the `teams` table via a new Supabase migration; migrated the existing global TAM value into all active teams so no data was lost.
+- Updated `DbTeam` in `database.types.ts` to include the new `total_tam` and `tam_submitted` fields.
+- Added `totalTam` and `tamSubmitted` to the `Team` interface in `TeamsContext.tsx`, mapped them in `assembleTeams`, and included them in the `updateTeam` diff-and-persist logic so changes auto-save to Supabase.
+- Updated `addTeam` to initialize new teams with `totalTam: 0` and `tamSubmitted: false`.
+- Removed all global TAM state (`totalTam`, `tamSubmitted`, `tamRowId`), the `tam_config` query, and the `updateTotalTam`/`updateTamSubmitted` callbacks from `useManagerInputs.ts`.
+- Updated the Total TAM input in `Index.tsx` to read from `activeTeam.totalTam` and write via `updateTeam()`, so each project tab has its own independent TAM value and submit state.
+- Updated `TeamTab` to use `team.totalTam` for the TAM→Call % conversion rate instead of a passed-in global prop.
+- All pilot/project pages remain identical in appearance and operation — each now simply maintains its own TAM value.
+---
+
 ## 2026-02-25 (Inline-Editable Member Name & Goal in Settings)
 
 ### Location – Settings page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)
