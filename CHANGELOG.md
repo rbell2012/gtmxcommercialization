@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-02-25 (Weekly Data: Monday-Aligned, Team-Date-Driven Columns with Sticky Freeze Panes)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** Weekly Data columns started on Sundays instead of Mondays, were limited to a hardcoded 8-week window regardless of the team's actual engagement period, and the Player/Metric/Total columns scrolled off-screen when navigating through many weeks — making it difficult to track which player and metric a value belonged to.
+
+**Changes:**
+- Changed the `getWeekKeys` function's day-of-week offset from Sunday (`d.getDay()`) to Monday (`(d.getDay() + 6) % 7`) so all week columns align to Monday boundaries.
+- Added `getTeamWeekKeys(startDate, endDate)` function that generates every Monday-starting week from the team's Settings start date through the current week (capped by the team's end date if it has passed). Falls back to 8 weeks when no dates are set. Future weeks are never shown.
+- Replaced all hardcoded `getWeekKeys(8)` calls in the Weekly Data table and WeekOverWeekView chart with `getTeamWeekKeys(team.startDate, team.endDate)`.
+- Added `useRef` + `useEffect` auto-scroll-right on the Weekly Data scroll container so the most recent weeks are visible on load; older weeks are revealed by scrolling left.
+- Made the **Player** column sticky at `left-0` (z-30) with `whitespace-nowrap` so it stays frozen at the left edge during horizontal scroll.
+- Made the **Metric** column sticky (z-20) with its `left` offset dynamically measured from the Player column via `useLayoutEffect` + `useRef`, keeping it pinned immediately to the right of Player.
+- Made the **Total** column sticky at `right-0` (z-10), always visible at the right edge.
+- All sticky cells use opaque `bg-card` backgrounds so scrolling week data passes cleanly underneath.
+- Moved horizontal padding from the scroll container (`p-5` → `py-5`) into the edge cells (`pl-5` on Player, `pr-5` on Total) so the Player column extends flush to the card border with no visible gap.
+- Added `border-separate border-spacing-0` to the table to eliminate default cell spacing gaps between sticky columns.
+- All pilot/project pages remain identical in appearance and operation.
+---
+
 ## 2026-02-25 (Per-Project Total TAM)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Hook (`src/hooks/useManagerInputs.ts`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225230000_add_total_tam_to_teams.sql`)

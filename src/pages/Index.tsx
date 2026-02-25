@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle, Calendar } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
@@ -107,10 +107,10 @@ function getWeekKeys(count = 8): { key: string; label: string }[] {
   for (let i = count - 1; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i * 7);
-    const sun = new Date(d);
-    sun.setDate(d.getDate() - d.getDay());
-    const key = `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, "0")}-${String(sun.getDate()).padStart(2, "0")}`;
-    const label = `${sun.getMonth() + 1}/${sun.getDate()}`;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, "0")}-${String(mon.getDate()).padStart(2, "0")}`;
+    const label = `${mon.getMonth() + 1}/${mon.getDate()}`;
     weeks.push({ key, label });
   }
   return weeks;
@@ -118,6 +118,44 @@ function getWeekKeys(count = 8): { key: string; label: string }[] {
 
 function getCurrentWeekKey(): string {
   return getWeekKeys(1)[0].key;
+}
+
+function getTeamWeekKeys(startDate: string | null, endDate: string | null): { key: string; label: string }[] {
+  const toMonday = (d: Date): Date => {
+    const m = new Date(d);
+    m.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    m.setHours(0, 0, 0, 0);
+    return m;
+  };
+
+  const currentMonday = toMonday(new Date());
+
+  let startMon: Date;
+  if (startDate) {
+    startMon = toMonday(new Date(startDate + "T00:00:00"));
+  } else {
+    startMon = new Date(currentMonday);
+    startMon.setDate(startMon.getDate() - 7 * 7);
+  }
+
+  let endMon = new Date(currentMonday);
+  if (endDate) {
+    const edMon = toMonday(new Date(endDate + "T00:00:00"));
+    if (edMon < currentMonday) {
+      endMon = edMon;
+    }
+  }
+
+  const weeks: { key: string; label: string }[] = [];
+  const cursor = new Date(startMon);
+  while (cursor <= endMon) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+    const label = `${cursor.getMonth() + 1}/${cursor.getDate()}`;
+    weeks.push({ key, label });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
 }
 
 function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
@@ -805,6 +843,23 @@ function TeamTab({
   const members = team.members;
   const activeMembers = members.filter((m) => m.isActive);
   const teamTotal = members.reduce((s, m) => getMemberTotalWins(m), 0);
+  const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
+
+  const weeklyScrollRef = useRef<HTMLDivElement>(null);
+  const playerColRef = useRef<HTMLTableCellElement>(null);
+  const [playerColW, setPlayerColW] = useState(0);
+
+  useLayoutEffect(() => {
+    if (playerColRef.current) {
+      setPlayerColW(playerColRef.current.offsetWidth);
+    }
+  });
+
+  useEffect(() => {
+    if (weeklyScrollRef.current) {
+      weeklyScrollRef.current.scrollLeft = weeklyScrollRef.current.scrollWidth;
+    }
+  }, [team.startDate, team.endDate]);
 
   const recentWeeks = getWeekKeys(2);
   const prevWeekKey = recentWeeks[0].key;
@@ -1183,16 +1238,16 @@ function TeamTab({
               📊 Weekly Data
             </h2>
           </div>
-          <div className="rounded-lg border border-border bg-card p-5 glow-card overflow-x-auto">
-            <table className="w-full text-sm">
+          <div ref={weeklyScrollRef} className="rounded-lg border border-border bg-card py-5 glow-card overflow-x-auto">
+            <table className="w-full text-sm border-separate border-spacing-0">
               <thead>
                 <tr className="border-b border-border">
-                  <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Player</th>
-                  <th className="text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Metric</th>
-                  {getWeekKeys(8).map((w) => (
+                  <th ref={playerColRef} className="sticky left-0 z-30 bg-card text-left py-2 pl-5 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Player</th>
+                  <th className="sticky z-20 bg-card text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}>Metric</th>
+                  {teamWeeks.map((w) => (
                     <th key={w.key} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{w.label}</th>
                   ))}
-                  <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</th>
+                  <th className="sticky right-0 z-10 bg-card text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -1204,17 +1259,17 @@ function TeamTab({
                     { label: "Demo", key: "demos" },
                     { label: "Win", key: "wins" },
                   ];
-                  const weeks = getWeekKeys(8);
+                  const weeks = teamWeeks;
                   const allRows = [
                     ...metricRows.map((met, metIdx) => (
                       <tr key={`${m.id}-${met.key}`} className={`${metIdx === 0 ? "border-t-2 border-border" : ""}`}>
                       {metIdx === 0 && (
-                          <td rowSpan={metricRows.length + 4} className={`py-2 px-2 font-semibold align-top border-r border-border/50 ${m.isActive ? 'text-foreground' : 'text-muted-foreground italic'}`}>
+                          <td rowSpan={metricRows.length + 4} className={`sticky left-0 z-30 bg-card py-2 pl-5 pr-2 font-semibold align-top border-r border-border/50 whitespace-nowrap ${m.isActive ? 'text-foreground' : 'text-muted-foreground italic'}`}>
                             {m.name}
                             {!m.isActive && <span className="block text-[10px] font-normal not-italic text-muted-foreground/60">Former</span>}
                           </td>
                         )}
-                        <td className="py-1 px-2 text-xs text-muted-foreground">{met.label}</td>
+                        <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
                         {weeks.map((w) => {
                           const val = getMemberFunnel(m, w.key)[met.key];
                           return (
@@ -1223,7 +1278,7 @@ function TeamTab({
                             </td>
                           );
                         })}
-                        <td className="text-center py-1 px-2 font-semibold text-primary tabular-nums">
+                        <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-primary tabular-nums">
                           {weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[met.key], 0)}
                         </td>
                       </tr>
@@ -1238,7 +1293,7 @@ function TeamTab({
                       ];
                       return convRates.map((cr) => (
                         <tr key={`${m.id}-${cr.label}`} className="bg-muted/30">
-                          <td className="py-1 px-2 text-xs font-medium text-accent">{cr.label}</td>
+                          <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
                           {weeks.map((w) => {
                             const f = getMemberFunnel(m, w.key);
                             const den = f[cr.denKey];
@@ -1250,7 +1305,7 @@ function TeamTab({
                               </td>
                             );
                           })}
-                          <td className="text-center py-1 px-2 font-semibold text-accent tabular-nums text-xs">
+                          <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
                             {(() => {
                               const totalDen = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
                               const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey], 0);
@@ -1283,7 +1338,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set(["Call", "Connect", "Demo", "Win"]));
   const chartColors = useChartColors();
   const members = team.members;
-  const weeks = getWeekKeys(8);
+  const weeks = getTeamWeekKeys(team.startDate, team.endDate);
   const currentWeek = getCurrentWeekKey();
 
   const METRIC_COLORS: Record<string, string> = {
