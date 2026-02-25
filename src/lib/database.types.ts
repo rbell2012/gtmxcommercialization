@@ -45,6 +45,7 @@ export interface DbWeeklyFunnel {
   role: string | null;
   tam: number;
   accounts: number;
+  contacts_added: number;
   calls: number;
   connects: number;
   ops: number;

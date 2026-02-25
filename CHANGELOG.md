@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-02-25 (Add "Contacts Added" Field to Weekly Funnels)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`weekly_funnels` table)
+
+**Rationale:** The team needed to track the number of contacts added each week as a distinct metric, separate from accounts and calls. This new integer field sits between Accounts and Cx Called in the Player's Section funnel form, and between Accounts and Call in the Weekly Data grid.
+
+**Changes:**
+- **Supabase migration**: Added `contacts_added` (integer, default 0) column to the `weekly_funnels` table via `apply_migration`. Local migration file: `20250225270000_add_contacts_added_to_weekly_funnels.sql`.
+- **Database types** (`database.types.ts`): Added `contacts_added: number` to `DbWeeklyFunnel`.
+- **TeamsContext** (`TeamsContext.tsx`): Added `contacts_added: number` to `FunnelData` interface. Updated `dbMemberToApp` to map the new DB column.
+- **Player's Section** (`Index.tsx`): Added "Contacts Added" numeric input field before "Cx Called" in the funnel form grid. Updated `emptyFunnel` and the Supabase upsert payload to include `contacts_added`.
+- **Weekly Data grid** (`Index.tsx`): Added "Contacts Added" metric row between Accounts and Call, displaying per-week values with totals.
+---
+
 ## 2026-02-25 (Apply Goals System Migration to Live Supabase)
 
 ### Location – Database (`members`, `teams`, `weekly_funnels` tables in live Supabase project)

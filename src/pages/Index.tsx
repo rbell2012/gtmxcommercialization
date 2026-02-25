@@ -101,7 +101,7 @@ function formatDateRange(startDate: string | null, endDate: string | null): stri
   return end ? `${start} – ${end}` : start;
 }
 
-const emptyFunnel: WeeklyFunnel = { tam: 0, accounts: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
+const emptyFunnel: WeeklyFunnel = { tam: 0, accounts: 0, contacts_added: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
 
 function getWeekKeys(count = 8): { key: string; label: string }[] {
   const weeks: { key: string; label: string }[] = [];
@@ -1207,6 +1207,7 @@ function TeamTab({
                           week_key: currentWeek,
                           tam: current.tam,
                           accounts: current.accounts,
+                          contacts_added: current.contacts_added,
                           calls: current.calls,
                           connects: current.connects,
                           ops: current.ops,
@@ -1283,6 +1284,10 @@ function TeamTab({
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Accounts</label>
                           <Input type="number" min={0} value={f.accounts || ""} onChange={(e) => updateFunnel("accounts", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Contacts Added</label>
+                          <Input type="number" min={0} value={f.contacts_added || ""} onChange={(e) => updateFunnel("contacts_added", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
@@ -1437,6 +1442,7 @@ function TeamTab({
                   const metricRows: { label: string; key: keyof FunnelData }[] = [
                     { label: "TAM", key: "tam" },
                     { label: "Accounts", key: "accounts" },
+                    { label: "Contacts Added", key: "contacts_added" },
                     { label: "Call", key: "calls" },
                     { label: "Connect", key: "connects" },
                     { label: "Ops", key: "ops" },

@@ -41,6 +41,7 @@ export type WeeklyRole = string;
 export interface FunnelData {
   tam: number;
   accounts: number;
+  contacts_added: number;
   calls: number;
   connects: number;
   ops: number;
@@ -97,6 +98,7 @@ function dbMemberToApp(
     funnelByWeek[f.week_key] = {
       tam: f.tam,
       accounts: f.accounts ?? 0,
+      contacts_added: f.contacts_added ?? 0,
       calls: f.calls,
       connects: f.connects,
       ops: f.ops ?? 0,

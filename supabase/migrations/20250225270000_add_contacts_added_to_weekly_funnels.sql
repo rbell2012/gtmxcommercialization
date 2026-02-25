@@ -1,0 +1,1 @@
+ALTER TABLE weekly_funnels ADD COLUMN IF NOT EXISTS contacts_added INTEGER NOT NULL DEFAULT 0;
