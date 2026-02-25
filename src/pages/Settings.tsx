@@ -136,8 +136,8 @@ const Settings = () => {
     } else if (editingField === "goal") {
       const num = parseInt(trimmed);
       if (!isNaN(num) && num > 0) {
-        updateMember(editingMemberId, { goal: num });
-        toast({ title: "Member updated", description: `Goal changed to ${num}.` });
+        updateMember(editingMemberId, { goals: { wins: num } });
+        toast({ title: "Member updated", description: `Wins goal changed to ${num}.` });
       }
     }
     cancelInlineEdit();
@@ -164,7 +164,8 @@ const Settings = () => {
 
   const handleCreateMember = () => {
     if (!newMemberName.trim()) return;
-    createMember(newMemberName.trim(), parseInt(newMemberGoal) || 30);
+    const winsGoal = parseInt(newMemberGoal) || 30;
+    createMember(newMemberName.trim(), { wins: winsGoal });
     toast({ title: "Member created", description: `${newMemberName.trim()} is ready to be assigned to a team.` });
     setNewMemberName("");
     setNewMemberGoal("");
@@ -572,7 +573,7 @@ const Settings = () => {
                       </span>
                     </th>
                     <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Goal
+                      Wins Goal
                     </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Team
@@ -638,10 +639,10 @@ const Settings = () => {
                         ) : (
                           <span
                             className="cursor-pointer inline-flex items-center gap-1 group/goal rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
-                            onClick={() => startInlineEdit(m.id, "goal", String(m.goal))}
+                            onClick={() => startInlineEdit(m.id, "goal", String(m.goals.wins))}
                             title="Click to edit"
                           >
-                            {m.goal}
+                            {m.goals.wins}
                             <Edit2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover/goal:opacity-100 transition-opacity shrink-0" />
                           </span>
                         )}

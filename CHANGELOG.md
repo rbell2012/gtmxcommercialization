@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-02-25 (Goals Section — Replace Win Goals with Full Metric Goals + Parity Toggle)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Settings (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`members`, `teams`, `weekly_funnels` tables)
+
+**Rationale:** The "Win Goals – Mad Max" section only tracked a single metric (wins) per member. The team needed visibility into all six key metrics — **Accounts, Calls, Ops, Demos, Wins, Feedback** — with goal targets and progress tracking for each. A "Parity" toggle was also needed so managers can choose between dividing team-level goals equally among members or setting goals manually per person.
+
+**Changes:**
+- **Renamed "Win Goals – {team}" to "Goals"**: The section header is now simply "Goals" and no longer includes the team name, keeping it clean and metric-agnostic.
+- **Parity toggle**: Added a `Switch` toggle labeled "Parity" in the Goals section header. When ON, a team-level goals row appears where the manager sets total targets for all 6 metrics; each member's goal is auto-computed as `team_goal / active_member_count`. When OFF, each member has individually editable goal inputs per metric.
+- **6-metric goals table**: The Goals section now renders a table with columns for each metric. Each cell shows the numerator (actual, summed from weekly funnels) and denominator (goal target) with a mini progress bar and percentage. Active members have editable goals (when parity is off); former members are shown read-only at reduced opacity.
+- **Database migration** (`20250225260000_add_goals_system.sql`): Added `ops` integer column to `weekly_funnels`. Converted `feedback` from text to integer. Added 6 `goal_*` columns to `members`. Added `goals_parity` boolean and 6 `team_goal_*` columns to `teams`. Migrated existing `goal` values into `goal_wins`.
+- **Database types** (`database.types.ts`): `DbTeam` gained `goals_parity` and `team_goal_*` fields. `DbMember` gained `goal_*` fields. `DbWeeklyFunnel` gained `accounts`, `ops`, `feedback`.
+- **TeamsContext**: Exported `GOAL_METRICS`, `GoalMetric`, `GOAL_METRIC_LABELS`, `MemberGoals`, `DEFAULT_GOALS`. Replaced `TeamMember.goal: number` with `TeamMember.goals: MemberGoals`. Added `Team.goalsParity` and `Team.teamGoals`. Updated `createMember` to accept `Partial<MemberGoals>`, `updateMember` to accept `goals?: Partial<MemberGoals>`. All DB persistence (insert/update/upsert) handles the expanded goal and funnel fields.
+- **Player's Section** (`Index.tsx`): Added Accounts, Ops, and Feedback inputs to the weekly funnel form alongside existing Calls, Connects, Demos, Wins. All upsert calls include the new columns.
+- **Weekly Data Grid** (`Index.tsx`): Added Accounts, Ops, and Feedback metric rows per member.
+- **Week Over Week Chart** (`Index.tsx`): Added Accounts, Ops, and Feedback as selectable chart lines with dedicated colors.
+- **Settings** (`Settings.tsx`): Member creation uses new `createMember(name, { wins: goal })` API. Inline goal editing dispatches `{ goals: { wins: num } }`. "Goal" column header renamed to "Wins Goal" for clarity. All `m.goal` references updated to `m.goals.wins`.
+- **Duck milestone system**: Updated to use `member.goals.wins` instead of the old `member.goal`.
+- **Consistency**: Since the Goals section is rendered inside the team tab loop, all pilot pages automatically receive the identical Goals UI with their own team-specific data and parity state.
+---
+
 ## 2026-02-25 (Add Accounts & Feedback Fields to Weekly Funnels + Goals System)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`weekly_funnels`, `members`, `teams` tables)
