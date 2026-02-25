@@ -73,3 +73,12 @@ export interface DbCustomRole {
   name: string;
   created_at: string;
 }
+
+export interface DbTeamPhaseLabel {
+  id: string;
+  team_id: string;
+  month_index: number;
+  label: string;
+  created_at: string;
+  updated_at: string;
+}

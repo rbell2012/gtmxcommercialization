@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle, Calendar } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
@@ -9,13 +9,83 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { useChartColors } from "@/hooks/useChartColors";
-import { useManagerInputs, type TestPhase } from "@/hooks/useManagerInputs";
+import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
+import type { DbTeamPhaseLabel } from "@/lib/database.types";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+interface ComputedPhase {
+  monthIndex: number;
+  monthLabel: string;
+  progress: number;
+  label: string;
+}
+
+function generateTestPhases(
+  startDate: string | null,
+  endDate: string | null,
+  labels: Record<number, string>
+): ComputedPhase[] {
+  if (!startDate || !endDate) return [];
+
+  const start = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const phases: ComputedPhase[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
+
+  let index = 0;
+  while (cursor <= endMonthStart) {
+    const monthName = cursor.toLocaleString("en-US", { month: "long" });
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth();
+    const monthEnd = new Date(year, month + 1, 0);
+    const monthStart = new Date(year, month, 1);
+
+    let progress = 0;
+    if (today > monthEnd) {
+      progress = 100;
+    } else if (today >= monthStart) {
+      const totalDays = monthEnd.getDate();
+      const dayOfMonth = today.getDate();
+      progress = Math.round((dayOfMonth / totalDays) * 100);
+    }
+
+    phases.push({
+      monthIndex: index,
+      monthLabel: `(${index + 1}) ${monthName}`,
+      progress,
+      label: labels[index] ?? "",
+    });
+
+    cursor.setMonth(cursor.getMonth() + 1);
+    index++;
+  }
+
+  return phases;
+}
+
+function computeOverallProgress(startDate: string | null, endDate: string | null): number {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(startDate + "T00:00:00").getTime();
+  const end = new Date(endDate + "T00:00:00").getTime();
+  const today = new Date().setHours(0, 0, 0, 0);
+  if (today <= start) return 0;
+  if (today >= end) return 100;
+  return Math.round(((today - start) / (end - start)) * 100);
+}
 
 function formatDateRange(startDate: string | null, endDate: string | null): string | null {
   if (!startDate) return null;
@@ -118,9 +188,6 @@ const Index = () => {
   const { teams: allTeams, updateTeam } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
-    phases,
-    updatePhases,
-    addPhase: addPhaseToDb,
     missionPurpose,
     updateMission,
     missionSubmitted,
@@ -146,11 +213,11 @@ const Index = () => {
   const [newGoal, setNewGoal] = useState("");
   const [detailMember, setDetailMember] = useState<TeamMember | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
-  const [extendTestOpen, setExtendTestOpen] = useState(false);
-  const [newMonthName, setNewMonthName] = useState("");
-  const [newMonthPurpose, setNewMonthPurpose] = useState("");
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
+
+  // Per-team phase labels loaded from Supabase
+  const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
 
   useEffect(() => {
     if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
@@ -173,12 +240,50 @@ const Index = () => {
 
   const activeTeam = teams.find((t) => t.id === activeTab);
 
-  const addPhase = () => {
-    if (!newMonthName.trim()) return;
-    addPhaseToDb(newMonthName.trim(), newMonthPurpose.trim());
-    setNewMonthName("");
-    setNewMonthPurpose("");
-    setExtendTestOpen(false);
+  useEffect(() => {
+    if (!activeTeam?.id) return;
+    if (phaseLabels[activeTeam.id]) return;
+    supabase
+      .from("team_phase_labels")
+      .select("*")
+      .eq("team_id", activeTeam.id)
+      .then(({ data }) => {
+        if (data) {
+          const labels: Record<number, string> = {};
+          for (const row of data as DbTeamPhaseLabel[]) {
+            labels[row.month_index] = row.label;
+          }
+          setPhaseLabels((prev) => ({ ...prev, [activeTeam.id]: labels }));
+        }
+      });
+  }, [activeTeam?.id]);
+
+  const updatePhaseLabel = useCallback((teamId: string, monthIndex: number, label: string) => {
+    setPhaseLabels((prev) => ({
+      ...prev,
+      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: label },
+    }));
+    supabase
+      .from("team_phase_labels")
+      .upsert(
+        { team_id: teamId, month_index: monthIndex, label },
+        { onConflict: "team_id,month_index" }
+      )
+      .then();
+  }, []);
+
+  const teamLabels = phaseLabels[activeTeam?.id ?? ""] ?? {};
+  const computedPhases = activeTeam
+    ? generateTestPhases(activeTeam.startDate, activeTeam.endDate, teamLabels)
+    : [];
+  const overallProgress = activeTeam
+    ? computeOverallProgress(activeTeam.startDate, activeTeam.endDate)
+    : 0;
+
+  const extendTest = () => {
+    if (!activeTeam?.endDate) return;
+    const newEnd = addMonths(activeTeam.endDate, 1);
+    updateTeam(activeTeam.id, (t) => ({ ...t, endDate: newEnd }));
   };
 
   const addRole = () => {
@@ -368,87 +473,72 @@ const Index = () => {
         <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-display text-lg font-semibold text-foreground">Test Phases</h3>
-            <div className="flex items-center gap-2">
-              <Dialog open={extendTestOpen} onOpenChange={setExtendTestOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-1.5 border-border text-foreground hover:bg-muted text-xs">
-                    <Plus className="h-3.5 w-3.5" /> Extend the Test
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-card border-border">
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-foreground">Extend the Test</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3 pt-2">
-                    <Input placeholder="Month name (e.g. Month 4)" value={newMonthName} onChange={(e) => setNewMonthName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                    <Textarea placeholder="Purpose of this month" value={newMonthPurpose} onChange={(e) => setNewMonthPurpose(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" rows={3} />
-                    <Button onClick={addPhase} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add Month</Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-              <Slider
-                value={[phases.reduce((sum, p) => sum + p.progress, 0) / phases.length]}
-                onValueChange={([val]) => {
-                  updatePhases((prev) => {
-                    const newPhases = [...prev];
-                    const perPhase = 100 / newPhases.length;
-                    newPhases.forEach((p, i) => {
-                      const phaseStart = i * perPhase;
-                      const phaseEnd = (i + 1) * perPhase;
-                      if (val >= phaseEnd) {
-                        newPhases[i] = { ...p, progress: 100 };
-                      } else if (val <= phaseStart) {
-                        newPhases[i] = { ...p, progress: 0 };
-                      } else {
-                        newPhases[i] = { ...p, progress: Math.round(((val - phaseStart) / perPhase) * 100) };
-                      }
-                    });
-                    return newPhases;
-                  });
-                }}
-                max={100}
-                step={1}
-                className="w-32"
-              />
+            <div className="flex items-center gap-3">
+              {activeTeam?.endDate && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-border text-foreground hover:bg-muted text-xs"
+                  onClick={extendTest}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Extend the Test
+                </Button>
+              )}
+              {computedPhases.length > 0 && (
+                <span className="text-xs font-semibold text-primary tabular-nums">
+                  {overallProgress}% Complete
+                </span>
+              )}
             </div>
           </div>
-          {/* Segmented progress bar */}
-          <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
-            {phases.map((phase, i) => {
-              const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
-              const widthPct = 100 / phases.length;
-              const fillPct = phase.progress;
-              return (
-                <div key={phase.id} className="relative h-full" style={{ width: `${widthPct}%` }}>
-                  <div
-                    className="h-full transition-all duration-500 ease-out"
-                    style={{
-                      width: `${fillPct}%`,
-                      backgroundColor: colors[i],
-                      borderRadius: i === 0 && fillPct > 0 ? "9999px 0 0 9999px" : i === phases.length - 1 && fillPct >= 100 ? "0 9999px 9999px 0" : "0",
-                    }}
-                  />
-                  {i < phases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${phases.length}, minmax(0, 1fr))` }}>
-            {phases.map((phase, i) => {
-              const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
-              return (
-                <div key={phase.id} className="text-center">
-                  <p className={`text-xs font-semibold ${colors[i % colors.length]}`}>{phase.month}</p>
-                  <Input
-                    value={phase.label}
-                    onChange={(e) => updatePhases((prev) => prev.map((p) => p.id === phase.id ? { ...p, label: e.target.value } : p))}
-                    className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
-                  />
-                  <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
-                </div>
-              );
-            })}
-          </div>
+          {computedPhases.length > 0 ? (
+            <>
+              {/* Segmented progress bar */}
+              <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
+                {computedPhases.map((phase, i) => {
+                  const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
+                  const widthPct = 100 / computedPhases.length;
+                  const fillPct = phase.progress;
+                  return (
+                    <div key={phase.monthIndex} className="relative h-full" style={{ width: `${widthPct}%` }}>
+                      <div
+                        className="h-full transition-all duration-500 ease-out"
+                        style={{
+                          width: `${fillPct}%`,
+                          backgroundColor: colors[i % colors.length],
+                          borderRadius: i === 0 && fillPct > 0 ? "9999px 0 0 9999px" : i === computedPhases.length - 1 && fillPct >= 100 ? "0 9999px 9999px 0" : "0",
+                        }}
+                      />
+                      {i < computedPhases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${computedPhases.length}, minmax(0, 1fr))` }}>
+                {computedPhases.map((phase, i) => {
+                  const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+                  return (
+                    <div key={phase.monthIndex} className="text-center">
+                      <p className={`text-xs font-semibold ${colors[i % colors.length]}`}>{phase.monthLabel}</p>
+                      <Input
+                        value={phase.label}
+                        onChange={(e) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value)}
+                        placeholder="Add description..."
+                        className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
+                      />
+                      <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Set start and end dates in{" "}
+              <a href="/settings" className="text-primary underline hover:text-primary/80">Settings</a>
+              {" "}to view test phases.
+            </p>
+          )}
         </div>
 
         {/* Mission & Purpose */}

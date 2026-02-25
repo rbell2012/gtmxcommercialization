@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-02-25 (Date-Driven Test Phases Progress Bar)
+
+### Location – Pilots pages (`src/pages/Index.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225200000_create_team_phase_labels.sql`)
+
+**Rationale:** The Test Phases progress bar on each pilot page used manually created global phases with a hand-dragged slider — completely disconnected from the team's actual start/end dates configured in Settings. Replacing this with auto-generated, date-driven phases gives managers an accurate, real-time view of where each pilot stands in its timeline without any manual upkeep.
+
+**Changes:**
+- Created a new Supabase table `team_phase_labels` with columns `team_id` (FK), `month_index`, and `label`, with a unique constraint on `(team_id, month_index)` — stores per-team editable descriptions for each auto-generated month.
+- Added `DbTeamPhaseLabel` interface to `database.types.ts`.
+- Applied the migration to the live Supabase project.
+- Added `generateTestPhases()` helper that takes a team's `startDate`/`endDate` and produces one phase per calendar month in the range, each labeled as `(#) MonthName` (e.g. "(1) August", "(2) September").
+- Added `computeOverallProgress()` helper that returns the percentage of total elapsed time based on today's date.
+- Per-month progress is auto-calculated: past months show 100%, the current month shows proportional fill based on day-of-month, future months show 0%.
+- Removed the manual `Slider` control; replaced with a "X% Complete" text indicator.
+- Repurposed "Extend the Test" button — now adds one month to the team's end date instead of opening a dialog to manually create a phase.
+- Added empty state when a team has no dates: displays a link to Settings prompting date configuration.
+- Phase labels remain editable per-team per-month; changes are upserted to `team_phase_labels` in real time.
+- Phases update automatically when switching between team tabs, each reflecting that team's own date range.
+- All pilot/project pages share the same component and behavior — each displays unique data from its team's dates.
+---
+
+## 2026-02-25 (Fix Team Active Toggle Persistence)
+
+### Location – Database (`supabase/migrations/`), Base migration (`supabase/migrations/20250224000000_create_all_tables.sql`)
+
+**Rationale:** Toggling a team's active/inactive switch on the Settings page did not persist across page reloads. The `is_active` column was defined in the TypeScript types and referenced in the UI and context code, but was never actually created in the Supabase `teams` table. On reload, Supabase returned rows without `is_active`, which resolved to `undefined` (falsy), making every team appear inactive.
+
+**Changes:**
+- Applied a Supabase migration (`20250225210000_add_is_active_to_teams.sql`) adding `is_active boolean NOT NULL DEFAULT true` to the `public.teams` table. Existing teams defaulted to active.
+- Updated the base migration (`20250224000000_create_all_tables.sql`) to include the `is_active` column in the `CREATE TABLE` statement for fresh environments.
+- No UI or context code changes were required — the frontend was already correctly reading and writing `is_active`; only the database column was missing.
+---
+
 ## 2026-02-25 (Team Start & End Dates)
 
 ### Location – Settings page (`src/pages/Settings.tsx`), Pilots pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/`)
