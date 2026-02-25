@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-02-25 (Apply Goals System Migration to Live Supabase)
+
+### Location – Database (`members`, `teams`, `weekly_funnels` tables in live Supabase project)
+
+**Rationale:** The goals system migration (`20250225260000_add_goals_system.sql`) had been committed to the repo but was never executed against the live Supabase project. The `members` and `teams` tables were missing the goal columns, so the Goals UI could not read or persist any goal data.
+
+**Changes:**
+- Applied `20250225260000_add_goals_system.sql` to the live Supabase project via the Supabase MCP `apply_migration` tool.
+- **`members` table**: Added 6 per-metric goal columns — `goal_accounts`, `goal_calls`, `goal_ops`, `goal_demos`, `goal_wins` (default 30), `goal_feedback` (all integer, default 0). Migrated any existing non-default `goal` values into `goal_wins`.
+- **`teams` table**: Added `goals_parity` (boolean, default false) and 6 team-level goal columns — `team_goal_accounts`, `team_goal_calls`, `team_goal_ops`, `team_goal_demos`, `team_goal_wins`, `team_goal_feedback` (all integer, default 0).
+- **`weekly_funnels` table**: Added `ops` column (integer, default 0). Included a conditional conversion of `feedback` from text to integer (no-op since it was already integer).
+- Verified all new columns are present in the live database via `list_tables`.
+---
+
 ## 2026-02-25 (Goals Section — Replace Win Goals with Full Metric Goals + Parity Toggle)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Settings (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`members`, `teams`, `weekly_funnels` tables)
