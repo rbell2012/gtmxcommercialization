@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+if this change effects a data table or value needing stored, ensure the change is made in the UI and also is pushed to supabase (not only stored as a migration)
