@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Target, Users, TrendingUp, MessageCircle } from "lucide-react";
+import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -23,30 +25,7 @@ const INITIAL_PHASES: TestPhase[] = [
   { id: "m3", month: "Month 3", label: "Keep winning, build recommendation", progress: 0 },
 ];
 
-interface WinEntry {
-  id: string;
-  restaurant: string;
-  story?: string;
-  date: string;
-}
-
-type WeeklyRole = string;
-
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
-
-interface FunnelData {
-  tam: number;
-  calls: number;
-  connects: number;
-  demos: number;
-  wins: number;
-}
-
-interface WeeklyFunnel extends FunnelData {
-  role?: WeeklyRole;
-  submitted?: boolean;
-  submittedAt?: string;
-}
 
 const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 };
 
@@ -68,15 +47,6 @@ function getCurrentWeekKey(): string {
   return getWeekKeys(1)[0].key;
 }
 
-interface TeamMember {
-  id: string;
-  name: string;
-  goal: number;
-  wins: WinEntry[];
-  ducksEarned: number;
-  funnelByWeek: Record<string, WeeklyFunnel>;
-}
-
 function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
   return m.funnelByWeek?.[weekKey] ?? { ...emptyFunnel };
 }
@@ -84,42 +54,6 @@ function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
 function getMemberTotalWins(m: TeamMember): number {
   return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
 }
-
-interface Team {
-  id: string;
-  name: string;
-  owner: string;
-  leadRep: string;
-  members: TeamMember[];
-}
-
-const INITIAL_TEAMS: Team[] = [
-  {
-    id: "mad-max",
-    name: "Mad Max",
-    owner: "Blake",
-    leadRep: "",
-    members: [
-      { id: "mm-1", name: "Shane", goal: 40, wins: [], ducksEarned: 0, funnelByWeek: {} },
-      { id: "mm-2", name: "Zoe", goal: 50, wins: [], ducksEarned: 0, funnelByWeek: {} },
-      { id: "mm-3", name: "Carly", goal: 50, wins: [], ducksEarned: 0, funnelByWeek: {} },
-    ],
-  },
-  {
-    id: "sterno",
-    name: "Sterno",
-    owner: "Zach",
-    leadRep: "",
-    members: [],
-  },
-  {
-    id: "guest-pro",
-    name: "Guest Pro",
-    owner: "Lo",
-    leadRep: "",
-    members: [],
-  },
-];
 
 const BAR_COLORS = [
   "hsl(24, 95%, 53%)",
@@ -182,18 +116,25 @@ const DuckCelebration = ({ memberName, onDone }: { memberName: string; onDone: (
 };
 
 const Index = () => {
-  // Helper to load from localStorage
+  const { pilotId } = useParams<{ pilotId?: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const loadState = <T,>(key: string, fallback: T): T => {
     try {
       const saved = localStorage.getItem(key);
       if (saved !== null) return JSON.parse(saved);
-    } catch {}
+    } catch { /* ignore */ }
     return fallback;
   };
 
-  const [teams, setTeams] = useState<Team[]>(() => loadState("gtmx-teams-full", INITIAL_TEAMS));
+  const { teams, updateTeam } = useTeams();
   const [editingField, setEditingField] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("mad-max");
+
+  const resolvedTeam = pilotId
+    ? teams.find((t) => pilotNameToSlug(t.name) === pilotId) ?? teams[0]
+    : teams[0];
+  const activeTab = resolvedTeam.id;
   const [selectedMember, setSelectedMember] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
   const [storyText, setStoryText] = useState("");
@@ -214,8 +155,6 @@ const Index = () => {
   const [totalTam, setTotalTam] = useState<number>(() => loadState("gtmx-total-tam", 0));
   const [tamSubmitted, setTamSubmitted] = useState(() => loadState("gtmx-tam-submitted", false));
   
-  // Persist all data to localStorage
-  useEffect(() => { localStorage.setItem("gtmx-teams-full", JSON.stringify(teams)); }, [teams]);
   useEffect(() => { localStorage.setItem("gtmx-phases", JSON.stringify(phases)); }, [phases]);
   useEffect(() => { localStorage.setItem("gtmx-custom-roles", JSON.stringify(customRoles)); }, [customRoles]);
   useEffect(() => { localStorage.setItem("gtmx-mission", JSON.stringify(missionPurpose)); }, [missionPurpose]);
@@ -223,9 +162,26 @@ const Index = () => {
   useEffect(() => { localStorage.setItem("gtmx-total-tam", JSON.stringify(totalTam)); }, [totalTam]);
   useEffect(() => { localStorage.setItem("gtmx-tam-submitted", JSON.stringify(tamSubmitted)); }, [tamSubmitted]);
 
+  useEffect(() => {
+    if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
+      navigate("/Pilots", { replace: true });
+    }
+  }, [pilotId, teams, navigate]);
+
+  useEffect(() => {
+    if (location.hash) {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(location.hash.slice(1));
+        el?.scrollIntoView({ behavior: "smooth" });
+      });
+    }
+  }, [location.hash, activeTab]);
+
   const { toast } = useToast();
 
   const allRoles = [...DEFAULT_ROLES, ...customRoles];
+
+  const activeTeam = teams.find((t) => t.id === activeTab)!;
 
   const addPhase = () => {
     if (!newMonthName.trim()) return;
@@ -243,12 +199,6 @@ const Index = () => {
     setCustomRoles((prev) => [...prev, newRoleName.trim()]);
     setNewRoleName("");
     setAddRoleOpen(false);
-  };
-
-  const activeTeam = teams.find((t) => t.id === activeTab)!;
-
-  const updateTeam = (teamId: string, updater: (team: Team) => Team) => {
-    setTeams((prev) => prev.map((t) => (t.id === teamId ? updater(t) : t)));
   };
 
   const addWin = () => {
@@ -329,8 +279,13 @@ const Index = () => {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6 grid w-full grid-cols-3 bg-muted p-1 h-auto">
+        <Tabs value={activeTab} onValueChange={(val) => {
+          const team = teams.find((t) => t.id === val);
+          if (!team) return;
+          const isFirst = teams[0].id === team.id;
+          navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+        }}>
+          <TabsList className="mb-6 grid w-full bg-muted p-1 h-auto" style={{ gridTemplateColumns: `repeat(${teams.length}, minmax(0, 1fr))` }}>
             {teams.map((team) => {
               const total = team.members.reduce((s, m) => getMemberTotalWins(m), 0);
               return (
@@ -399,7 +354,7 @@ const Index = () => {
           </TabsList>
 
         {/* ===== MANAGER INPUTS ===== */}
-        <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
+        <div id="manager-inputs" className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg scroll-mt-16">
           <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
             📋 Manager Inputs
           </h2>
@@ -547,13 +502,97 @@ const Index = () => {
           </div>
         </div>
 
+        {/* Win Goals - active team only */}
+        {teams.filter((t) => t.id === activeTab).map((team) => {
+          const members = team.members;
+          return (
+            <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-display text-lg font-semibold text-foreground">Win Goals – {team.name}</h3>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-border text-foreground hover:bg-muted"
+                  onClick={() => {
+                    const isFirst = teams[0].id === team.id;
+                    navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+                    setAddMemberOpen(true);
+                  }}
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add Member
+                </Button>
+              </div>
+              <div className="space-y-4">
+                {members.map((m, i) => {
+                  const totalWins = getMemberTotalWins(m);
+                  const pct = Math.min((totalWins / m.goal) * 100, 100);
+                  return (
+                    <div key={m.id}>
+                      <div className="mb-1.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-foreground">{m.name}</span>
+                          {m.ducksEarned > 0 && (
+                            <span className="flex items-center">
+                              {[...Array(m.ducksEarned)].map((_, j) => (
+                                <span key={j} className="text-xs">🦆</span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={0}
+                            value={m.goal || ""}
+                            onChange={(e) => {
+                              const num = Math.max(0, parseInt(e.target.value) || 0);
+                              updateTeam(team.id, (t) => ({
+                                ...t,
+                                members: t.members.map((mem) =>
+                                  mem.id === m.id ? { ...mem, goal: num } : mem
+                                ),
+                              }));
+                            }}
+                            className="h-7 w-20 bg-background border-border/50 text-foreground text-sm text-center"
+                          />
+                          <span className="text-sm text-muted-foreground">{totalWins} / {m.goal} ({pct.toFixed(0)}%)</span>
+                        </div>
+                      </div>
+                      <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+                        <div className={`h-full rounded-full transition-all duration-700 ease-out ${i % 2 === 0 ? "progress-bar-orange" : "progress-bar-blue"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {totalWins >= m.goal && <p className="mt-1 text-xs font-medium text-primary animate-pulse-glow">🎉🦆 Goal reached! Great ducking job!</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+          <DialogContent className="bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="font-display text-foreground">Add to {activeTeam?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 pt-2">
+              <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
+              <Input placeholder="Win goal (e.g. 40)" type="number" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
+              <Button onClick={addMember} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
           {teams.map((team) => (
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
                 team={team}
                 totalTam={totalTam}
-                
+                onAddMemberClick={() => {
+                  const isFirst = teams[0].id === team.id;
+                  navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+                  setAddMemberOpen(true);
+                }}
                 selectedMember={selectedMember}
                 setSelectedMember={setSelectedMember}
                 restaurantName={restaurantName}
@@ -561,13 +600,6 @@ const Index = () => {
                 storyText={storyText}
                 setStoryText={setStoryText}
                 addWin={addWin}
-                addMemberOpen={addMemberOpen}
-                setAddMemberOpen={setAddMemberOpen}
-                newName={newName}
-                setNewName={setNewName}
-                newGoal={newGoal}
-                setNewGoal={setNewGoal}
-                addMember={addMember}
                 handleBarClick={handleBarClick}
                 setDetailMember={setDetailMember}
                 updateTeam={updateTeam}
@@ -622,7 +654,7 @@ const Index = () => {
 function TeamTab({
   team,
   totalTam,
-  
+  onAddMemberClick,
   selectedMember,
   setSelectedMember,
   restaurantName,
@@ -630,13 +662,6 @@ function TeamTab({
   storyText,
   setStoryText,
   addWin,
-  addMemberOpen,
-  setAddMemberOpen,
-  newName,
-  setNewName,
-  newGoal,
-  setNewGoal,
-  addMember,
   handleBarClick,
   setDetailMember,
   updateTeam,
@@ -649,7 +674,7 @@ function TeamTab({
 }: {
   team: Team;
   totalTam: number;
-  
+  onAddMemberClick: () => void;
   selectedMember: string;
   setSelectedMember: (v: string) => void;
   restaurantName: string;
@@ -657,13 +682,6 @@ function TeamTab({
   storyText: string;
   setStoryText: (v: string) => void;
   addWin: () => void;
-  addMemberOpen: boolean;
-  setAddMemberOpen: (v: boolean) => void;
-  newName: string;
-  setNewName: (v: string) => void;
-  newGoal: string;
-  setNewGoal: (v: string) => void;
-  addMember: () => void;
   handleBarClick: (data: any) => void;
   setDetailMember: (m: TeamMember | null) => void;
   updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
@@ -696,7 +714,7 @@ function TeamTab({
   return (
     <div className="space-y-8">
       {/* ===== TEST SIGNALS ===== */}
-      <div>
+      <div id="test-signals" className="scroll-mt-16">
         <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
           <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
             📡 Test Signals
@@ -778,98 +796,14 @@ function TeamTab({
             <StatCard icon={<TrendingUp className="h-5 w-5 text-accent" />} label="Total Wins" value={teamTotal} />
           </div>
 
-          {/* Individual Goals */}
-          {members.length > 0 && (
-            <div className="rounded-lg border border-border bg-card p-5 glow-card">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-foreground">Win Goals</h3>
-                <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="gap-1.5 border-border text-foreground hover:bg-muted">
-                      <Plus className="h-3.5 w-3.5" /> Add Member
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="bg-card border-border">
-                    <DialogHeader>
-                      <DialogTitle className="font-display text-foreground">Add to {team.name}</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-3 pt-2">
-                      <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                      <Input placeholder="Win goal (e.g. 40)" type="number" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                      <Button onClick={addMember} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <div className="space-y-4">
-                {members.map((m, i) => {
-                  const totalWins = getMemberTotalWins(m);
-                  const pct = Math.min((totalWins / m.goal) * 100, 100);
-                  return (
-                    <div key={m.id}>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">{m.name}</span>
-                          {m.ducksEarned > 0 && (
-                            <span className="flex items-center">
-                              {[...Array(m.ducksEarned)].map((_, j) => (
-                                <span key={j} className="text-xs">🦆</span>
-                              ))}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            value={m.goal || ""}
-                            onChange={(e) => {
-                              const num = Math.max(0, parseInt(e.target.value) || 0);
-                              updateTeam(team.id, (t) => ({
-                                ...t,
-                                members: t.members.map((mem) =>
-                                  mem.id === m.id ? { ...mem, goal: num } : mem
-                                ),
-                              }));
-                            }}
-                            className="h-7 w-20 bg-background border-border/50 text-foreground text-sm text-center"
-                          />
-                          <span className="text-sm text-muted-foreground">{totalWins} / {m.goal} ({pct.toFixed(0)}%)</span>
-                        </div>
-                      </div>
-                      <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-                        <div className={`h-full rounded-full transition-all duration-700 ease-out ${i % 2 === 0 ? "progress-bar-orange" : "progress-bar-blue"}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      {totalWins >= m.goal && <p className="mt-1 text-xs font-medium text-primary animate-pulse-glow">🎉🦆 Goal reached! Great ducking job!</p>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Empty state */}
+          {/* Empty state - add first member via Manager Inputs Win Goals */}
           {members.length === 0 && (
             <div className="rounded-lg border border-border border-dashed bg-card/50 p-10 text-center glow-card">
               <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
               <p className="mb-4 text-muted-foreground">No members yet on {team.name}</p>
-              <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                    <Plus className="mr-2 h-4 w-4" /> Add First Member
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-card border-border">
-                  <DialogHeader>
-                    <DialogTitle className="font-display text-foreground">Add to {team.name}</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-3 pt-2">
-                    <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                    <Input placeholder="Win goal (e.g. 40)" type="number" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                    <Button onClick={addMember} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Button onClick={onAddMemberClick} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                <Plus className="mr-2 h-4 w-4" /> Add First Member
+              </Button>
             </div>
           )}
 
@@ -884,7 +818,7 @@ function TeamTab({
       </div>
 
       {/* ===== PLAYER'S SECTION ===== */}
-      <div>
+      <div id="players-section" className="scroll-mt-16">
         <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
           <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
             🎮 Player's Section
@@ -1077,7 +1011,7 @@ function TeamTab({
 
       {/* ===== WEEKLY DATA GRID ===== */}
       {members.length > 0 && (
-        <div>
+        <div id="weekly-data" className="scroll-mt-16">
           <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
             <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
               📊 Weekly Data
@@ -1167,6 +1101,12 @@ function TeamTab({
           </div>
         </div>
       )}
+
+      {/* ===== ACTIVATION / ADOPTION (placeholder) ===== */}
+      <div id="activation-adoption" className="scroll-mt-16" />
+
+      {/* ===== GTMx IMPACT (placeholder) ===== */}
+      <div id="gtmx-impact" className="scroll-mt-16" />
     </div>
   );
 }
