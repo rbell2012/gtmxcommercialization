@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-02-25 (Surface Weekly Roles in SELECT PLAYERS & Chart Tooltip)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** Member roles selected for the week (e.g. TOFU, Closing) were not surfacing in two key areas: the SELECT PLAYERS buttons below the Funnel Overview chart showed a dash ("—") even when a role was set, and hovering over any week on the chart gave no indication of what role each member was playing that week.
+
+**Changes:**
+- Verified the SELECT PLAYERS section already reads each member's role from `funnelByWeek[currentWeek].role` — the dash only appears when no role has been selected yet in the "Your Funnels" section. Once a role is chosen, it propagates immediately to the player button label.
+- Added `_roles` metadata (member name → role mapping) to each chart data point so role information is available per-week, not just for the current week.
+- Created a custom `FunnelTooltip` component replacing the default Recharts tooltip. The tooltip now shows: (1) the week label, (2) each visible metric with a color-matched dot and value, and (3) a "Roles this week" section listing every member who had a role set for the hovered week.
+- Replaced the inline `contentStyle` tooltip with `<Tooltip content={<FunnelTooltip />} />`.
+- All pilot/project pages remain identical in appearance and operation (changes are in the shared `WeekOverWeekView` component).
+---
+
 ## 2026-02-25 (Fix Funnel Overview Player Conversion Rate Averages & Add Role Tooltips)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`)
