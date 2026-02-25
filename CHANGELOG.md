@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-02-25 (Fix Team Total Wins Summation Bug)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Test Signals section displayed only the last member's wins instead of the sum across all members. For example, a team with members having 3, 4, and 3 wins showed "3/100 Wins" instead of the correct "10/100 Wins". The same bug also affected the win count badge on the team tab headers.
+
+**Changes:**
+- Fixed the `.reduce()` accumulator bug on the `teamTotal` calculation in the `TeamTab` component (line 845). The callback `(s, m) => getMemberTotalWins(m)` discarded the accumulator `s`; corrected to `(s, m) => s + getMemberTotalWins(m)`.
+- Fixed the identical `.reduce()` accumulator bug in the team tab header badge calculation (line 433) so it also properly sums wins across all members.
+- Both the Test Signals team progress bar and the tab header badges now display the correct total.
+- All pilot/project pages remain identical in appearance and operation.
+---
+
 ## 2026-02-25 (Weekly Data: Monday-Aligned, Team-Date-Driven Columns with Sticky Freeze Panes)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`)

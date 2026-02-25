@@ -430,7 +430,7 @@ const Index = () => {
         }}>
           <TabsList className="mb-6 grid w-full bg-muted p-1 h-auto" style={{ gridTemplateColumns: `repeat(${teams.length}, minmax(0, 1fr))` }}>
             {teams.map((team) => {
-              const total = team.members.reduce((s, m) => getMemberTotalWins(m), 0);
+              const total = team.members.reduce((s, m) => s + getMemberTotalWins(m), 0);
               return (
                 <TabsTrigger
                   key={team.id}
@@ -842,7 +842,7 @@ function TeamTab({
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
   const activeMembers = members.filter((m) => m.isActive);
-  const teamTotal = members.reduce((s, m) => getMemberTotalWins(m), 0);
+  const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
 
   const weeklyScrollRef = useRef<HTMLDivElement>(null);
