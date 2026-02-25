@@ -4,6 +4,9 @@ export interface DbTeam {
   owner: string;
   lead_rep: string;
   sort_order: number;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -17,11 +17,12 @@ const queryClient = new QueryClient();
 function Nav() {
   const location = useLocation();
   const { teams } = useTeams();
+  const visibleTeams = teams.filter((t) => t.isActive);
   return (
     <nav className="border-b border-border bg-card px-4 py-2 flex items-center gap-4 overflow-x-auto">
-      {teams.map((team, i) => {
+      {visibleTeams.map((team, i) => {
         const slug = pilotNameToSlug(team.name);
-        const isActive =
+        const isCurrent =
           location.pathname === `/Pilots/${slug}` ||
           (location.pathname === "/Pilots" && i === 0);
         return (
@@ -29,7 +30,7 @@ function Nav() {
             key={team.id}
             to={i === 0 ? "/Pilots" : `/Pilots/${slug}`}
             className={`text-sm font-medium whitespace-nowrap transition-colors ${
-              isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             {team.name}

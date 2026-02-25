@@ -12,6 +12,8 @@ create table if not exists public.teams (
   owner      text        not null default '',
   lead_rep   text        not null default '',
   sort_order integer     not null default 0,
+  start_date date,
+  end_date   date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -39,6 +39,10 @@ export interface Team {
   name: string;
   owner: string;
   leadRep: string;
+  sortOrder: number;
+  isActive: boolean;
+  startDate: string | null;
+  endDate: string | null;
   members: TeamMember[];
 }
 
@@ -111,6 +115,10 @@ function assembleTeams(
       name: t.name,
       owner: t.owner,
       leadRep: t.lead_rep,
+      sortOrder: t.sort_order,
+      isActive: t.is_active,
+      startDate: t.start_date,
+      endDate: t.end_date,
       members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -127,8 +135,10 @@ interface TeamsContextType {
   unassignedMembers: TeamMember[];
   setUnassignedMembers: React.Dispatch<React.SetStateAction<TeamMember[]>>;
   updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
-  addTeam: (name: string, owner?: string) => void;
+  addTeam: (name: string, owner?: string, startDate?: string | null, endDate?: string | null) => void;
   removeTeam: (teamId: string) => void;
+  reorderTeams: (orderedIds: string[]) => void;
+  toggleTeamActive: (teamId: string, isActive: boolean) => void;
   createMember: (name: string, goal: number) => TeamMember;
   assignMember: (memberId: string, targetTeamId: string) => void;
   unassignMember: (memberId: string, fromTeamId: string) => void;
@@ -182,10 +192,25 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const updated = next.find((t) => t.id === teamId);
       if (updated) {
         const old = prev.find((t) => t.id === teamId);
-        if (old && (old.name !== updated.name || old.owner !== updated.owner || old.leadRep !== updated.leadRep)) {
+        if (
+          old &&
+          (old.name !== updated.name ||
+            old.owner !== updated.owner ||
+            old.leadRep !== updated.leadRep ||
+            old.isActive !== updated.isActive ||
+            old.startDate !== updated.startDate ||
+            old.endDate !== updated.endDate)
+        ) {
           supabase
             .from("teams")
-            .update({ name: updated.name, owner: updated.owner, lead_rep: updated.leadRep })
+            .update({
+              name: updated.name,
+              owner: updated.owner,
+              lead_rep: updated.leadRep,
+              is_active: updated.isActive,
+              start_date: updated.startDate,
+              end_date: updated.endDate,
+            })
             .eq("id", teamId)
             .then();
         }
@@ -205,14 +230,25 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const addTeam = useCallback((name: string, owner = "") => {
-    const tempId = crypto.randomUUID();
-    setTeams((prev) => [...prev, { id: tempId, name, owner, leadRep: "", members: [] }]);
-    supabase
-      .from("teams")
-      .insert({ id: tempId, name, owner, sort_order: 0 })
-      .then();
-  }, []);
+  const addTeam = useCallback(
+    (name: string, owner = "", startDate: string | null = null, endDate: string | null = null) => {
+      const tempId = crypto.randomUUID();
+      setTeams((prev) => {
+        const nextOrder = prev.length > 0 ? Math.max(...prev.map((t) => t.sortOrder)) + 1 : 0;
+        const newTeam: Team = {
+          id: tempId, name, owner, leadRep: "",
+          sortOrder: nextOrder, isActive: true,
+          startDate, endDate, members: [],
+        };
+        supabase
+          .from("teams")
+          .insert({ id: tempId, name, owner, sort_order: nextOrder, is_active: true, start_date: startDate, end_date: endDate })
+          .then();
+        return [...prev, newTeam];
+      });
+    },
+    []
+  );
 
   const removeTeam = useCallback((teamId: string) => {
     setTeams((prev) => {
@@ -226,6 +262,29 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       return prev.filter((t) => t.id !== teamId);
     });
     supabase.from("teams").delete().eq("id", teamId).then();
+  }, []);
+
+  const reorderTeams = useCallback((orderedIds: string[]) => {
+    setTeams((prev) => {
+      const byId = new Map(prev.map((t) => [t.id, t]));
+      const reordered = orderedIds
+        .map((id, i) => {
+          const t = byId.get(id);
+          return t ? { ...t, sortOrder: i } : null;
+        })
+        .filter(Boolean) as Team[];
+      for (const t of reordered) {
+        supabase.from("teams").update({ sort_order: t.sortOrder }).eq("id", t.id).then();
+      }
+      return reordered;
+    });
+  }, []);
+
+  const toggleTeamActive = useCallback((teamId: string, isActive: boolean) => {
+    setTeams((prev) =>
+      prev.map((t) => (t.id === teamId ? { ...t, isActive } : t))
+    );
+    supabase.from("teams").update({ is_active: isActive }).eq("id", teamId).then();
   }, []);
 
   const createMember = useCallback((name: string, goal: number): TeamMember => {
@@ -299,6 +358,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         updateTeam,
         addTeam,
         removeTeam,
+        reorderTeams,
+        toggleTeamActive,
         createMember,
         assignMember,
         unassignMember,

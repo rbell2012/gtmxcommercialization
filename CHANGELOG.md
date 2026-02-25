@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-02-25 (Team Start & End Dates)
+
+### Location – Settings page (`src/pages/Settings.tsx`), Pilots pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/`)
+
+**Rationale:** Teams had no concept of a time window for their pilot engagement. Adding start and end dates allows managers to define and communicate the active period for each team, with a sensible default of +9 months from the chosen start date to reduce setup friction.
+
+**Changes:**
+- Added `start_date` (date, nullable) and `end_date` (date, nullable) columns to the `teams` table via new migration `20250225000000_add_team_dates.sql`; also updated the base migration for fresh environments.
+- Applied the migration to the live Supabase project.
+- Updated `DbTeam` in `database.types.ts` with `start_date` and `end_date` fields.
+- Updated the `Team` interface in `TeamsContext.tsx` with `startDate` and `endDate` properties.
+- Updated `assembleTeams` to map the new DB columns to app-level fields.
+- Updated `addTeam` to accept optional `startDate`/`endDate` params and persist them on insert.
+- Updated `updateTeam` to detect date changes and persist them to Supabase.
+- Added `formatDateRange` helper that renders dates as "Jan '25 – Sep '25" format.
+- Settings page team cards now display the date range below the members count with a calendar icon.
+- Create Team dialog now includes Start Date and End Date inputs; picking a start date auto-fills end date to +9 months, but the end date remains editable.
+- Edit Team dialog includes the same date inputs, pre-populated with existing values.
+- Pilots page Team Total Bar now shows the date range below "Led by {owner}" with a calendar icon.
+- Removed the Active/Inactive badge from team cards on the Settings page.
+---
+
 ## 2026-02-25 (Supabase Schema Migration — localStorage to Database)
 
 ### Location – All pages (`src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`, `src/hooks/useManagerInputs.ts`, `src/lib/database.types.ts`, `supabase/migrations/20250224000000_create_all_tables.sql`)
@@ -91,6 +113,27 @@
 - Updated progress bar utilities (`.progress-bar-orange`, `.progress-bar-blue`) to reference `--chart-1`/`--chart-2` CSS variables instead of hardcoded HSL values.
 - Desaturated Recharts metric colors and player colors by ~15-20% saturation for improved legibility on both light and dark backgrounds.
 - Removed unused `BAR_COLORS` constant from `Index.tsx`.
+---
+
+## 2026-02-25 (Draggable Team Order & Active/Inactive Toggle)
+
+### Location – Settings page, Navigation header, Pilots pages (`src/pages/Settings.tsx`, `src/App.tsx`, `src/pages/Index.tsx`, `src/contexts/TeamsContext.tsx`, `src/lib/database.types.ts`, `supabase/migrations/20250225100000_add_team_is_active.sql`)
+
+**Rationale:** Managers had no way to control the display order of teams in the navigation header or to temporarily hide a team without deleting it. Adding drag-and-drop reordering to the Settings page gives managers direct control over the navigation sequence, and an active/inactive toggle lets them hide teams from the UI without losing any data.
+
+**Changes:**
+- Created Supabase migration (`20250225100000_add_team_is_active.sql`) adding `is_active boolean not null default true` to the `teams` table.
+- Added `is_active: boolean` to the `DbTeam` TypeScript interface.
+- Extended the `Team` app interface with `sortOrder` and `isActive` fields; `assembleTeams` now maps both from DB rows.
+- Added `reorderTeams(orderedIds)` context function that reorders the local state array and persists each team's new `sort_order` to Supabase.
+- Added `toggleTeamActive(teamId, isActive)` context function that flips local state and persists `is_active` to Supabase.
+- `addTeam` now auto-calculates `sortOrder` as `max + 1` so new teams append to the end.
+- `updateTeam` now detects and persists `isActive` changes alongside name/owner/leadRep/dates.
+- Settings page team cards are now draggable via HTML5 drag-and-drop — a grip handle icon (`GripVertical`) appears at the left of each card title.
+- Added a `Switch` toggle to the left of the edit pencil on each team card for toggling active/inactive; inactive cards display at reduced opacity with an "Inactive" badge.
+- Navigation header (`App.tsx`) now filters to `teams.filter(t => t.isActive)`, hiding inactive teams from the nav bar.
+- Pilots page (`Index.tsx`) also filters to active teams only for tab display, ensuring inactive projects don't appear anywhere in the main UI.
+- All project/pilot pages remain identical in structure and behavior — the filter applies uniformly.
 ---
 
 ## 2026-02-25

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle } from "lucide-react";
+import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle, Calendar } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,19 @@ import { useManagerInputs, type TestPhase } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
+
+function formatDateRange(startDate: string | null, endDate: string | null): string | null {
+  if (!startDate) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso + "T00:00:00");
+    const mon = d.toLocaleString("en-US", { month: "short" });
+    const yr = String(d.getFullYear()).slice(2);
+    return `${mon} '${yr}`;
+  };
+  const start = fmt(startDate);
+  const end = endDate ? fmt(endDate) : null;
+  return end ? `${start} – ${end}` : start;
+}
 
 const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 };
 
@@ -102,7 +115,8 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams, updateTeam } = useTeams();
+  const { teams: allTeams, updateTeam } = useTeams();
+  const teams = allTeams.filter((t) => t.isActive);
   const {
     phases,
     updatePhases,
@@ -729,6 +743,14 @@ function TeamTab({
                     {team.name}
                   </h3>
                   <p className="text-sm font-medium text-secondary-foreground/70">Led by {team.owner}</p>
+                  {formatDateRange(team.startDate, team.endDate) && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <Calendar className="h-3.5 w-3.5 text-secondary-foreground/50" />
+                      <span className="text-xs font-medium text-secondary-foreground/50">
+                        {formatDateRange(team.startDate, team.endDate)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="flex items-center gap-2 text-right">

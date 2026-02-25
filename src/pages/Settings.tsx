@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { useState, useRef } from "react";
+import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -7,8 +7,28 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useTeams } from "@/contexts/TeamsContext";
 import { useToast } from "@/hooks/use-toast";
+
+function addMonths(dateStr: string, months: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+function formatDateRange(startDate: string | null, endDate: string | null): string | null {
+  if (!startDate) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso + "T00:00:00");
+    const mon = d.toLocaleString("en-US", { month: "short" });
+    const yr = String(d.getFullYear()).slice(2);
+    return `${mon} '${yr}`;
+  };
+  const start = fmt(startDate);
+  const end = endDate ? fmt(endDate) : null;
+  return end ? `${start} – ${end}` : start;
+}
 
 const Settings = () => {
   const {
@@ -17,6 +37,8 @@ const Settings = () => {
     addTeam,
     removeTeam,
     updateTeam,
+    reorderTeams,
+    toggleTeamActive,
     createMember,
     assignMember,
     unassignMember,
@@ -24,9 +46,42 @@ const Settings = () => {
   } = useTeams();
   const { toast } = useToast();
 
+  const dragItem = useRef<string | null>(null);
+  const dragOverItem = useRef<string | null>(null);
+
+  const handleDragStart = (teamId: string) => {
+    dragItem.current = teamId;
+  };
+
+  const handleDragOver = (e: React.DragEvent, teamId: string) => {
+    e.preventDefault();
+    dragOverItem.current = teamId;
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragItem.current || !dragOverItem.current || dragItem.current === dragOverItem.current) {
+      dragItem.current = null;
+      dragOverItem.current = null;
+      return;
+    }
+    const currentOrder = teams.map((t) => t.id);
+    const dragIdx = currentOrder.indexOf(dragItem.current);
+    const dropIdx = currentOrder.indexOf(dragOverItem.current);
+    if (dragIdx === -1 || dropIdx === -1) return;
+    currentOrder.splice(dragIdx, 1);
+    currentOrder.splice(dropIdx, 0, dragItem.current);
+    reorderTeams(currentOrder);
+    toast({ title: "Team order updated" });
+    dragItem.current = null;
+    dragOverItem.current = null;
+  };
+
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamOwner, setNewTeamOwner] = useState("");
+  const [newTeamStartDate, setNewTeamStartDate] = useState("");
+  const [newTeamEndDate, setNewTeamEndDate] = useState("");
 
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
@@ -36,15 +91,21 @@ const Settings = () => {
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamOwner, setEditTeamOwner] = useState("");
   const [editTeamLeadRep, setEditTeamLeadRep] = useState("");
+  const [editTeamStartDate, setEditTeamStartDate] = useState("");
+  const [editTeamEndDate, setEditTeamEndDate] = useState("");
 
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
   const handleCreateTeam = () => {
     if (!newTeamName.trim()) return;
-    addTeam(newTeamName.trim(), newTeamOwner.trim());
+    const sd = newTeamStartDate || null;
+    const ed = newTeamEndDate || (sd ? addMonths(sd, 9) : null);
+    addTeam(newTeamName.trim(), newTeamOwner.trim(), sd, ed);
     toast({ title: "Team created", description: `${newTeamName.trim()} has been added to the header.` });
     setNewTeamName("");
     setNewTeamOwner("");
+    setNewTeamStartDate("");
+    setNewTeamEndDate("");
     setCreateTeamOpen(false);
   };
 
@@ -73,6 +134,8 @@ const Settings = () => {
     setEditTeamName(team.name);
     setEditTeamOwner(team.owner);
     setEditTeamLeadRep(team.leadRep);
+    setEditTeamStartDate(team.startDate ?? "");
+    setEditTeamEndDate(team.endDate ?? "");
   };
 
   const saveEditTeam = () => {
@@ -82,6 +145,8 @@ const Settings = () => {
       name: editTeamName.trim(),
       owner: editTeamOwner.trim(),
       leadRep: editTeamLeadRep.trim(),
+      startDate: editTeamStartDate || null,
+      endDate: editTeamEndDate || null,
     }));
     toast({ title: "Team updated" });
     setEditTeamId(null);
@@ -169,6 +234,31 @@ const Settings = () => {
                     onKeyDown={(e) => e.key === "Enter" && handleCreateTeam()}
                     className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground"
                   />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">Start Date</label>
+                      <Input
+                        type="date"
+                        value={newTeamStartDate}
+                        onChange={(e) => {
+                          setNewTeamStartDate(e.target.value);
+                          if (e.target.value && !newTeamEndDate) {
+                            setNewTeamEndDate(addMonths(e.target.value, 9));
+                          }
+                        }}
+                        className="bg-secondary/20 border-border text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1 block">End Date</label>
+                      <Input
+                        type="date"
+                        value={newTeamEndDate}
+                        onChange={(e) => setNewTeamEndDate(e.target.value)}
+                        className="bg-secondary/20 border-border text-foreground"
+                      />
+                    </div>
+                  </div>
                   <Button onClick={handleCreateTeam} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                     Create Team
                   </Button>
@@ -185,11 +275,27 @@ const Settings = () => {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {teams.map((team) => (
-                <Card key={team.id} className="border-border bg-card glow-card">
+                <Card
+                  key={team.id}
+                  className={`border-border bg-card glow-card transition-all ${!team.isActive ? "opacity-50" : ""}`}
+                  draggable
+                  onDragStart={() => handleDragStart(team.id)}
+                  onDragOver={(e) => handleDragOver(e, team.id)}
+                  onDrop={handleDrop}
+                  onDragEnd={() => { dragItem.current = null; dragOverItem.current = null; }}
+                >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="font-display text-lg text-foreground">{team.name}</CardTitle>
-                      <div className="flex gap-1">
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing shrink-0" />
+                        <CardTitle className="font-display text-lg text-foreground">{team.name}</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Switch
+                          checked={team.isActive}
+                          onCheckedChange={(checked) => toggleTeamActive(team.id, checked)}
+                          className="scale-75"
+                        />
                         <Button
                           variant="ghost"
                           size="sm"
@@ -221,6 +327,14 @@ const Settings = () => {
                         <Users className="h-3.5 w-3.5 text-primary" />
                         <span className="text-sm font-medium text-primary">{team.members.length} members</span>
                       </div>
+                      {formatDateRange(team.startDate, team.endDate) && (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            {formatDateRange(team.startDate, team.endDate)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -276,6 +390,31 @@ const Settings = () => {
                       </Select>
                     );
                   })()}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Start Date</label>
+                    <Input
+                      type="date"
+                      value={editTeamStartDate}
+                      onChange={(e) => {
+                        setEditTeamStartDate(e.target.value);
+                        if (e.target.value && !editTeamEndDate) {
+                          setEditTeamEndDate(addMonths(e.target.value, 9));
+                        }
+                      }}
+                      className="bg-secondary/20 border-border text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">End Date</label>
+                    <Input
+                      type="date"
+                      value={editTeamEndDate}
+                      onChange={(e) => setEditTeamEndDate(e.target.value)}
+                      className="bg-secondary/20 border-border text-foreground"
+                    />
+                  </div>
                 </div>
                 <Button onClick={saveEditTeam} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                   Save Changes
