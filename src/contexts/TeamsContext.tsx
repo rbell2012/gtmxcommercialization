@@ -32,6 +32,7 @@ export interface TeamMember {
   wins: WinEntry[];
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
+  isActive: boolean;
 }
 
 export interface Team {
@@ -75,6 +76,7 @@ function dbMemberToApp(
     name: row.name,
     goal: row.goal,
     ducksEarned: row.ducks_earned,
+    isActive: row.is_active,
     wins: wins.map((w) => ({
       id: w.id,
       restaurant: w.restaurant,
@@ -122,7 +124,7 @@ function assembleTeams(
       members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
-  const unassigned = dbMembers.filter((m) => m.team_id === null).map(toAppMember);
+  const unassigned = dbMembers.filter((m) => m.team_id === null && m.is_active).map(toAppMember);
 
   return { teams, unassigned };
 }
@@ -164,7 +166,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     async function load() {
       const [tRes, mRes, fRes, wRes] = await Promise.all([
-        supabase.from("teams").select("*"),
+        supabase.from("teams").select("*").is("archived_at", null),
         supabase.from("members").select("*"),
         supabase.from("weekly_funnels").select("*"),
         supabase.from("win_entries").select("*"),
@@ -253,15 +255,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const removeTeam = useCallback((teamId: string) => {
     setTeams((prev) => {
       const team = prev.find((t) => t.id === teamId);
-      if (team && team.members.length > 0) {
-        setUnassignedMembers((um) => [...um, ...team.members]);
+      if (team) {
+        const activeMembers = team.members.filter((m) => m.isActive);
+        if (activeMembers.length > 0) {
+          setUnassignedMembers((um) => [...um, ...activeMembers]);
+        }
         for (const m of team.members) {
           supabase.from("members").update({ team_id: null }).eq("id", m.id).then();
         }
       }
       return prev.filter((t) => t.id !== teamId);
     });
-    supabase.from("teams").delete().eq("id", teamId).then();
+    supabase.from("teams").update({ archived_at: new Date().toISOString() }).eq("id", teamId).then();
   }, []);
 
   const reorderTeams = useCallback((orderedIds: string[]) => {
@@ -289,11 +294,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
   const createMember = useCallback((name: string, goal: number): TeamMember => {
     const id = crypto.randomUUID();
-    const member: TeamMember = { id, name, goal, wins: [], ducksEarned: 0, funnelByWeek: {} };
+    const member: TeamMember = { id, name, goal, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
     setUnassignedMembers((prev) => [...prev, member]);
     supabase
       .from("members")
-      .insert({ id, name, goal, team_id: null, ducks_earned: 0 })
+      .insert({ id, name, goal, team_id: null, ducks_earned: 0, is_active: true })
       .then();
     return member;
   }, []);
@@ -314,14 +319,36 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     setTeams((prev) => {
       let member: TeamMember | undefined;
       const sourceTeamId = prev.find((t) => {
-        member = t.members.find((m) => m.id === memberId);
+        member = t.members.find((m) => m.id === memberId && m.isActive);
         return !!member;
       })?.id;
       if (!member || sourceTeamId === targetTeamId) return prev;
-      supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId).then();
+
+      // Archive the old member on the source team so data persists
+      supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
+
+      // Create a fresh member record on the target team
+      const newId = crypto.randomUUID();
+      supabase
+        .from("members")
+        .insert({ id: newId, name: member.name, goal: member.goal, team_id: targetTeamId, ducks_earned: 0, is_active: true })
+        .then();
+
+      const freshMember: TeamMember = {
+        id: newId,
+        name: member.name,
+        goal: member.goal,
+        wins: [],
+        ducksEarned: 0,
+        funnelByWeek: {},
+        isActive: true,
+      };
+
       return prev.map((t) => {
-        if (t.id === sourceTeamId) return { ...t, members: t.members.filter((m) => m.id !== memberId) };
-        if (t.id === targetTeamId) return { ...t, members: [...t.members, member!] };
+        if (t.id === sourceTeamId)
+          return { ...t, members: t.members.map((m) => m.id === memberId ? { ...m, isActive: false } : m) };
+        if (t.id === targetTeamId)
+          return { ...t, members: [...t.members, freshMember] };
         return t;
       });
     });
@@ -330,12 +357,34 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const unassignMember = useCallback((memberId: string, fromTeamId: string) => {
     setTeams((prev) => {
       const team = prev.find((t) => t.id === fromTeamId);
-      const member = team?.members.find((m) => m.id === memberId);
+      const member = team?.members.find((m) => m.id === memberId && m.isActive);
       if (!member) return prev;
-      setUnassignedMembers((um) => [...um, member]);
-      supabase.from("members").update({ team_id: null }).eq("id", memberId).then();
+
+      // Archive the member on the old team so data persists
+      supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
+
+      // Create a fresh unassigned member
+      const newId = crypto.randomUUID();
+      supabase
+        .from("members")
+        .insert({ id: newId, name: member.name, goal: member.goal, team_id: null, ducks_earned: 0, is_active: true })
+        .then();
+
+      const freshMember: TeamMember = {
+        id: newId,
+        name: member.name,
+        goal: member.goal,
+        wins: [],
+        ducksEarned: 0,
+        funnelByWeek: {},
+        isActive: true,
+      };
+      setUnassignedMembers((um) => [...um, freshMember]);
+
       return prev.map((t) =>
-        t.id === fromTeamId ? { ...t, members: t.members.filter((m) => m.id !== memberId) } : t
+        t.id === fromTeamId
+          ? { ...t, members: t.members.map((m) => m.id === memberId ? { ...m, isActive: false } : m) }
+          : t
       );
     });
   }, []);
@@ -343,9 +392,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const removeMember = useCallback((memberId: string) => {
     setUnassignedMembers((prev) => prev.filter((m) => m.id !== memberId));
     setTeams((prev) =>
-      prev.map((t) => ({ ...t, members: t.members.filter((m) => m.id !== memberId) }))
+      prev.map((t) => ({
+        ...t,
+        members: t.members.map((m) =>
+          m.id === memberId ? { ...m, isActive: false } : m
+        ),
+      }))
     );
-    supabase.from("members").delete().eq("id", memberId).then();
+    supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
   }, []);
 
   return (

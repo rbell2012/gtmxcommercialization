@@ -7,6 +7,7 @@ export interface DbTeam {
   is_active: boolean;
   start_date: string | null;
   end_date: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -17,6 +18,7 @@ export interface DbMember {
   name: string;
   goal: number;
   ducks_earned: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }

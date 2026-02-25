@@ -19,7 +19,7 @@ function Nav() {
   const { teams } = useTeams();
   const visibleTeams = teams.filter((t) => t.isActive);
   return (
-    <nav className="border-b border-border bg-card px-4 py-2 flex items-center gap-4 overflow-x-auto">
+    <nav className="sticky top-0 z-50 border-b border-border bg-card px-4 py-2 flex items-center gap-4 overflow-x-auto">
       {visibleTeams.map((team, i) => {
         const slug = pilotNameToSlug(team.name);
         const isCurrent =

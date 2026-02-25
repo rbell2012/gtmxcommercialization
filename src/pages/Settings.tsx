@@ -3,6 +3,16 @@ import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUp
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +104,8 @@ const Settings = () => {
   const [editTeamStartDate, setEditTeamStartDate] = useState("");
   const [editTeamEndDate, setEditTeamEndDate] = useState("");
 
+  const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
+
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
   const handleCreateTeam = () => {
@@ -118,13 +130,15 @@ const Settings = () => {
     setCreateMemberOpen(false);
   };
 
-  const handleDeleteTeam = (teamId: string) => {
-    const team = teams.find((t) => t.id === teamId);
-    removeTeam(teamId);
+  const confirmDeleteTeam = () => {
+    if (!deleteTeamId) return;
+    const team = teams.find((t) => t.id === deleteTeamId);
+    removeTeam(deleteTeamId);
     toast({
-      title: "Team removed",
-      description: `${team?.name} has been removed.${team?.members.length ? " Members moved to unassigned." : ""}`,
+      title: "Team archived",
+      description: `${team?.name} has been archived.${team?.members.length ? " Members moved to unassigned." : ""}`,
     });
+    setDeleteTeamId(null);
   };
 
   const startEditTeam = (teamId: string) => {
@@ -154,9 +168,9 @@ const Settings = () => {
 
   const allMembersUnsorted = [
     ...teams.flatMap((t) =>
-      t.members.map((m) => ({ ...m, teamId: t.id as string | null, teamName: t.name }))
+      t.members.filter((m) => m.isActive).map((m) => ({ ...m, teamId: t.id as string | null, teamName: t.name }))
     ),
-    ...unassignedMembers.map((m) => ({
+    ...unassignedMembers.filter((m) => m.isActive).map((m) => ({
       ...m,
       teamId: null as string | null,
       teamName: "Unassigned",
@@ -308,7 +322,7 @@ const Settings = () => {
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteTeam(team.id)}
+                          onClick={() => setDeleteTeamId(team.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -325,7 +339,7 @@ const Settings = () => {
                       </p>
                       <div className="flex items-center gap-1.5 pt-1">
                         <Users className="h-3.5 w-3.5 text-primary" />
-                        <span className="text-sm font-medium text-primary">{team.members.length} members</span>
+                        <span className="text-sm font-medium text-primary">{team.members.filter((m) => m.isActive).length} members</span>
                       </div>
                       {formatDateRange(team.startDate, team.endDate) && (
                         <div className="flex items-center gap-1.5 pt-1">
@@ -422,6 +436,30 @@ const Settings = () => {
               </div>
             </DialogContent>
           </Dialog>
+
+          <AlertDialog open={!!deleteTeamId} onOpenChange={(open) => !open && setDeleteTeamId(null)}>
+            <AlertDialogContent className="bg-card border-border">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display text-foreground">Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will archive{" "}
+                  <span className="font-semibold text-foreground">
+                    {teams.find((t) => t.id === deleteTeamId)?.name}
+                  </span>
+                  . Members will be moved to unassigned.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>No</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmDeleteTeam}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Yes
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         <Separator className="my-8" />

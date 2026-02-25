@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-02-25 (Member Data Persistence — Soft Delete & Archive on Move)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Settings page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225220000_add_is_active_to_members.sql`, `supabase/migrations/20250224000000_create_all_tables.sql`)
+
+**Rationale:** When a member was deleted, their row was hard-deleted from the database, which cascade-deleted all associated weekly funnel data and win entries — permanently destroying their contributions on that team. When a member was moved to another team, their data followed them via the `team_id` update, causing the old team to lose all historical records. Managers need a member's data to persist on the team where it was generated, regardless of whether the member is later deleted or reassigned.
+
+**Changes:**
+- Added `is_active` (boolean, default `true`) column to the `members` table via new migration `20250225220000_add_is_active_to_members.sql`; also updated the base migration for fresh environments.
+- Applied the migration to the live Supabase project.
+- Changed `weekly_funnels` and `win_entries` foreign keys from `ON DELETE CASCADE` to `ON DELETE RESTRICT` to prevent accidental hard-deletes from destroying data.
+- Added `is_active: boolean` to the `DbMember` TypeScript interface and `isActive: boolean` to the `TeamMember` app interface.
+- **Delete member** (`removeMember`): Changed from `DELETE` to `UPDATE is_active = false`. The member row stays on its team with all funnel/win data intact.
+- **Move to another team** (`assignMember` team-to-team): Archives the member on the source team (`is_active = false`), then creates a fresh new member record on the target team. Old team keeps all historical data; new team starts clean.
+- **Unassign from team** (`unassignMember`): Archives the member on the old team (`is_active = false`), then creates a fresh unassigned member record. Old team keeps all historical data.
+- **Delete team** (`removeTeam`): Only active members are moved to the unassigned pool; archived members are detached but preserved.
+- **Initial load**: Unassigned pool only includes active members; archived unassigned members are excluded from the Settings member list.
+- **Win Goals section** (all pilot pages): Active members shown with full edit controls; archived members appear in a "Former Members" subsection below, grayed out at 50% opacity with read-only progress bars.
+- **Player's Section funnels** (all pilot pages): Only active members are shown — archived members cannot submit new weekly data.
+- **Weekly Data grid** (all pilot pages): All members displayed; archived members labeled as "Former" in italicized muted text beneath their name.
+- **Funnel Overview chart** (all pilot pages): Team totals include all members' data (active + archived). Player selector marks former members with "(Former)" suffix and reduced opacity.
+- **Win Stories** (all pilot pages): Stories from archived members continue to display.
+- **Team header** (all pilot pages): Members count reflects only active members.
+- **Settings page**: Only active members appear in the member management table. Team cards show active member count.
+---
+
+## 2026-02-25 (Team Delete Confirmation & Soft Delete)
+
+### Location – Settings page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225220000_add_archived_at_to_teams.sql`)
+
+**Rationale:** The team delete button on the Settings page removed teams from the database immediately with no confirmation, risking accidental data loss. Teams should never be hard-deleted — archiving preserves historical data integrity while still removing them from the active UI.
+
+**Changes:**
+- Added a confirmation `AlertDialog` modal to the team delete button: displays "Are you sure?" with the team name, and Yes/No action buttons. The "Yes" button uses destructive (red) styling for clarity.
+- Created Supabase migration (`20250225220000_add_archived_at_to_teams.sql`) adding an `archived_at` timestamptz column (nullable, default null) to the `teams` table.
+- Added `archived_at: string | null` to the `DbTeam` TypeScript interface.
+- Changed `removeTeam` in `TeamsContext` from `supabase.from("teams").delete()` to `supabase.from("teams").update({ archived_at: <timestamp> })`, performing a soft delete instead of a hard delete.
+- Updated the initial teams query to filter with `.is("archived_at", null)` so archived teams are excluded from the UI on load.
+- Members of an archived team are still moved to unassigned, matching prior behavior.
+- Toast message updated from "Team removed" to "Team archived" to reflect the new behavior.
+- All pilot/project pages are unaffected — they already consume the filtered teams list from context.
+---
+
+## 2026-02-25 (Sticky Navigation Header)
+
+### Location – All pages (`src/App.tsx`)
+
+**Rationale:** The top navigation header scrolled off-screen on longer pages, forcing users to scroll back to the top to switch between pilots, access Data & Findings, or open Settings. Making the header sticky keeps navigation always accessible regardless of scroll position.
+
+**Changes:**
+- Added `sticky top-0 z-50` Tailwind classes to the `<nav>` element in the `Nav` component, pinning it to the top of the viewport on scroll.
+- `z-50` ensures the header renders above all page content and overlapping elements.
+- Change applies to all pages since the Nav component is shared across the entire app.
+---
+
 ## 2026-02-25 (Date-Driven Test Phases Progress Bar)
 
 ### Location – Pilots pages (`src/pages/Index.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225200000_create_team_phase_labels.sql`)

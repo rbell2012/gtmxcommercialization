@@ -12,6 +12,7 @@ create table if not exists public.teams (
   owner      text        not null default '',
   lead_rep   text        not null default '',
   sort_order integer     not null default 0,
+  is_active  boolean     not null default true,
   start_date date,
   end_date   date,
   created_at timestamptz not null default now(),
@@ -31,6 +32,7 @@ create table if not exists public.members (
   name         text        not null,
   goal         integer     not null default 30,
   ducks_earned integer     not null default 0,
+  is_active    boolean     not null default true,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );

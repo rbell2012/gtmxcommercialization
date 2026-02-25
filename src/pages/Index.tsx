@@ -356,12 +356,12 @@ const Index = () => {
       ...team,
       members: [
         ...team.members,
-        { id: memberId, name: newName.trim(), goal, wins: [], ducksEarned: 0, funnelByWeek: {} },
+        { id: memberId, name: newName.trim(), goal, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true },
       ],
     }));
     supabase
       .from("members")
-      .insert({ id: memberId, name: newName.trim(), goal, team_id: activeTab, ducks_earned: 0 })
+      .insert({ id: memberId, name: newName.trim(), goal, team_id: activeTab, ducks_earned: 0, is_active: true })
       .then();
     setNewName("");
     setNewGoal("");
@@ -617,7 +617,7 @@ const Index = () => {
                 </Button>
               </div>
               <div className="space-y-4">
-                {members.map((m, i) => {
+                {members.filter((m) => m.isActive).map((m, i) => {
                   const totalWins = getMemberTotalWins(m);
                   const pct = Math.min((totalWins / m.goal) * 100, 100);
                   return (
@@ -659,6 +659,26 @@ const Index = () => {
                     </div>
                   );
                 })}
+                {members.some((m) => !m.isActive) && (
+                  <div className="mt-4 pt-4 border-t border-border/50">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Former Members</p>
+                    {members.filter((m) => !m.isActive).map((m, i) => {
+                      const totalWins = getMemberTotalWins(m);
+                      const pct = Math.min((totalWins / m.goal) * 100, 100);
+                      return (
+                        <div key={m.id} className="opacity-50 mb-3">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-sm font-medium text-muted-foreground">{m.name}</span>
+                            <span className="text-sm text-muted-foreground">{totalWins} / {m.goal} ({pct.toFixed(0)}%)</span>
+                          </div>
+                          <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+                            <div className={`h-full rounded-full transition-all duration-700 ease-out ${i % 2 === 0 ? "progress-bar-orange" : "progress-bar-blue"}`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -788,6 +808,7 @@ function TeamTab({
 }) {
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
+  const activeMembers = members.filter((m) => m.isActive);
   const teamTotal = members.reduce((s, m) => getMemberTotalWins(m), 0);
 
   const recentWeeks = getWeekKeys(2);
@@ -847,7 +868,7 @@ function TeamTab({
                     <Users className="h-5 w-5 text-secondary-foreground/70" />
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Members</p>
-                      <p className="font-display text-2xl font-bold text-secondary-foreground">{members.length}</p>
+                      <p className="font-display text-2xl font-bold text-secondary-foreground">{activeMembers.length}</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -920,7 +941,7 @@ function TeamTab({
           </div>
 
           {/* Empty state - add first member via Manager Inputs Win Goals */}
-          {members.length === 0 && (
+          {activeMembers.length === 0 && (
             <div className="rounded-lg border border-border border-dashed bg-card/50 p-10 text-center glow-card">
               <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
               <p className="mb-4 text-muted-foreground">No members yet on {team.name}</p>
@@ -949,14 +970,14 @@ function TeamTab({
         </div>
         <div className="space-y-6">
 
-          {members.length > 0 && (
+          {activeMembers.length > 0 && (
             <div className="rounded-lg border border-border bg-card p-5 glow-card">
               <div className="mb-4 flex items-baseline justify-between">
                 <h3 className="font-display text-lg font-semibold text-foreground">Your Funnels</h3>
                 <span className="text-xs text-muted-foreground italic">Update weekly by Tuesday 12pm EST</span>
               </div>
               <div className="space-y-4">
-                {members.map((m) => {
+                {activeMembers.map((m) => {
                   const f = getMemberFunnel(m, currentWeek);
                   const role = (m.funnelByWeek?.[currentWeek] as WeeklyFunnel)?.role;
                   const upsertFunnelField = (updates: Record<string, unknown>) => {
@@ -1193,8 +1214,9 @@ function TeamTab({
                     ...metricRows.map((met, metIdx) => (
                       <tr key={`${m.id}-${met.key}`} className={`${metIdx === 0 ? "border-t-2 border-border" : ""}`}>
                       {metIdx === 0 && (
-                          <td rowSpan={metricRows.length + 4} className="py-2 px-2 font-semibold text-foreground align-top border-r border-border/50">
+                          <td rowSpan={metricRows.length + 4} className={`py-2 px-2 font-semibold align-top border-r border-border/50 ${m.isActive ? 'text-foreground' : 'text-muted-foreground italic'}`}>
                             {m.name}
+                            {!m.isActive && <span className="block text-[10px] font-normal not-italic text-muted-foreground/60">Former</span>}
                           </td>
                         )}
                         <td className="py-1 px-2 text-xs text-muted-foreground">{met.label}</td>
@@ -1397,11 +1419,11 @@ function WeekOverWeekView({ team }: { team: Team }) {
                   className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all flex flex-col items-center ${
                     isActive
                       ? "shadow"
-                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      : `bg-muted text-muted-foreground hover:bg-muted/80 ${!m.isActive ? "opacity-50" : ""}`
                   }`}
                   style={isActive ? { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length], color: "white" } : {}}
                 >
-                  <span>{m.name}</span>
+                  <span>{m.name}{!m.isActive ? " (Former)" : ""}</span>
                   <span className="text-[10px] opacity-70 font-normal">{role}</span>
                 </button>
               );
