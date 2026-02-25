@@ -54,6 +54,69 @@
     --win-gradient: linear-gradient(135deg, hsl(24 100% 62%), hsl(30 100% 55%));
     --goal-gradient: linear-gradient(90deg, hsl(24 100% 62%), hsl(215 65% 38%));
     --card-glow: 0 4px 20px hsl(215 65% 38% / 0.06);
+
+    --chart-grid: hsl(220 14% 88%);
+    --chart-axis-text: hsl(220 10% 45%);
+    --chart-axis-line: hsl(220 14% 88%);
+    --chart-tooltip-bg: hsl(0 0% 100%);
+    --chart-tooltip-border: hsl(220 14% 88%);
+    --chart-tooltip-text: hsl(220 25% 12%);
+  }
+
+  .dark {
+    --background: 0 0% 7%;
+    --foreground: 0 0% 87%;
+
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 87%;
+
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 87%;
+
+    --primary: 24 80% 55%;
+    --primary-foreground: 0 0% 7%;
+
+    --secondary: 215 45% 42%;
+    --secondary-foreground: 0 0% 87%;
+
+    --muted: 220 10% 16%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 215 45% 42%;
+    --accent-foreground: 0 0% 87%;
+
+    --destructive: 0 55% 48%;
+    --destructive-foreground: 0 0% 87%;
+
+    --border: 220 8% 22%;
+    --input: 220 8% 22%;
+    --ring: 24 80% 55%;
+
+    --chart-1: 24 80% 55%;
+    --chart-2: 215 45% 50%;
+    --chart-3: 24 70% 58%;
+    --chart-4: 210 50% 52%;
+    --chart-5: 30 75% 50%;
+
+    --sidebar-background: 0 0% 9%;
+    --sidebar-foreground: 0 0% 87%;
+    --sidebar-primary: 24 80% 55%;
+    --sidebar-primary-foreground: 0 0% 7%;
+    --sidebar-accent: 220 10% 16%;
+    --sidebar-accent-foreground: 0 0% 87%;
+    --sidebar-border: 220 8% 22%;
+    --sidebar-ring: 24 80% 55%;
+
+    --win-gradient: linear-gradient(135deg, hsl(24 80% 55%), hsl(30 75% 50%));
+    --goal-gradient: linear-gradient(90deg, hsl(24 80% 55%), hsl(215 45% 42%));
+    --card-glow: 0 4px 20px hsl(215 45% 42% / 0.12);
+
+    --chart-grid: hsl(220 8% 22%);
+    --chart-axis-text: hsl(0 0% 60%);
+    --chart-axis-line: hsl(220 8% 22%);
+    --chart-tooltip-bg: hsl(0 0% 14%);
+    --chart-tooltip-border: hsl(220 8% 25%);
+    --chart-tooltip-text: hsl(0 0% 87%);
   }
 }
 
@@ -87,12 +150,23 @@
   }
 
   .progress-bar-orange {
-    background: hsl(24 95% 53%);
+    background: hsl(var(--chart-1));
   }
 
   .progress-bar-blue {
-    background: hsl(210 80% 45%);
+    background: hsl(var(--chart-2));
   }
+
+  .dark-dim {
+    @apply transition-[filter] duration-300;
+  }
+  .dark .dark-dim {
+    filter: brightness(0.85) saturate(0.9);
+  }
+}
+
+html {
+  transition: color 0.2s ease, background-color 0.2s ease;
 }
 
 @keyframes floatDuck {

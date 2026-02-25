@@ -29,12 +29,12 @@ export function HexEmbed() {
     return () => { cancelled = true }
   }, [])
 
-  if (loading) return <div className="flex h-96 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-500">Loading Hex…</div>
-  if (error) return <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">{error}</div>
+  if (loading) return <div className="flex h-96 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">Loading Hex…</div>
+  if (error) return <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-destructive">{error}</div>
   if (!embedUrl) return null
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm dark-dim">
       <iframe
         title="Hex project: findings data"
         src={embedUrl}

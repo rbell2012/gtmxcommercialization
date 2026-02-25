@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
+import { useChartColors } from "@/hooks/useChartColors";
 
 interface TestPhase {
   id: string;
@@ -54,14 +55,6 @@ function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
 function getMemberTotalWins(m: TeamMember): number {
   return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
 }
-
-const BAR_COLORS = [
-  "hsl(24, 95%, 53%)",
-  "hsl(210, 80%, 45%)",
-  "hsl(30, 100%, 48%)",
-  "hsl(200, 70%, 50%)",
-  "hsl(15, 85%, 55%)",
-];
 
 // Duck component
 const Duck = ({ size = 24 }: { size?: number }) => (
@@ -411,7 +404,7 @@ const Index = () => {
           {/* Segmented progress bar */}
           <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
             {phases.map((phase, i) => {
-              const colors = ["hsl(24, 95%, 53%)", "hsl(210, 80%, 45%)", "hsl(30, 100%, 48%)", "hsl(160, 60%, 45%)", "hsl(280, 60%, 55%)", "hsl(45, 80%, 50%)"];
+              const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
               const widthPct = 100 / phases.length;
               const fillPct = phase.progress;
               return (
@@ -733,11 +726,20 @@ function TeamTab({
                   </h3>
                   <p className="text-sm font-medium text-secondary-foreground/70">Led by {team.owner}</p>
                 </div>
-                <div className="text-right">
-                  <div className="font-display text-4xl font-black text-primary">
-                    {teamTotal}<span className="text-lg font-bold text-secondary-foreground/60">/{teamGoalTotal}</span>
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-2 text-right">
+                    <Users className="h-5 w-5 text-secondary-foreground/70" />
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Members</p>
+                      <p className="font-display text-2xl font-bold text-secondary-foreground">{members.length}</p>
+                    </div>
                   </div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Wins</p>
+                  <div className="text-right">
+                    <div className="font-display text-4xl font-black text-primary">
+                      {teamTotal}<span className="text-lg font-bold text-secondary-foreground/60">/{teamGoalTotal}</span>
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Wins</p>
+                  </div>
                 </div>
               </div>
               <div className="mb-2 flex items-center justify-between">
@@ -791,8 +793,7 @@ function TeamTab({
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StatCard icon={<Users className="h-5 w-5 text-primary" />} label="Members" value={members.length} />
+          <div className="grid grid-cols-1 gap-4">
             <StatCard icon={<TrendingUp className="h-5 w-5 text-accent" />} label="Total Wins" value={teamTotal} />
           </div>
 
@@ -1114,16 +1115,17 @@ function TeamTab({
 function WeekOverWeekView({ team }: { team: Team }) {
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set(["Call", "Connect", "Demo", "Win"]));
+  const chartColors = useChartColors();
   const members = team.members;
   const weeks = getWeekKeys(8);
   const currentWeek = getCurrentWeekKey();
 
   const METRIC_COLORS: Record<string, string> = {
-    TAM: "hsl(340, 65%, 50%)",
-    Call: "hsl(215, 65%, 50%)",
-    Connect: "hsl(140, 60%, 40%)",
-    Demo: "hsl(280, 60%, 55%)",
-    Win: "hsl(24, 100%, 55%)",
+    TAM: "hsl(340, 55%, 55%)",
+    Call: "hsl(215, 55%, 55%)",
+    Connect: "hsl(140, 50%, 45%)",
+    Demo: "hsl(280, 50%, 58%)",
+    Win: "hsl(24, 85%, 55%)",
   };
   const metricKeys: { key: keyof FunnelData; label: string }[] = [
     { key: "tam", label: "TAM" },
@@ -1170,11 +1172,11 @@ function WeekOverWeekView({ team }: { team: Team }) {
 
   const selectedMembers = members.filter((m) => selectedPlayers.has(m.id));
   const PLAYER_COLORS = [
-    "hsl(350, 70%, 55%)",
-    "hsl(180, 50%, 40%)",
-    "hsl(45, 80%, 50%)",
-    "hsl(300, 50%, 50%)",
-    "hsl(160, 60%, 35%)",
+    "hsl(350, 60%, 58%)",
+    "hsl(180, 45%, 48%)",
+    "hsl(45, 70%, 55%)",
+    "hsl(300, 45%, 55%)",
+    "hsl(160, 50%, 42%)",
   ];
 
   return (
@@ -1206,10 +1208,10 @@ function WeekOverWeekView({ team }: { team: Team }) {
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 14%, 88%)" />
-            <XAxis dataKey="week" tick={{ fill: "hsl(220, 10%, 45%)", fontSize: 12 }} axisLine={{ stroke: "hsl(220, 14%, 88%)" }} tickLine={false} />
-            <YAxis allowDecimals={false} tick={{ fill: "hsl(220, 10%, 45%)", fontSize: 12 }} axisLine={{ stroke: "hsl(220, 14%, 88%)" }} tickLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: "hsl(0, 0%, 100%)", border: "1px solid hsl(220, 14%, 88%)", borderRadius: "8px", color: "hsl(220, 25%, 12%)" }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+            <XAxis dataKey="week" tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
+            <YAxis allowDecimals={false} tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
+            <Tooltip contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, borderRadius: "8px", color: chartColors.tooltipText }} />
             <Legend />
             {/* Team total lines — only for selected metrics */}
             {metricKeys.map(({ label }) =>

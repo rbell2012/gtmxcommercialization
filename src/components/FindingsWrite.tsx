@@ -30,15 +30,15 @@ export function FindingsWrite({ onSaved }: Props) {
         value={content}
         onChange={(e) => setContent(e.target.value)}
         placeholder="Add a finding or note…"
-        className="w-full rounded-lg border border-slate-300 p-3 text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500"
+        className="w-full rounded-lg border border-input bg-background p-3 text-foreground shadow-sm focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
         rows={4}
         disabled={saving}
       />
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
       <button
         type="submit"
         disabled={saving || !content.trim()}
-        className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
       >
         {saving ? 'Saving…' : 'Save to Supabase'}
       </button>

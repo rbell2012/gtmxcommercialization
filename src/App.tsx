@@ -4,11 +4,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { Settings } from "lucide-react";
+import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import Data from "./pages/Data";
 import SettingsPage from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { TeamsProvider, useTeams, pilotNameToSlug } from "./contexts/TeamsContext";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const queryClient = new QueryClient();
 
@@ -42,39 +44,44 @@ function Nav() {
       >
         Data &amp; Findings
       </Link>
-      <Link
-        to="/settings"
-        className={`ml-auto flex items-center gap-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
-          location.pathname === "/settings" ? "text-primary" : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        <Settings className="h-3.5 w-3.5" />
-        Settings
-      </Link>
+      <div className="ml-auto flex items-center gap-2">
+        <ThemeToggle />
+        <Link
+          to="/settings"
+          className={`flex items-center gap-1.5 text-sm font-medium whitespace-nowrap transition-colors ${
+            location.pathname === "/settings" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Settings
+        </Link>
+      </div>
     </nav>
   );
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <TeamsProvider>
-        <BrowserRouter>
-          <Nav />
-          <Routes>
-            <Route path="/" element={<Navigate to="/Pilots" replace />} />
-            <Route path="/Pilots" element={<Index />} />
-            <Route path="/Pilots/:pilotId" element={<Index />} />
-            <Route path="/data" element={<Data />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TeamsProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange={false}>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <TeamsProvider>
+          <BrowserRouter>
+            <Nav />
+            <Routes>
+              <Route path="/" element={<Navigate to="/Pilots" replace />} />
+              <Route path="/Pilots" element={<Index />} />
+              <Route path="/Pilots/:pilotId" element={<Index />} />
+              <Route path="/data" element={<Data />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TeamsProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;
