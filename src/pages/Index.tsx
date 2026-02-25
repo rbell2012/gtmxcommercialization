@@ -192,10 +192,6 @@ const Index = () => {
     updateMission,
     missionSubmitted,
     updateMissionSubmitted,
-    totalTam,
-    updateTotalTam,
-    tamSubmitted,
-    updateTamSubmitted,
     customRoles,
     addCustomRole,
   } = useManagerInputs();
@@ -568,33 +564,35 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Total TAM */}
-        <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${tamSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+        {/* Total TAM (per-team) */}
+        {activeTeam && (
+        <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${activeTeam.tamSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
               <Input
                 type="number"
                 min={0}
-                value={totalTam || ""}
-                onChange={(e) => updateTotalTam(Math.max(0, parseInt(e.target.value) || 0))}
+                value={activeTeam.totalTam || ""}
+                onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, totalTam: Math.max(0, parseInt(e.target.value) || 0) }))}
                 className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
                 placeholder="0"
-                disabled={tamSubmitted}
+                disabled={activeTeam.tamSubmitted}
               />
-              {tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+              {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
             </div>
-            {!tamSubmitted ? (
-              <Button size="sm" onClick={() => updateTamSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+            {!activeTeam.tamSubmitted ? (
+              <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, tamSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                 Submit
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => updateTamSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
+              <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, tamSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
                 Edit
               </Button>
             )}
           </div>
         </div>
+        )}
 
         {/* Win Goals - active team only */}
         {teams.filter((t) => t.id === activeTab).map((team) => {
@@ -701,7 +699,6 @@ const Index = () => {
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
                 team={team}
-                totalTam={totalTam}
                 onAddMemberClick={() => {
                   const isFirst = teams[0].id === team.id;
                   navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
@@ -767,7 +764,6 @@ const Index = () => {
 
 function TeamTab({
   team,
-  totalTam,
   onAddMemberClick,
   selectedMember,
   setSelectedMember,
@@ -787,7 +783,6 @@ function TeamTab({
   addRole,
 }: {
   team: Team;
-  totalTam: number;
   onAddMemberClick: () => void;
   selectedMember: string;
   setSelectedMember: (v: string) => void;
@@ -908,7 +903,7 @@ function TeamTab({
                   return (
                     <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-primary">{totalTam > 0 ? ((totals.calls / totalTam) * 100).toFixed(0) : 0}%</p>
+                        <p className="font-display text-lg font-bold text-primary">{team.totalTam > 0 ? ((totals.calls / team.totalTam) * 100).toFixed(0) : 0}%</p>
                         <p className="text-[10px] text-secondary-foreground/50">TAM→Call</p>
                       </div>
                       <div className="rounded-md bg-secondary-foreground/5 py-2">

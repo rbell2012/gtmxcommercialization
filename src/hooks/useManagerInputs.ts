@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import type { DbTestPhase, DbMission, DbTamConfig, DbCustomRole } from "@/lib/database.types";
+import type { DbTestPhase, DbMission, DbCustomRole } from "@/lib/database.types";
 
 export interface TestPhase {
   id: string;
@@ -20,9 +20,6 @@ export function useManagerInputs() {
   const [missionPurpose, setMissionPurpose] = useState("");
   const [missionSubmitted, setMissionSubmitted] = useState(false);
   const [missionRowId, setMissionRowId] = useState<string | null>(null);
-  const [totalTam, setTotalTam] = useState(0);
-  const [tamSubmitted, setTamSubmitted] = useState(false);
-  const [tamRowId, setTamRowId] = useState<string | null>(null);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,10 +27,9 @@ export function useManagerInputs() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [pRes, misRes, tamRes, rolesRes] = await Promise.all([
+      const [pRes, misRes, rolesRes] = await Promise.all([
         supabase.from("test_phases").select("*").order("sort_order"),
         supabase.from("mission").select("*").limit(1).single(),
-        supabase.from("tam_config").select("*").limit(1).single(),
         supabase.from("custom_roles").select("*").order("created_at"),
       ]);
       if (cancelled) return;
@@ -54,13 +50,6 @@ export function useManagerInputs() {
         setMissionRowId(m.id);
         setMissionPurpose(m.content);
         setMissionSubmitted(m.submitted);
-      }
-
-      if (tamRes.data) {
-        const t = tamRes.data as DbTamConfig;
-        setTamRowId(t.id);
-        setTotalTam(t.total_tam);
-        setTamSubmitted(t.submitted);
       }
 
       if (rolesRes.data) {
@@ -120,21 +109,6 @@ export function useManagerInputs() {
     }
   }, [missionRowId]);
 
-  // ── TAM persistence ──
-  const updateTotalTam = useCallback((value: number) => {
-    setTotalTam(value);
-    if (tamRowId) {
-      supabase.from("tam_config").update({ total_tam: value }).eq("id", tamRowId).then();
-    }
-  }, [tamRowId]);
-
-  const updateTamSubmitted = useCallback((submitted: boolean) => {
-    setTamSubmitted(submitted);
-    if (tamRowId) {
-      supabase.from("tam_config").update({ submitted }).eq("id", tamRowId).then();
-    }
-  }, [tamRowId]);
-
   // ── custom roles persistence ──
   const addCustomRole = useCallback((name: string) => {
     setCustomRoles((prev) => [...prev, name]);
@@ -149,10 +123,6 @@ export function useManagerInputs() {
     updateMission,
     missionSubmitted,
     updateMissionSubmitted,
-    totalTam,
-    updateTotalTam,
-    tamSubmitted,
-    updateTamSubmitted,
     customRoles,
     addCustomRole,
     loading,

@@ -7,6 +7,8 @@ export interface DbTeam {
   is_active: boolean;
   start_date: string | null;
   end_date: string | null;
+  total_tam: number;
+  tam_submitted: boolean;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

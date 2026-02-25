@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-02-25 (Inline-Editable Member Name & Goal in Settings)
+
+### Location – Settings page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Editing a member's name or win goal required deleting and recreating the member, which destroyed all associated funnel data and win entries. Managers need a quick, friction-free way to correct typos in names or adjust goals without leaving the members table or losing any historical data.
+
+**Changes:**
+- Added `updateMember(memberId, { name?, goal? })` function to `TeamsContext` that updates the member in both `teams` and `unassignedMembers` local state, then persists the changed fields to Supabase via `members.update()`.
+- Exposed `updateMember` on the `TeamsContextType` interface and the provider value.
+- Made the **Name** column in the Settings members table inline-editable: clicking the name replaces it with a focused text input; pressing Enter or blurring saves the change; pressing Escape cancels.
+- Made the **Goal** column inline-editable with the same interaction pattern, using a number input.
+- A small pencil icon (`Edit2`) appears on hover for both columns to signal editability.
+- The active input is auto-focused and text is pre-selected for quick replacement.
+- Toast notifications confirm each successful update with the new value.
+- Invalid edits (empty name, non-positive goal) are silently discarded without persisting.
+- All pilot/project pages are unaffected — they consume the updated member data from context automatically.
+---
+
 ## 2026-02-25 (Member Data Persistence — Soft Delete & Archive on Move)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Settings page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`supabase/migrations/20250225220000_add_is_active_to_members.sql`, `supabase/migrations/20250224000000_create_all_tables.sql`)

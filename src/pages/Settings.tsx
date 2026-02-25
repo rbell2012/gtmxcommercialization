@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +53,7 @@ const Settings = () => {
     assignMember,
     unassignMember,
     removeMember,
+    updateMember,
   } = useTeams();
   const { toast } = useToast();
 
@@ -107,6 +108,46 @@ const Settings = () => {
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
+
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<"name" | "goal" | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+  const inlineInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingMemberId && inlineInputRef.current) {
+      inlineInputRef.current.focus();
+      inlineInputRef.current.select();
+    }
+  }, [editingMemberId, editingField]);
+
+  const startInlineEdit = (memberId: string, field: "name" | "goal", currentValue: string) => {
+    setEditingMemberId(memberId);
+    setEditingField(field);
+    setEditingValue(currentValue);
+  };
+
+  const saveInlineEdit = () => {
+    if (!editingMemberId || !editingField) return;
+    const trimmed = editingValue.trim();
+    if (editingField === "name" && trimmed) {
+      updateMember(editingMemberId, { name: trimmed });
+      toast({ title: "Member updated", description: `Name changed to ${trimmed}.` });
+    } else if (editingField === "goal") {
+      const num = parseInt(trimmed);
+      if (!isNaN(num) && num > 0) {
+        updateMember(editingMemberId, { goal: num });
+        toast({ title: "Member updated", description: `Goal changed to ${num}.` });
+      }
+    }
+    cancelInlineEdit();
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingMemberId(null);
+    setEditingField(null);
+    setEditingValue("");
+  };
 
   const handleCreateTeam = () => {
     if (!newTeamName.trim()) return;
@@ -548,16 +589,63 @@ const Settings = () => {
                       className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
                     >
                       <td className="py-3 px-4 font-medium text-foreground">
-                        <div className="flex items-center gap-2">
-                          {m.name}
-                          {!m.teamId && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              Unassigned
-                            </Badge>
-                          )}
-                        </div>
+                        {editingMemberId === m.id && editingField === "name" ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              ref={inlineInputRef}
+                              value={editingValue}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveInlineEdit();
+                                if (e.key === "Escape") cancelInlineEdit();
+                              }}
+                              onBlur={saveInlineEdit}
+                              className="h-7 w-40 text-sm bg-background border-border/50"
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className="flex items-center gap-2 cursor-pointer group/name rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
+                            onClick={() => startInlineEdit(m.id, "name", m.name)}
+                            title="Click to edit"
+                          >
+                            {m.name}
+                            <Edit2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover/name:opacity-100 transition-opacity shrink-0" />
+                            {!m.teamId && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                Unassigned
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-center text-foreground tabular-nums">{m.goal}</td>
+                      <td className="py-3 px-4 text-center text-foreground tabular-nums">
+                        {editingMemberId === m.id && editingField === "goal" ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <Input
+                              ref={inlineInputRef}
+                              type="number"
+                              value={editingValue}
+                              onChange={(e) => setEditingValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveInlineEdit();
+                                if (e.key === "Escape") cancelInlineEdit();
+                              }}
+                              onBlur={saveInlineEdit}
+                              className="h-7 w-20 text-sm text-center bg-background border-border/50"
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="cursor-pointer inline-flex items-center gap-1 group/goal rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
+                            onClick={() => startInlineEdit(m.id, "goal", String(m.goal))}
+                            title="Click to edit"
+                          >
+                            {m.goal}
+                            <Edit2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover/goal:opacity-100 transition-opacity shrink-0" />
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <Select
                           value={m.teamId || "unassigned"}
