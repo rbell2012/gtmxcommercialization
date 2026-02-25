@@ -9,6 +9,13 @@ export interface DbTeam {
   end_date: string | null;
   total_tam: number;
   tam_submitted: boolean;
+  goals_parity: boolean;
+  team_goal_accounts: number;
+  team_goal_calls: number;
+  team_goal_ops: number;
+  team_goal_demos: number;
+  team_goal_wins: number;
+  team_goal_feedback: number;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -19,6 +26,12 @@ export interface DbMember {
   team_id: string | null;
   name: string;
   goal: number;
+  goal_accounts: number;
+  goal_calls: number;
+  goal_ops: number;
+  goal_demos: number;
+  goal_wins: number;
+  goal_feedback: number;
   ducks_earned: number;
   is_active: boolean;
   created_at: string;
@@ -31,10 +44,13 @@ export interface DbWeeklyFunnel {
   week_key: string;
   role: string | null;
   tam: number;
+  accounts: number;
   calls: number;
   connects: number;
+  ops: number;
   demos: number;
   wins: number;
+  feedback: number;
   submitted: boolean;
   submitted_at: string | null;
 }

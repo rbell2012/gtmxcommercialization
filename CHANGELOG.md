@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-02-25 (Add Accounts & Feedback Fields to Weekly Funnels + Goals System)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`weekly_funnels`, `members`, `teams` tables)
+
+**Rationale:** The weekly funnel input form and data grid were missing two key data points: **Accounts** (the number of accounts a rep is working) and **Feedback** (a numeric feedback score). Both needed to be captured per member per week and displayed throughout the UI — in the "Your Funnels" input form, the "Weekly Data" read-only grid, and the "Funnel Overview" chart.
+
+**Changes:**
+- **Supabase migrations**: Added `accounts` (integer, default 0) and `feedback` (integer, default 0) columns to the `weekly_funnels` table. Added per-member goal columns (`goal_accounts`, `goal_calls`, `goal_ops`, `goal_demos`, `goal_wins`, `goal_feedback`) to the `members` table. Added team-level goal columns and `goals_parity` flag to the `teams` table.
+- **Database types** (`database.types.ts`): Updated `DbWeeklyFunnel` with `accounts`, `ops`, and `feedback` fields. Updated `DbMember` with per-metric goal columns. Updated `DbTeam` with team goal columns and `goals_parity`.
+- **TeamsContext**: Introduced a `GOAL_METRICS` system with `MemberGoals` type and `DEFAULT_GOALS`. Replaced the single `goal` field on `TeamMember` with a `goals` record keyed by metric. Added `goalsParity` and `teamGoals` to `Team`. Updated `dbMemberToApp`, `assembleTeams`, and all mutation functions (`createMember`, `updateMember`, `assignMember`, `unassignMember`, `updateTeam`) to handle the new goals structure and persist all fields to Supabase.
+- **Your Funnels section** (`Index.tsx`): Added **Accounts** numeric input before "Cx Called" and **Feedback** numeric input as the last field. Grid expanded from 4 to 6 columns (`sm:grid-cols-3 lg:grid-cols-6`).
+- **Weekly Data grid** (`Index.tsx`): Added **Accounts** metric row between TAM and Call, and **Feedback** metric row after Win. Both display per-week values with totals, consistent with all other numeric metrics.
+- **Funnel Overview chart** (`Index.tsx`): Added Accounts and Feedback as chartable metrics with dedicated colors. Both are included in the default selected metrics.
+- **All Supabase upsert calls**: Updated to include `accounts` and `feedback` fields so data is preserved during TAM submission and weekly funnel upserts.
+---
+
 ## 2026-02-25 (Superhex `activity_week` Column Changed to Date Type)
 
 ### Location – Database (Supabase `superhex` table), `supabase/migrations/20250225240000_create_superhex.sql`

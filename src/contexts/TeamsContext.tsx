@@ -2,6 +2,33 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { supabase } from "@/lib/supabase";
 import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry } from "@/lib/database.types";
 
+// ── Goal metrics system ──
+
+export const GOAL_METRICS = ['accounts', 'calls', 'ops', 'demos', 'wins', 'feedback'] as const;
+export type GoalMetric = (typeof GOAL_METRICS)[number];
+
+export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
+  accounts: 'Accounts',
+  calls: 'Calls',
+  ops: 'Ops',
+  demos: 'Demos',
+  wins: 'Wins',
+  feedback: 'Feedback',
+};
+
+export type MemberGoals = Record<GoalMetric, number>;
+
+export const DEFAULT_GOALS: MemberGoals = {
+  accounts: 0,
+  calls: 0,
+  ops: 0,
+  demos: 0,
+  wins: 30,
+  feedback: 0,
+};
+
+// ── App types ──
+
 export interface WinEntry {
   id: string;
   restaurant: string;
@@ -13,10 +40,13 @@ export type WeeklyRole = string;
 
 export interface FunnelData {
   tam: number;
+  accounts: number;
   calls: number;
   connects: number;
+  ops: number;
   demos: number;
   wins: number;
+  feedback: number;
 }
 
 export interface WeeklyFunnel extends FunnelData {
@@ -28,7 +58,7 @@ export interface WeeklyFunnel extends FunnelData {
 export interface TeamMember {
   id: string;
   name: string;
-  goal: number;
+  goals: MemberGoals;
   wins: WinEntry[];
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
@@ -46,6 +76,8 @@ export interface Team {
   endDate: string | null;
   totalTam: number;
   tamSubmitted: boolean;
+  goalsParity: boolean;
+  teamGoals: MemberGoals;
   members: TeamMember[];
 }
 
@@ -64,10 +96,13 @@ function dbMemberToApp(
   for (const f of funnels) {
     funnelByWeek[f.week_key] = {
       tam: f.tam,
+      accounts: f.accounts ?? 0,
       calls: f.calls,
       connects: f.connects,
+      ops: f.ops ?? 0,
       demos: f.demos,
       wins: f.wins,
+      feedback: f.feedback ?? 0,
       role: f.role ?? undefined,
       submitted: f.submitted,
       submittedAt: f.submitted_at ?? undefined,
@@ -76,7 +111,14 @@ function dbMemberToApp(
   return {
     id: row.id,
     name: row.name,
-    goal: row.goal,
+    goals: {
+      accounts: row.goal_accounts ?? 0,
+      calls: row.goal_calls ?? 0,
+      ops: row.goal_ops ?? 0,
+      demos: row.goal_demos ?? 0,
+      wins: row.goal_wins ?? row.goal ?? 30,
+      feedback: row.goal_feedback ?? 0,
+    },
     ducksEarned: row.ducks_earned,
     isActive: row.is_active,
     wins: wins.map((w) => ({
@@ -125,6 +167,15 @@ function assembleTeams(
       endDate: t.end_date,
       totalTam: t.total_tam ?? 0,
       tamSubmitted: t.tam_submitted ?? false,
+      goalsParity: t.goals_parity ?? false,
+      teamGoals: {
+        accounts: t.team_goal_accounts ?? 0,
+        calls: t.team_goal_calls ?? 0,
+        ops: t.team_goal_ops ?? 0,
+        demos: t.team_goal_demos ?? 0,
+        wins: t.team_goal_wins ?? 0,
+        feedback: t.team_goal_feedback ?? 0,
+      },
       members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -145,8 +196,8 @@ interface TeamsContextType {
   removeTeam: (teamId: string) => void;
   reorderTeams: (orderedIds: string[]) => void;
   toggleTeamActive: (teamId: string, isActive: boolean) => void;
-  createMember: (name: string, goal: number) => TeamMember;
-  updateMember: (memberId: string, updates: { name?: string; goal?: number }) => void;
+  createMember: (name: string, goals?: Partial<MemberGoals>) => TeamMember;
+  updateMember: (memberId: string, updates: { name?: string; goals?: Partial<MemberGoals> }) => void;
   assignMember: (memberId: string, targetTeamId: string) => void;
   unassignMember: (memberId: string, fromTeamId: string) => void;
   removeMember: (memberId: string) => void;
@@ -159,6 +210,18 @@ export function useTeams() {
   const ctx = useContext(TeamsContext);
   if (!ctx) throw new Error("useTeams must be used within TeamsProvider");
   return ctx;
+}
+
+function memberGoalsToDbInsert(goals: MemberGoals) {
+  return {
+    goal: goals.wins,
+    goal_accounts: goals.accounts,
+    goal_calls: goals.calls,
+    goal_ops: goals.ops,
+    goal_demos: goals.demos,
+    goal_wins: goals.wins,
+    goal_feedback: goals.feedback,
+  };
 }
 
 export function TeamsProvider({ children }: { children: ReactNode }) {
@@ -208,7 +271,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.startDate !== updated.startDate ||
             old.endDate !== updated.endDate ||
             old.totalTam !== updated.totalTam ||
-            old.tamSubmitted !== updated.tamSubmitted)
+            old.tamSubmitted !== updated.tamSubmitted ||
+            old.goalsParity !== updated.goalsParity ||
+            JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals))
         ) {
           supabase
             .from("teams")
@@ -221,6 +286,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               end_date: updated.endDate,
               total_tam: updated.totalTam,
               tam_submitted: updated.tamSubmitted,
+              goals_parity: updated.goalsParity,
+              team_goal_accounts: updated.teamGoals.accounts,
+              team_goal_calls: updated.teamGoals.calls,
+              team_goal_ops: updated.teamGoals.ops,
+              team_goal_demos: updated.teamGoals.demos,
+              team_goal_wins: updated.teamGoals.wins,
+              team_goal_feedback: updated.teamGoals.feedback,
             })
             .eq("id", teamId)
             .then();
@@ -228,11 +300,20 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         if (old) {
           for (const member of updated.members) {
             const oldMember = old.members.find((m) => m.id === member.id);
-            if (oldMember && oldMember.goal !== member.goal) {
-              supabase.from("members").update({ goal: member.goal }).eq("id", member.id).then();
-            }
-            if (oldMember && oldMember.ducksEarned !== member.ducksEarned) {
-              supabase.from("members").update({ ducks_earned: member.ducksEarned }).eq("id", member.id).then();
+            if (oldMember) {
+              const goalUpdates: Record<string, number> = {};
+              for (const metric of GOAL_METRICS) {
+                if (oldMember.goals[metric] !== member.goals[metric]) {
+                  goalUpdates[`goal_${metric}`] = member.goals[metric];
+                }
+              }
+              if (Object.keys(goalUpdates).length > 0) {
+                goalUpdates.goal = member.goals.wins;
+                supabase.from("members").update(goalUpdates).eq("id", member.id).then();
+              }
+              if (oldMember.ducksEarned !== member.ducksEarned) {
+                supabase.from("members").update({ ducks_earned: member.ducksEarned }).eq("id", member.id).then();
+              }
             }
           }
         }
@@ -249,7 +330,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         const newTeam: Team = {
           id: tempId, name, owner, leadRep: "",
           sortOrder: nextOrder, isActive: true,
-          startDate, endDate, totalTam: 0, tamSubmitted: false, members: [],
+          startDate, endDate, totalTam: 0, tamSubmitted: false,
+          goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
+          members: [],
         };
         supabase
           .from("teams")
@@ -301,26 +384,32 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     supabase.from("teams").update({ is_active: isActive }).eq("id", teamId).then();
   }, []);
 
-  const createMember = useCallback((name: string, goal: number): TeamMember => {
+  const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
     const id = crypto.randomUUID();
-    const member: TeamMember = { id, name, goal, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
+    const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
+    const member: TeamMember = { id, name, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
     setUnassignedMembers((prev) => [...prev, member]);
     supabase
       .from("members")
-      .insert({ id, name, goal, team_id: null, ducks_earned: 0, is_active: true })
+      .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true })
       .then();
     return member;
   }, []);
 
-  const updateMember = useCallback((memberId: string, updates: { name?: string; goal?: number }) => {
+  const updateMember = useCallback((memberId: string, updates: { name?: string; goals?: Partial<MemberGoals> }) => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
-    if (updates.goal !== undefined) dbUpdates.goal = updates.goal;
+    if (updates.goals) {
+      for (const [metric, value] of Object.entries(updates.goals)) {
+        if (value !== undefined) dbUpdates[`goal_${metric}`] = value;
+      }
+      if (updates.goals.wins !== undefined) dbUpdates.goal = updates.goals.wins;
+    }
 
     const applyUpdates = (m: TeamMember): TeamMember => ({
       ...m,
       ...(updates.name !== undefined && { name: updates.name }),
-      ...(updates.goal !== undefined && { goal: updates.goal }),
+      ...(updates.goals && { goals: { ...m.goals, ...updates.goals } }),
     });
 
     setUnassignedMembers((prev) =>
@@ -359,20 +448,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       })?.id;
       if (!member || sourceTeamId === targetTeamId) return prev;
 
-      // Archive the old member on the source team so data persists
       supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
 
-      // Create a fresh member record on the target team
       const newId = crypto.randomUUID();
       supabase
         .from("members")
-        .insert({ id: newId, name: member.name, goal: member.goal, team_id: targetTeamId, ducks_earned: 0, is_active: true })
+        .insert({ id: newId, name: member.name, ...memberGoalsToDbInsert(member.goals), team_id: targetTeamId, ducks_earned: 0, is_active: true })
         .then();
 
       const freshMember: TeamMember = {
         id: newId,
         name: member.name,
-        goal: member.goal,
+        goals: { ...member.goals },
         wins: [],
         ducksEarned: 0,
         funnelByWeek: {},
@@ -395,20 +482,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const member = team?.members.find((m) => m.id === memberId && m.isActive);
       if (!member) return prev;
 
-      // Archive the member on the old team so data persists
       supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
 
-      // Create a fresh unassigned member
       const newId = crypto.randomUUID();
       supabase
         .from("members")
-        .insert({ id: newId, name: member.name, goal: member.goal, team_id: null, ducks_earned: 0, is_active: true })
+        .insert({ id: newId, name: member.name, ...memberGoalsToDbInsert(member.goals), team_id: null, ducks_earned: 0, is_active: true })
         .then();
 
       const freshMember: TeamMember = {
         id: newId,
         name: member.name,
-        goal: member.goal,
+        goals: { ...member.goals },
         wins: [],
         ducksEarned: 0,
         funnelByWeek: {},

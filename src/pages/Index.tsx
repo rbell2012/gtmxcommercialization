@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle, Calendar } from "lucide-react";
-import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
+import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
@@ -100,7 +101,7 @@ function formatDateRange(startDate: string | null, endDate: string | null): stri
   return end ? `${start} – ${end}` : start;
 }
 
-const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 };
+const emptyFunnel: WeeklyFunnel = { tam: 0, accounts: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
 
 function getWeekKeys(count = 8): { key: string; label: string }[] {
   const weeks: { key: string; label: string }[] = [];
@@ -166,6 +167,18 @@ function getMemberTotalWins(m: TeamMember): number {
   return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
 }
 
+function getMemberMetricTotal(m: TeamMember, metric: GoalMetric): number {
+  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + ((f as any)[metric] || 0), 0);
+}
+
+function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMetric): number {
+  if (team.goalsParity) {
+    const activeCount = team.members.filter((m) => m.isActive).length;
+    return activeCount > 0 ? Math.round((team.teamGoals[metric] || 0) / activeCount) : 0;
+  }
+  return member.goals[metric];
+}
+
 function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: string[]): number {
   const idx = orderedWeekKeys.indexOf(weekKey);
   if (idx === -1) return getMemberFunnel(member, weekKey).tam;
@@ -176,14 +189,12 @@ function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: str
   return 0;
 }
 
-// Duck component
 const Duck = ({ size = 24 }: { size?: number }) => (
   <span style={{ fontSize: size }} role="img" aria-label="duck">
     🦆
   </span>
 );
 
-// Celebration overlay
 const DuckCelebration = ({ memberName, onDone }: { memberName: string; onDone: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(onDone, 3000);
@@ -209,7 +220,6 @@ const DuckCelebration = ({ memberName, onDone }: { memberName: string; onDone: (
           ))}
         </div>
       </div>
-      {/* Floating ducks */}
       {[...Array(12)].map((_, i) => (
         <span
           key={`float-${i}`}
@@ -227,6 +237,15 @@ const DuckCelebration = ({ memberName, onDone }: { memberName: string; onDone: (
     </div>
   );
 };
+
+const METRIC_BAR_COLORS: string[] = [
+  "progress-bar-orange",
+  "progress-bar-blue",
+  "progress-bar-orange",
+  "progress-bar-blue",
+  "progress-bar-orange",
+  "progress-bar-blue",
+];
 
 const Index = () => {
   const { pilotId } = useParams<{ pilotId?: string }>();
@@ -260,7 +279,6 @@ const Index = () => {
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
 
-  // Per-team phase labels loaded from Supabase
   const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
 
   useEffect(() => {
@@ -361,9 +379,10 @@ const Index = () => {
       })
       .then();
 
+    const winsGoal = member.goals.wins || 30;
     const newWinCount = member.wins.length + 1;
-    const prevMilestone = Math.floor((member.wins.length / member.goal) * 10);
-    const newMilestone = Math.floor((newWinCount / member.goal) * 10);
+    const prevMilestone = Math.floor((member.wins.length / winsGoal) * 10);
+    const newMilestone = Math.floor((newWinCount / winsGoal) * 10);
     const earnedNewDuck = newMilestone > prevMilestone;
 
     updateTeam(activeTab, (team) => ({
@@ -395,17 +414,23 @@ const Index = () => {
   const addMember = () => {
     if (!newName.trim()) return;
     const memberId = crypto.randomUUID();
-    const goal = parseInt(newGoal) || 30;
+    const winsGoal = parseInt(newGoal) || 30;
+    const goals: MemberGoals = { ...DEFAULT_GOALS, wins: winsGoal };
     updateTeam(activeTab, (team) => ({
       ...team,
       members: [
         ...team.members,
-        { id: memberId, name: newName.trim(), goal, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true },
+        { id: memberId, name: newName.trim(), goals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true },
       ],
     }));
     supabase
       .from("members")
-      .insert({ id: memberId, name: newName.trim(), goal, team_id: activeTab, ducks_earned: 0, is_active: true })
+      .insert({
+        id: memberId, name: newName.trim(),
+        goal: winsGoal, goal_accounts: goals.accounts, goal_calls: goals.calls,
+        goal_ops: goals.ops, goal_demos: goals.demos, goal_wins: goals.wins, goal_feedback: goals.feedback,
+        team_id: activeTab, ducks_earned: 0, is_active: true,
+      })
       .then();
     setNewName("");
     setNewGoal("");
@@ -537,7 +562,6 @@ const Index = () => {
           </div>
           {computedPhases.length > 0 ? (
             <>
-              {/* Segmented progress bar */}
               <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
                 {computedPhases.map((phase, i) => {
                   const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
@@ -658,10 +682,13 @@ const Index = () => {
                         member_id: m.id,
                         week_key: weekKey,
                         tam: tamPerMember,
+                        accounts: existing.accounts,
                         calls: existing.calls,
                         connects: existing.connects,
+                        ops: existing.ops,
                         demos: existing.demos,
                         wins: existing.wins,
+                        feedback: existing.feedback,
                         role: existing.role ?? null,
                         submitted: existing.submitted ?? false,
                         submitted_at: existing.submittedAt ?? null,
@@ -682,90 +709,185 @@ const Index = () => {
         </div>
         )}
 
-        {/* Win Goals - active team only */}
+        {/* ===== GOALS ===== */}
         {teams.filter((t) => t.id === activeTab).map((team) => {
           const members = team.members;
+          const activeMembers = members.filter((m) => m.isActive);
+          const memberCount = activeMembers.length;
           return (
             <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-foreground">Win Goals – {team.name}</h3>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 border-border text-foreground hover:bg-muted"
-                  onClick={() => {
-                    const isFirst = teams[0].id === team.id;
-                    navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
-                    setAddMemberOpen(true);
-                  }}
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Member
-                </Button>
-              </div>
-              <div className="space-y-4">
-                {members.filter((m) => m.isActive).map((m, i) => {
-                  const totalWins = getMemberTotalWins(m);
-                  const pct = Math.min((totalWins / m.goal) * 100, 100);
-                  return (
-                    <div key={m.id}>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">{m.name}</span>
-                          {m.ducksEarned > 0 && (
-                            <span className="flex items-center">
-                              {[...Array(m.ducksEarned)].map((_, j) => (
-                                <span key={j} className="text-xs">🦆</span>
-                              ))}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            min={0}
-                            value={m.goal || ""}
-                            onChange={(e) => {
-                              const num = Math.max(0, parseInt(e.target.value) || 0);
-                              updateTeam(team.id, (t) => ({
-                                ...t,
-                                members: t.members.map((mem) =>
-                                  mem.id === m.id ? { ...mem, goal: num } : mem
-                                ),
-                              }));
-                            }}
-                            className="h-7 w-20 bg-background border-border/50 text-foreground text-sm text-center"
-                          />
-                          <span className="text-sm text-muted-foreground">{totalWins} / {m.goal} ({pct.toFixed(0)}%)</span>
-                        </div>
-                      </div>
-                      <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-                        <div className={`h-full rounded-full transition-all duration-700 ease-out ${i % 2 === 0 ? "progress-bar-orange" : "progress-bar-blue"}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      {totalWins >= m.goal && <p className="mt-1 text-xs font-medium text-primary animate-pulse-glow">🎉🦆 Goal reached! Great ducking job!</p>}
-                    </div>
-                  );
-                })}
-                {members.some((m) => !m.isActive) && (
-                  <div className="mt-4 pt-4 border-t border-border/50">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Former Members</p>
-                    {members.filter((m) => !m.isActive).map((m, i) => {
-                      const totalWins = getMemberTotalWins(m);
-                      const pct = Math.min((totalWins / m.goal) * 100, 100);
-                      return (
-                        <div key={m.id} className="opacity-50 mb-3">
-                          <div className="mb-1.5 flex items-center justify-between">
-                            <span className="text-sm font-medium text-muted-foreground">{m.name}</span>
-                            <span className="text-sm text-muted-foreground">{totalWins} / {m.goal} ({pct.toFixed(0)}%)</span>
-                          </div>
-                          <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-                            <div className={`h-full rounded-full transition-all duration-700 ease-out ${i % 2 === 0 ? "progress-bar-orange" : "progress-bar-blue"}`} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
+                <h3 className="font-display text-lg font-semibold text-foreground">Goals</h3>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-muted-foreground">Parity</label>
+                    <Switch
+                      checked={team.goalsParity}
+                      onCheckedChange={(checked) => {
+                        updateTeam(team.id, (t) => ({ ...t, goalsParity: checked }));
+                      }}
+                    />
                   </div>
-                )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-border text-foreground hover:bg-muted"
+                    onClick={() => {
+                      const isFirst = teams[0].id === team.id;
+                      navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+                      setAddMemberOpen(true);
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Member
+                  </Button>
+                </div>
               </div>
+
+              {/* Team-level goal inputs when parity is ON */}
+              {team.goalsParity && (
+                <div className="mb-4 rounded-md bg-secondary/20 p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Team Goals (divided equally among {memberCount} member{memberCount !== 1 ? 's' : ''})
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {GOAL_METRICS.map((metric) => (
+                      <div key={metric}>
+                        <label className="text-xs font-medium text-muted-foreground capitalize">{GOAL_METRIC_LABELS[metric]}</label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={team.teamGoals[metric] || ""}
+                          onChange={(e) => {
+                            const num = Math.max(0, parseInt(e.target.value) || 0);
+                            updateTeam(team.id, (t) => ({
+                              ...t,
+                              teamGoals: { ...t.teamGoals, [metric]: num },
+                            }));
+                          }}
+                          className="h-7 bg-background border-border/50 text-foreground text-sm text-center"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Goals table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                      {GOAL_METRICS.map((metric) => (
+                        <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
+                          {GOAL_METRIC_LABELS[metric]}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeMembers.map((m) => (
+                      <tr key={m.id} className="border-b border-border/30">
+                        <td className="py-3 pr-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground whitespace-nowrap">{m.name}</span>
+                            {m.ducksEarned > 0 && (
+                              <span className="flex items-center">
+                                {[...Array(m.ducksEarned)].map((_, j) => (
+                                  <span key={j} className="text-xs">🦆</span>
+                                ))}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        {GOAL_METRICS.map((metric, metricIdx) => {
+                          const actual = getMemberMetricTotal(m, metric);
+                          const goal = getEffectiveGoal(team, m, metric);
+                          const pct = goal > 0 ? Math.min((actual / goal) * 100, 100) : 0;
+                          return (
+                            <td key={metric} className="py-3 px-2">
+                              <div className="flex flex-col items-center gap-1">
+                                {!team.goalsParity ? (
+                                  <div className="flex items-center gap-0.5">
+                                    <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
+                                    <span className="text-xs text-muted-foreground">/</span>
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={m.goals[metric] || ""}
+                                      onChange={(e) => {
+                                        const num = Math.max(0, parseInt(e.target.value) || 0);
+                                        updateTeam(team.id, (t) => ({
+                                          ...t,
+                                          members: t.members.map((mem) =>
+                                            mem.id === m.id
+                                              ? { ...mem, goals: { ...mem.goals, [metric]: num } }
+                                              : mem
+                                          ),
+                                        }));
+                                      }}
+                                      className="h-6 w-12 text-xs text-center bg-background border-border/50 p-0"
+                                    />
+                                  </div>
+                                ) : (
+                                  <span className="text-xs font-semibold text-foreground tabular-nums">
+                                    {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
+                                  </span>
+                                )}
+                                <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Former members */}
+              {members.some((m) => !m.isActive) && (
+                <div className="mt-4 pt-4 border-t border-border/50">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Former Members</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm opacity-50">
+                      <tbody>
+                        {members.filter((m) => !m.isActive).map((m) => (
+                          <tr key={m.id} className="border-b border-border/30">
+                            <td className="py-2 pr-3">
+                              <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">{m.name}</span>
+                            </td>
+                            {GOAL_METRICS.map((metric, metricIdx) => {
+                              const actual = getMemberMetricTotal(m, metric);
+                              const goal = m.goals[metric];
+                              const pct = goal > 0 ? Math.min((actual / goal) * 100, 100) : 0;
+                              return (
+                                <td key={metric} className="py-2 px-2">
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
+                                    <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                      <div
+                                        className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -818,7 +940,7 @@ const Index = () => {
           <DialogContent className="bg-card border-border max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display text-foreground">
-                {detailMember?.name}'s Wins ({detailMember?.wins.length} / {detailMember?.goal})
+                {detailMember?.name}'s Wins ({detailMember?.wins.length} / {detailMember?.goals.wins})
                 {detailMember && detailMember.ducksEarned > 0 && (
                   <span className="ml-2">
                     {[...Array(detailMember.ducksEarned)].map((_, i) => (
@@ -917,14 +1039,14 @@ function TeamTab({
   const currWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, currWeekKey).wins, 0);
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const winsUp = currWeekWins >= prevWeekWins;
-  const teamGoalTotal = members.reduce((s, m) => s + m.goal, 0);
+  const teamGoalTotal = members.reduce((s, m) => s + (m.goals.wins || 0), 0);
   const teamGoalPct = teamGoalTotal > 0 ? Math.min((teamTotal / teamGoalTotal) * 100, 100) : 0;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
 
   const chartData = members.map((m) => ({
     name: m.name,
     wins: getMemberTotalWins(m),
-    goal: m.goal,
+    goal: m.goals.wins,
   }));
 
   const allStories = members
@@ -1040,7 +1162,7 @@ function TeamTab({
             />
           </div>
 
-          {/* Empty state - add first member via Manager Inputs Win Goals */}
+          {/* Empty state */}
           {activeMembers.length === 0 && (
             <div className="rounded-lg border border-border border-dashed bg-card/50 p-10 text-center glow-card">
               <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
@@ -1050,11 +1172,6 @@ function TeamTab({
               </Button>
             </div>
           )}
-
-
-
-
-
 
           {/* Week Over Week */}
           <WeekOverWeekView team={team} />
@@ -1089,10 +1206,13 @@ function TeamTab({
                           member_id: m.id,
                           week_key: currentWeek,
                           tam: current.tam,
+                          accounts: current.accounts,
                           calls: current.calls,
                           connects: current.connects,
+                          ops: current.ops,
                           demos: current.demos,
                           wins: current.wins,
+                          feedback: current.feedback,
                           role: current.role ?? null,
                           submitted: current.submitted ?? false,
                           submitted_at: current.submittedAt ?? null,
@@ -1161,6 +1281,10 @@ function TeamTab({
                       </div>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <div>
+                          <label className="text-xs font-medium text-muted-foreground">Accounts</label>
+                          <Input type="number" min={0} value={f.accounts || ""} onChange={(e) => updateFunnel("accounts", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
                           <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
                           <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
@@ -1169,12 +1293,20 @@ function TeamTab({
                           <Input type="number" min={0} value={f.connects || ""} onChange={(e) => updateFunnel("connects", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
+                          <label className="text-xs font-medium text-muted-foreground">Ops</label>
+                          <Input type="number" min={0} value={f.ops || ""} onChange={(e) => updateFunnel("ops", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
                           <label className="text-xs font-medium text-muted-foreground">Demos</label>
                           <Input type="number" min={0} value={f.demos || ""} onChange={(e) => updateFunnel("demos", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Wins</label>
                           <Input type="number" min={0} value={f.wins || ""} onChange={(e) => updateFunnel("wins", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Feedback</label>
+                          <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -1304,18 +1436,27 @@ function TeamTab({
                 {members.map((m, mIdx) => {
                   const metricRows: { label: string; key: keyof FunnelData }[] = [
                     { label: "TAM", key: "tam" },
+                    { label: "Accounts", key: "accounts" },
                     { label: "Call", key: "calls" },
                     { label: "Connect", key: "connects" },
+                    { label: "Ops", key: "ops" },
                     { label: "Demo", key: "demos" },
                     { label: "Win", key: "wins" },
+                    { label: "Feedback", key: "feedback" },
                   ];
                   const weeks = teamWeeks;
                   const weekKeyList = weeks.map((wk) => wk.key);
+                  const convRates = [
+                    { label: "TAM→Call %", numKey: "calls" as keyof FunnelData, denKey: "tam" as keyof FunnelData },
+                    { label: "Call→Con %", numKey: "connects" as keyof FunnelData, denKey: "calls" as keyof FunnelData },
+                    { label: "Con→Demo %", numKey: "demos" as keyof FunnelData, denKey: "connects" as keyof FunnelData },
+                    { label: "Demo→Win %", numKey: "wins" as keyof FunnelData, denKey: "demos" as keyof FunnelData },
+                  ];
                   const allRows = [
                     ...metricRows.map((met, metIdx) => (
                       <tr key={`${m.id}-${met.key}`} className={`${metIdx === 0 ? "border-t-2 border-border" : ""}`}>
                       {metIdx === 0 && (
-                          <td rowSpan={metricRows.length + 4} className={`sticky left-0 z-30 bg-card py-2 pl-5 pr-2 font-semibold align-top border-r border-border/50 whitespace-nowrap ${m.isActive ? 'text-foreground' : 'text-muted-foreground italic'}`}>
+                          <td rowSpan={metricRows.length + convRates.length} className={`sticky left-0 z-30 bg-card py-2 pl-5 pr-2 font-semibold align-top border-r border-border/50 whitespace-nowrap ${m.isActive ? 'text-foreground' : 'text-muted-foreground italic'}`}>
                             {m.name}
                             {!m.isActive && <span className="block text-[10px] font-normal not-italic text-muted-foreground/60">Former</span>}
                           </td>
@@ -1338,42 +1479,33 @@ function TeamTab({
                         </td>
                       </tr>
                     )),
-                    // Conversion rows
-                    ...(() => {
-                      const convRates = [
-                        { label: "TAM→Call %", numKey: "calls" as keyof FunnelData, denKey: "tam" as keyof FunnelData },
-                        { label: "Call→Con %", numKey: "connects" as keyof FunnelData, denKey: "calls" as keyof FunnelData },
-                        { label: "Con→Demo %", numKey: "demos" as keyof FunnelData, denKey: "connects" as keyof FunnelData },
-                        { label: "Demo→Win %", numKey: "wins" as keyof FunnelData, denKey: "demos" as keyof FunnelData },
-                      ];
-                      return convRates.map((cr) => (
-                        <tr key={`${m.id}-${cr.label}`} className="bg-muted/30">
-                          <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
-                          {weeks.map((w) => {
-                            const f = getMemberFunnel(m, w.key);
-                            const den = cr.denKey === "tam"
-                              ? getCarriedTam(m, w.key, weekKeyList)
-                              : f[cr.denKey];
-                            const num = f[cr.numKey];
-                            const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
-                            return (
-                              <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
-                                {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
-                              </td>
-                            );
-                          })}
-                          <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
-                            {(() => {
-                              const totalDen = cr.denKey === "tam"
-                                ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
-                                : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
-                              const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey], 0);
-                              return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
-                            })()}
-                          </td>
-                        </tr>
-                      ));
-                    })(),
+                    ...convRates.map((cr) => (
+                      <tr key={`${m.id}-${cr.label}`} className="bg-muted/30">
+                        <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
+                        {weeks.map((w) => {
+                          const f = getMemberFunnel(m, w.key);
+                          const den = cr.denKey === "tam"
+                            ? getCarriedTam(m, w.key, weekKeyList)
+                            : f[cr.denKey];
+                          const num = f[cr.numKey];
+                          const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
+                          return (
+                            <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                              {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
+                            </td>
+                          );
+                        })}
+                        <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
+                          {(() => {
+                            const totalDen = cr.denKey === "tam"
+                              ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
+                              : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
+                            const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey], 0);
+                            return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
+                          })()}
+                        </td>
+                      </tr>
+                    )),
                   ];
                   return allRows;
                 })}
@@ -1402,22 +1534,27 @@ function WeekOverWeekView({ team }: { team: Team }) {
 
   const METRIC_COLORS: Record<string, string> = {
     TAM: "hsl(340, 55%, 55%)",
+    Accounts: "hsl(45, 70%, 50%)",
     Call: "hsl(215, 55%, 55%)",
     Connect: "hsl(140, 50%, 45%)",
+    Ops: "hsl(30, 65%, 50%)",
     Demo: "hsl(280, 50%, 58%)",
     Win: "hsl(24, 85%, 55%)",
+    Feedback: "hsl(190, 55%, 50%)",
   };
   const metricKeys: { key: keyof FunnelData; label: string }[] = [
     { key: "tam", label: "TAM" },
+    { key: "accounts", label: "Accounts" },
     { key: "calls", label: "Call" },
     { key: "connects", label: "Connect" },
+    { key: "ops", label: "Ops" },
     { key: "demos", label: "Demo" },
     { key: "wins", label: "Win" },
+    { key: "feedback", label: "Feedback" },
   ];
 
   const weekKeyList = weeks.map((w) => w.key);
 
-  // Build chart data: weeks on X-axis, one line per metric (team total)
   const chartData = weeks.map((week) => {
     const row: any = { week: week.label };
     metricKeys.forEach(({ key, label }) => {
@@ -1425,7 +1562,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
         ? members.reduce((s, m) => s + getCarriedTam(m, week.key, weekKeyList), 0)
         : members.reduce((s, m) => s + getMemberFunnel(m, week.key)[key], 0);
     });
-    // Individual player metrics
     members.forEach((m) => {
       if (selectedPlayers.has(m.id)) {
         metricKeys.forEach(({ key, label }) => {
@@ -1435,7 +1571,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
         });
       }
     });
-    // Roles per member for tooltip
     const roles: Record<string, string> = {};
     members.forEach((m) => {
       const funnel = m.funnelByWeek?.[week.key] as WeeklyFunnel | undefined;
@@ -1502,7 +1637,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
         <h2 className="font-display text-lg font-semibold text-foreground">
           {team.name} — Funnel Overview
         </h2>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {metricKeys.map(({ label }) => {
             const isActive = selectedMetrics.has(label);
             return (
@@ -1530,14 +1665,12 @@ function WeekOverWeekView({ team }: { team: Team }) {
             <YAxis allowDecimals={false} tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
             <Tooltip content={<FunnelTooltip />} />
             <Legend />
-            {/* Team total lines — only for selected metrics */}
             {metricKeys.map(({ label }) =>
               selectedMetrics.has(label) ? (
                 <Line key={label} type="monotone" dataKey={label} stroke={METRIC_COLORS[label]} strokeWidth={2.5} dot={{ r: 4 }} />
               ) : null
             )}
             
-            {/* Individual player lines when selected — only for selected metrics */}
             {members.map((m, i) =>
               selectedPlayers.has(m.id)
                 ? metricKeys.filter(({ label }) => selectedMetrics.has(label)).map(({ label }) => (
@@ -1549,7 +1682,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
         </ResponsiveContainer>
       </div>
 
-      {/* Player selector — multi-select with roles */}
       {members.length > 0 && (
         <div className="mt-4 border-t border-border pt-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Select players</p>
@@ -1576,7 +1708,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
             })}
           </div>
 
-          {/* Conversion rates for selected players */}
           {selectedMembers.length > 0 && (
             <div className="mt-3 space-y-2">
               {selectedMembers.map((m) => {
