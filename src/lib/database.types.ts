@@ -11,6 +11,7 @@ export interface DbTeam {
   tam_submitted: boolean;
   goals_parity: boolean;
   team_goal_accounts: number;
+  team_goal_contacts_added: number;
   team_goal_calls: number;
   team_goal_ops: number;
   team_goal_demos: number;
@@ -27,6 +28,7 @@ export interface DbMember {
   name: string;
   goal: number;
   goal_accounts: number;
+  goal_contacts_added: number;
   goal_calls: number;
   goal_ops: number;
   goal_demos: number;

@@ -717,7 +717,7 @@ const Index = () => {
           return (
             <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-display text-lg font-semibold text-foreground">Goals</h3>
+                <h3 className="font-display text-lg font-semibold text-foreground">Monthly Goals</h3>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-medium text-muted-foreground">Parity</label>

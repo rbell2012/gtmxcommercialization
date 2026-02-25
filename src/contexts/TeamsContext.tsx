@@ -4,11 +4,12 @@ import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry } from "@/lib/databas
 
 // ── Goal metrics system ──
 
-export const GOAL_METRICS = ['accounts', 'calls', 'ops', 'demos', 'wins', 'feedback'] as const;
+export const GOAL_METRICS = ['accounts', 'contacts_added', 'calls', 'ops', 'demos', 'wins', 'feedback'] as const;
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
   accounts: 'Accounts',
+  contacts_added: 'Contacts Added',
   calls: 'Calls',
   ops: 'Ops',
   demos: 'Demos',
@@ -20,6 +21,7 @@ export type MemberGoals = Record<GoalMetric, number>;
 
 export const DEFAULT_GOALS: MemberGoals = {
   accounts: 0,
+  contacts_added: 0,
   calls: 0,
   ops: 0,
   demos: 0,
@@ -115,6 +117,7 @@ function dbMemberToApp(
     name: row.name,
     goals: {
       accounts: row.goal_accounts ?? 0,
+      contacts_added: row.goal_contacts_added ?? 0,
       calls: row.goal_calls ?? 0,
       ops: row.goal_ops ?? 0,
       demos: row.goal_demos ?? 0,
@@ -172,6 +175,7 @@ function assembleTeams(
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
         accounts: t.team_goal_accounts ?? 0,
+        contacts_added: t.team_goal_contacts_added ?? 0,
         calls: t.team_goal_calls ?? 0,
         ops: t.team_goal_ops ?? 0,
         demos: t.team_goal_demos ?? 0,
@@ -218,6 +222,7 @@ function memberGoalsToDbInsert(goals: MemberGoals) {
   return {
     goal: goals.wins,
     goal_accounts: goals.accounts,
+    goal_contacts_added: goals.contacts_added,
     goal_calls: goals.calls,
     goal_ops: goals.ops,
     goal_demos: goals.demos,
@@ -290,6 +295,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               tam_submitted: updated.tamSubmitted,
               goals_parity: updated.goalsParity,
               team_goal_accounts: updated.teamGoals.accounts,
+              team_goal_contacts_added: updated.teamGoals.contacts_added,
               team_goal_calls: updated.teamGoals.calls,
               team_goal_ops: updated.teamGoals.ops,
               team_goal_demos: updated.teamGoals.demos,

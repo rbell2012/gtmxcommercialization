@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-02-25 (Add "Contacts Added" to Monthly Goals System)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`members` and `teams` tables)
+
+**Rationale:** After adding "Contacts Added" as a weekly funnel metric, it also needed to be tracked as a monthly goal — with individual member targets and team-level parity support — consistent with the other six goal metrics (Accounts, Calls, Ops, Demos, Wins, Feedback).
+
+**Changes:**
+- **Supabase migration**: Added `goal_contacts_added` (integer, default 0) to the `members` table and `team_goal_contacts_added` (integer, default 0) to the `teams` table. Local migration file: `20250225280000_add_goal_contacts_added_to_members_and_teams.sql`.
+- **Database types** (`database.types.ts`): Added `goal_contacts_added` to `DbMember` and `team_goal_contacts_added` to `DbTeam`.
+- **TeamsContext** (`TeamsContext.tsx`): Added `contacts_added` to `GOAL_METRICS` array (between Accounts and Calls). Added `'Contacts Added'` label to `GOAL_METRIC_LABELS`. Added `contacts_added: 0` to `DEFAULT_GOALS`. Updated `dbMemberToApp`, `assembleTeams`, `memberGoalsToDbInsert`, and team goal persistence in `updateTeam` to include the new field.
+- **Monthly Goals UI**: No explicit UI changes needed — the Goals section dynamically iterates `GOAL_METRICS`, so the "Contacts Added" column automatically appears in the goals table, parity team-level inputs, and per-member goal inputs on all pilot pages.
+---
+
+## 2026-02-25 (Rename "Goals" Section to "Monthly Goals")
+
+### Location – Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Goals section heading needed to be more descriptive, clarifying that the targets shown are monthly goals rather than generic or cumulative goals.
+
+**Changes:**
+- Renamed the `<h3>` section header from "Goals" to "Monthly Goals" on all pilot project pages in `src/pages/Index.tsx`.
+---
+
 ## 2026-02-25 (Add "Contacts Added" Field to Weekly Funnels)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`weekly_funnels` table)
