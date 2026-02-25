@@ -7,6 +7,7 @@ import { Settings } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import Data from "./pages/Data";
+import Quota from "./pages/Quota";
 import SettingsPage from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { TeamsProvider, useTeams, pilotNameToSlug } from "./contexts/TeamsContext";
@@ -45,6 +46,14 @@ function Nav() {
       >
         Data &amp; Findings
       </Link>
+      <Link
+        to="/quota"
+        className={`text-sm font-medium whitespace-nowrap transition-colors ${
+          location.pathname === "/quota" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Quota
+      </Link>
       <div className="ml-auto flex items-center gap-2">
         <ThemeToggle />
         <Link
@@ -75,6 +84,7 @@ const App = () => (
               <Route path="/Pilots" element={<Index />} />
               <Route path="/Pilots/:pilotId" element={<Index />} />
               <Route path="/data" element={<Data />} />
+              <Route path="/quota" element={<Quota />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -15,6 +15,7 @@ import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
+import { getMemberMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -167,17 +168,6 @@ function getMemberTotalWins(m: TeamMember): number {
   return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
 }
 
-function getMemberMetricTotal(m: TeamMember, metric: GoalMetric): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + ((f as any)[metric] || 0), 0);
-}
-
-function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMetric): number {
-  if (team.goalsParity) {
-    const activeCount = team.members.filter((m) => m.isActive).length;
-    return activeCount > 0 ? Math.round((team.teamGoals[metric] || 0) / activeCount) : 0;
-  }
-  return member.goals[metric];
-}
 
 function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: string[]): number {
   const idx = orderedWeekKeys.indexOf(weekKey);
