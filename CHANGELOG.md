@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-02-25 (Superhex Table Added to Supabase)
+
+### Location – Database (Supabase `superhex` table), `src/lib/database.types.ts`
+
+**Rationale:** A new `superhex` table was needed to store weekly rep activity metrics (calls, connects, demos, wins, and total activity count) for reporting and analytics. This is a backend-only schema addition with no front-end page impact.
+
+**Changes:**
+- **New Supabase table `superhex`**: Created with columns `rep_name` (text), `activity_week` (text), `total_activity_count` (integer), `calls_count` (integer), `connects_count` (integer), `total_demos` (integer), `total_wins` (integer), plus `id`, `created_at`, and `updated_at` metadata fields.
+- **Indexes**: Added indexes on `rep_name` and `activity_week` for efficient querying.
+- **Row-level security**: Enabled with open select/insert/update/delete policies, matching the project's existing RLS pattern.
+- **Auto-updating trigger**: `trg_superhex_updated_at` fires on update using the shared `set_updated_at()` function.
+- **Migration file**: `supabase/migrations/20250225240000_create_superhex.sql` added for local tracking.
+- **TypeScript type**: `DbSuperhex` interface added to `src/lib/database.types.ts` with all table columns typed.
+- **Applied to Supabase**: Migration pushed to the live Supabase project via the Supabase MCP plugin.
+---
+
 ## 2026-02-25 (Total TAM Flows into Weekly Data with Carry-Forward)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Database (`weekly_funnels` table via Supabase)
