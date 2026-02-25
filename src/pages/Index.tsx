@@ -166,6 +166,16 @@ function getMemberTotalWins(m: TeamMember): number {
   return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
 }
 
+function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: string[]): number {
+  const idx = orderedWeekKeys.indexOf(weekKey);
+  if (idx === -1) return getMemberFunnel(member, weekKey).tam;
+  for (let i = idx; i >= 0; i--) {
+    const tam = getMemberFunnel(member, orderedWeekKeys[i]).tam;
+    if (tam > 0) return tam;
+  }
+  return 0;
+}
+
 // Duck component
 const Duck = ({ size = 24 }: { size?: number }) => (
   <span style={{ fontSize: size }} role="img" aria-label="duck">
@@ -557,7 +567,7 @@ const Index = () => {
                       <Input
                         value={phase.label}
                         onChange={(e) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value)}
-                        placeholder="Add description..."
+                        placeholder="—"
                         className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
                       />
                       <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
@@ -620,7 +630,47 @@ const Index = () => {
               {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
             </div>
             {!activeTeam.tamSubmitted ? (
-              <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, tamSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+              <Button size="sm" onClick={() => {
+                const members = activeTeam.members.filter((m) => m.isActive);
+                const tamPerMember = members.length > 0 ? Math.round(activeTeam.totalTam / members.length) : 0;
+                const weekKey = getCurrentWeekKey();
+                updateTeam(activeTeam.id, (t) => ({
+                  ...t,
+                  tamSubmitted: true,
+                  members: t.members.map((m) => {
+                    if (!m.isActive) return m;
+                    const existing = getMemberFunnel(m, weekKey);
+                    return {
+                      ...m,
+                      funnelByWeek: {
+                        ...m.funnelByWeek,
+                        [weekKey]: { ...existing, tam: tamPerMember },
+                      },
+                    };
+                  }),
+                }));
+                for (const m of members) {
+                  const existing = getMemberFunnel(m, weekKey);
+                  supabase
+                    .from("weekly_funnels")
+                    .upsert(
+                      {
+                        member_id: m.id,
+                        week_key: weekKey,
+                        tam: tamPerMember,
+                        calls: existing.calls,
+                        connects: existing.connects,
+                        demos: existing.demos,
+                        wins: existing.wins,
+                        role: existing.role ?? null,
+                        submitted: existing.submitted ?? false,
+                        submitted_at: existing.submittedAt ?? null,
+                      },
+                      { onConflict: "member_id,week_key" }
+                    )
+                    .then();
+                }
+              }} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                 Submit
               </Button>
             ) : (
@@ -1260,6 +1310,7 @@ function TeamTab({
                     { label: "Win", key: "wins" },
                   ];
                   const weeks = teamWeeks;
+                  const weekKeyList = weeks.map((wk) => wk.key);
                   const allRows = [
                     ...metricRows.map((met, metIdx) => (
                       <tr key={`${m.id}-${met.key}`} className={`${metIdx === 0 ? "border-t-2 border-border" : ""}`}>
@@ -1271,7 +1322,9 @@ function TeamTab({
                         )}
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
                         {weeks.map((w) => {
-                          const val = getMemberFunnel(m, w.key)[met.key];
+                          const val = met.key === "tam"
+                            ? getCarriedTam(m, w.key, weekKeyList)
+                            : getMemberFunnel(m, w.key)[met.key];
                           return (
                             <td key={w.key} className="text-center py-1 px-2 text-foreground tabular-nums">
                               {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
@@ -1279,7 +1332,9 @@ function TeamTab({
                           );
                         })}
                         <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-primary tabular-nums">
-                          {weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[met.key], 0)}
+                          {met.key === "tam"
+                            ? (getCarriedTam(m, weekKeyList[weekKeyList.length - 1] ?? "", weekKeyList) || "—")
+                            : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[met.key], 0)}
                         </td>
                       </tr>
                     )),
@@ -1296,7 +1351,9 @@ function TeamTab({
                           <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
                           {weeks.map((w) => {
                             const f = getMemberFunnel(m, w.key);
-                            const den = f[cr.denKey];
+                            const den = cr.denKey === "tam"
+                              ? getCarriedTam(m, w.key, weekKeyList)
+                              : f[cr.denKey];
                             const num = f[cr.numKey];
                             const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
                             return (
@@ -1307,7 +1364,9 @@ function TeamTab({
                           })}
                           <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
                             {(() => {
-                              const totalDen = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
+                              const totalDen = cr.denKey === "tam"
+                                ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
+                                : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
                               const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey], 0);
                               return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
                             })()}
@@ -1356,17 +1415,23 @@ function WeekOverWeekView({ team }: { team: Team }) {
     { key: "wins", label: "Win" },
   ];
 
+  const weekKeyList = weeks.map((w) => w.key);
+
   // Build chart data: weeks on X-axis, one line per metric (team total)
   const chartData = weeks.map((week) => {
     const row: any = { week: week.label };
     metricKeys.forEach(({ key, label }) => {
-      row[label] = members.reduce((s, m) => s + getMemberFunnel(m, week.key)[key], 0);
+      row[label] = key === "tam"
+        ? members.reduce((s, m) => s + getCarriedTam(m, week.key, weekKeyList), 0)
+        : members.reduce((s, m) => s + getMemberFunnel(m, week.key)[key], 0);
     });
     // Individual player metrics
     members.forEach((m) => {
       if (selectedPlayers.has(m.id)) {
         metricKeys.forEach(({ key, label }) => {
-          row[`${m.name} ${label}`] = getMemberFunnel(m, week.key)[key];
+          row[`${m.name} ${label}`] = key === "tam"
+            ? getCarriedTam(m, week.key, weekKeyList)
+            : getMemberFunnel(m, week.key)[key];
         });
       }
     });
@@ -1517,11 +1582,12 @@ function WeekOverWeekView({ team }: { team: Team }) {
               {selectedMembers.map((m) => {
                 const validWeeks = weeks.filter((w) => {
                   const f = getMemberFunnel(m, w.key);
-                  return f.tam > 0 || f.calls > 0 || f.connects > 0 || f.demos > 0 || f.wins > 0;
+                  const tam = getCarriedTam(m, w.key, weekKeyList);
+                  return tam > 0 || f.calls > 0 || f.connects > 0 || f.demos > 0 || f.wins > 0;
                 });
                 const n = validWeeks.length;
                 const avgTamToCall = n > 0
-                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.tam > 0 ? (f.calls / f.tam) * 100 : 0); }, 0) / n : 0;
+                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); const tam = getCarriedTam(m, w.key, weekKeyList); return s + (tam > 0 ? (f.calls / tam) * 100 : 0); }, 0) / n : 0;
                 const avgCallToConnect = n > 0
                   ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.calls > 0 ? (f.connects / f.calls) * 100 : 0); }, 0) / n : 0;
                 const avgConnectToDemo = n > 0

@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-02-25 (Total TAM Flows into Weekly Data with Carry-Forward)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`), Database (`weekly_funnels` table via Supabase)
+
+**Rationale:** When a manager entered and submitted a Total TAM value, it was only saved to the `teams` table and used for the team-level TAM→Call conversion rate. The per-member TAM value never reached the `weekly_funnels` table, so the Weekly Data grid always showed "—" for TAM, and per-member TAM→Call conversion rates could not be calculated. The fix makes Total TAM a manager-submitted value that divides across members, persists week-over-week, and logs changes by only writing to the week when the value is updated.
+
+**Changes:**
+- **TAM Submit handler**: When the manager clicks "Submit" on Total TAM, the system now calculates `tamPerMember = Math.round(totalTam / activeMembers)` and upserts a `weekly_funnels` row for every active member on the team for the current week, setting their `tam` field to the per-member value.
+- **Added `getCarriedTam()` helper**: Scans backward through ordered week keys to find the most recent non-zero TAM for a member. This enables TAM to persist (carry forward) every week until a new value is submitted, without needing to write duplicate rows for every future week.
+- **Weekly Data grid — TAM row**: TAM cells now display the carried-forward value instead of only the raw funnel value. If TAM was set in week 3, weeks 4, 5, 6, etc. all show that value until a new TAM is written.
+- **Weekly Data grid — TAM total column**: Shows the current/latest carried-forward TAM per member (not a sum across weeks, since TAM isn't cumulative).
+- **Weekly Data grid — TAM→Call % conversion row**: The denominator now uses the carried-forward TAM instead of the raw (often zero) funnel TAM, so conversion percentages display correctly for all weeks.
+- **Funnel Overview chart**: Team-total and individual-player TAM lines use carried-forward values, ensuring the chart reflects the actual TAM throughout the pilot period.
+- **Player conversion rates** (below the Funnel Overview chart): TAM→Call averages for selected players now use carried-forward TAM, matching the chart above.
+- **Edit & re-submit flow**: When a manager clicks "Edit", changes the Total TAM, and re-submits, the new per-member TAM is written to the current week — creating a new log entry. Prior weeks retain their old TAM values; the new value carries forward from this week onward.
+- **Manual data seed**: Inserted TAM = 533 per member (1600 / 3) for the Mad Max team for the week of 2025-09-29 directly in Supabase to backfill historical data.
+- All pilot/project pages remain identical in appearance and operation — changes are in shared helper functions and the `TeamTab` component.
+---
+
+## 2026-02-25 (Test Phases Blank Description Shows Em Dash)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** When a test phase had no description, the input showed the placeholder "Add description...", which looked like instructional text. Showing an em dash (—) for blank descriptions keeps the UI minimal and consistent with other empty-state treatments.
+
+**Changes:**
+- In the Test Phases section, changed the phase description input placeholder from "Add description..." to "—" so blank descriptions display an em dash instead.
+---
+
 ## 2026-02-25 (Surface Weekly Roles in SELECT PLAYERS & Chart Tooltip)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`)
