@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-02-25 (Fix Funnel Overview Player Conversion Rate Averages & Add Role Tooltips)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The per-player conversion rates (TAM→Call, Call→Connect, Connect→Demo, Demo→Win) displayed below the "Select Players" section of the Funnel Overview chart were only reading from the current week. If the current week had no data, all rates showed 0% — even when the chart above clearly displayed metrics for other weeks. The rates now average across all weeks with data. Additionally, the chart tooltip was replaced with a custom tooltip that shows member roles per week.
+
+**Changes:**
+- Replaced the single-week conversion rate lookup (`getMemberFunnel(m, currentWeek)`) with an averaging calculation across all team weeks.
+- Only weeks where at least one metric (tam, calls, connects, demos, or wins) is greater than 0 are included in the average — weeks with all-zero/null values are excluded from the denominator.
+- For each valid week, per-metric conversion rates are computed individually, then averaged across valid weeks. If only one week has data, the averages equal that week's rates exactly.
+- Added `_roles` metadata to chart data rows, collecting each member's role for each week.
+- Created a custom `FunnelTooltip` component that displays metric values and a "Roles this week" section in the chart hover tooltip.
+- All pilot/project pages remain identical in appearance and operation.
+---
+
 ## 2026-02-25 (Fix Team Total Wins Summation Bug)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`)

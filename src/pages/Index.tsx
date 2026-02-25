@@ -1370,6 +1370,13 @@ function WeekOverWeekView({ team }: { team: Team }) {
         });
       }
     });
+    // Roles per member for tooltip
+    const roles: Record<string, string> = {};
+    members.forEach((m) => {
+      const funnel = m.funnelByWeek?.[week.key] as WeeklyFunnel | undefined;
+      if (funnel?.role) roles[m.name] = funnel.role;
+    });
+    row._roles = roles;
     return row;
   });
 
@@ -1399,6 +1406,30 @@ function WeekOverWeekView({ team }: { team: Team }) {
     "hsl(300, 45%, 55%)",
     "hsl(160, 50%, 42%)",
   ];
+
+  const FunnelTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const roles: Record<string, string> = payload[0]?.payload?._roles || {};
+    return (
+      <div style={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, borderRadius: "8px", color: chartColors.tooltipText, padding: "10px 14px", fontSize: 12 }}>
+        <p style={{ fontWeight: 600, marginBottom: 6 }}>{label}</p>
+        {payload.filter((e: any) => !e.dataKey?.startsWith("_")).map((entry: any, i: number) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0" }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: entry.color, display: "inline-block", flexShrink: 0 }} />
+            <span>{entry.name}: <strong>{entry.value}</strong></span>
+          </div>
+        ))}
+        {Object.keys(roles).length > 0 && (
+          <div style={{ borderTop: `1px solid ${chartColors.tooltipBorder}`, marginTop: 6, paddingTop: 6 }}>
+            <p style={{ fontSize: 10, opacity: 0.6, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em" }}>Roles this week</p>
+            {Object.entries(roles).map(([name, role]) => (
+              <p key={name} style={{ margin: "2px 0" }}>{name}: <strong>{role as string}</strong></p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 glow-card">
@@ -1432,7 +1463,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis dataKey="week" tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
             <YAxis allowDecimals={false} tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, borderRadius: "8px", color: chartColors.tooltipText }} />
+            <Tooltip content={<FunnelTooltip />} />
             <Legend />
             {/* Team total lines — only for selected metrics */}
             {metricKeys.map(({ label }) =>
@@ -1484,14 +1515,26 @@ function WeekOverWeekView({ team }: { team: Team }) {
           {selectedMembers.length > 0 && (
             <div className="mt-3 space-y-2">
               {selectedMembers.map((m) => {
-                const f = getMemberFunnel(m, currentWeek);
+                const validWeeks = weeks.filter((w) => {
+                  const f = getMemberFunnel(m, w.key);
+                  return f.tam > 0 || f.calls > 0 || f.connects > 0 || f.demos > 0 || f.wins > 0;
+                });
+                const n = validWeeks.length;
+                const avgTamToCall = n > 0
+                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.tam > 0 ? (f.calls / f.tam) * 100 : 0); }, 0) / n : 0;
+                const avgCallToConnect = n > 0
+                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.calls > 0 ? (f.connects / f.calls) * 100 : 0); }, 0) / n : 0;
+                const avgConnectToDemo = n > 0
+                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.connects > 0 ? (f.demos / f.connects) * 100 : 0); }, 0) / n : 0;
+                const avgDemoToWin = n > 0
+                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.demos > 0 ? (f.wins / f.demos) * 100 : 0); }, 0) / n : 0;
                 return (
                   <div key={m.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-semibold" style={{ color: PLAYER_COLORS[members.indexOf(m) % PLAYER_COLORS.length] }}>{m.name}:</span>
-                    <span>TAM→Call: <strong className="text-foreground">{f.tam > 0 ? ((f.calls / f.tam) * 100).toFixed(0) : 0}%</strong></span>
-                    <span>Call→Connect: <strong className="text-foreground">{f.calls > 0 ? ((f.connects / f.calls) * 100).toFixed(0) : 0}%</strong></span>
-                    <span>Connect→Demo: <strong className="text-foreground">{f.connects > 0 ? ((f.demos / f.connects) * 100).toFixed(0) : 0}%</strong></span>
-                    <span>Demo→Win: <strong className="text-foreground">{f.demos > 0 ? ((f.wins / f.demos) * 100).toFixed(0) : 0}%</strong></span>
+                    <span>TAM→Call: <strong className="text-foreground">{avgTamToCall.toFixed(0)}%</strong></span>
+                    <span>Call→Connect: <strong className="text-foreground">{avgCallToConnect.toFixed(0)}%</strong></span>
+                    <span>Connect→Demo: <strong className="text-foreground">{avgConnectToDemo.toFixed(0)}%</strong></span>
+                    <span>Demo→Win: <strong className="text-foreground">{avgDemoToWin.toFixed(0)}%</strong></span>
                   </div>
                 );
               })}
