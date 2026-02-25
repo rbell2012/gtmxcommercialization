@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Target, Users, TrendingUp, MessageCircle } from "lucide-react";
+import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -12,19 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { useChartColors } from "@/hooks/useChartColors";
-
-interface TestPhase {
-  id: string;
-  month: string;
-  label: string;
-  progress: number;
-}
-
-const INITIAL_PHASES: TestPhase[] = [
-  { id: "m1", month: "Month 1", label: "Get the pilot to work, get product feedback", progress: 0 },
-  { id: "m2", month: "Month 2", label: "Win, win, win", progress: 0 },
-  { id: "m3", month: "Month 3", label: "Keep winning, build recommendation", progress: 0 },
-];
+import { useManagerInputs, type TestPhase } from "@/hooks/useManagerInputs";
+import { supabase } from "@/lib/supabase";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -113,21 +102,28 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const loadState = <T,>(key: string, fallback: T): T => {
-    try {
-      const saved = localStorage.getItem(key);
-      if (saved !== null) return JSON.parse(saved);
-    } catch { /* ignore */ }
-    return fallback;
-  };
-
   const { teams, updateTeam } = useTeams();
+  const {
+    phases,
+    updatePhases,
+    addPhase: addPhaseToDb,
+    missionPurpose,
+    updateMission,
+    missionSubmitted,
+    updateMissionSubmitted,
+    totalTam,
+    updateTotalTam,
+    tamSubmitted,
+    updateTamSubmitted,
+    customRoles,
+    addCustomRole,
+  } = useManagerInputs();
   const [editingField, setEditingField] = useState<string | null>(null);
 
   const resolvedTeam = pilotId
     ? teams.find((t) => pilotNameToSlug(t.name) === pilotId) ?? teams[0]
     : teams[0];
-  const activeTab = resolvedTeam.id;
+  const activeTab = resolvedTeam?.id ?? "";
   const [selectedMember, setSelectedMember] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
   const [storyText, setStoryText] = useState("");
@@ -136,24 +132,11 @@ const Index = () => {
   const [newGoal, setNewGoal] = useState("");
   const [detailMember, setDetailMember] = useState<TeamMember | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
-  const [phases, setPhases] = useState<TestPhase[]>(() => loadState("gtmx-phases", INITIAL_PHASES));
-  const [customRoles, setCustomRoles] = useState<string[]>(() => loadState("gtmx-custom-roles", []));
   const [extendTestOpen, setExtendTestOpen] = useState(false);
   const [newMonthName, setNewMonthName] = useState("");
   const [newMonthPurpose, setNewMonthPurpose] = useState("");
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
-  const [missionPurpose, setMissionPurpose] = useState(() => loadState("gtmx-mission", ""));
-  const [missionSubmitted, setMissionSubmitted] = useState(() => loadState("gtmx-mission-submitted", false));
-  const [totalTam, setTotalTam] = useState<number>(() => loadState("gtmx-total-tam", 0));
-  const [tamSubmitted, setTamSubmitted] = useState(() => loadState("gtmx-tam-submitted", false));
-  
-  useEffect(() => { localStorage.setItem("gtmx-phases", JSON.stringify(phases)); }, [phases]);
-  useEffect(() => { localStorage.setItem("gtmx-custom-roles", JSON.stringify(customRoles)); }, [customRoles]);
-  useEffect(() => { localStorage.setItem("gtmx-mission", JSON.stringify(missionPurpose)); }, [missionPurpose]);
-  useEffect(() => { localStorage.setItem("gtmx-mission-submitted", JSON.stringify(missionSubmitted)); }, [missionSubmitted]);
-  useEffect(() => { localStorage.setItem("gtmx-total-tam", JSON.stringify(totalTam)); }, [totalTam]);
-  useEffect(() => { localStorage.setItem("gtmx-tam-submitted", JSON.stringify(tamSubmitted)); }, [tamSubmitted]);
 
   useEffect(() => {
     if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
@@ -174,14 +157,11 @@ const Index = () => {
 
   const allRoles = [...DEFAULT_ROLES, ...customRoles];
 
-  const activeTeam = teams.find((t) => t.id === activeTab)!;
+  const activeTeam = teams.find((t) => t.id === activeTab);
 
   const addPhase = () => {
     if (!newMonthName.trim()) return;
-    setPhases((prev) => [
-      ...prev,
-      { id: `m${prev.length + 1}`, month: newMonthName.trim(), label: newMonthPurpose.trim() || "TBD", progress: 0 },
-    ]);
+    addPhaseToDb(newMonthName.trim(), newMonthPurpose.trim());
     setNewMonthName("");
     setNewMonthPurpose("");
     setExtendTestOpen(false);
@@ -189,7 +169,7 @@ const Index = () => {
 
   const addRole = () => {
     if (!newRoleName.trim() || allRoles.includes(newRoleName.trim())) return;
-    setCustomRoles((prev) => [...prev, newRoleName.trim()]);
+    addCustomRole(newRoleName.trim());
     setNewRoleName("");
     setAddRoleOpen(false);
   };
@@ -197,15 +177,26 @@ const Index = () => {
   const addWin = () => {
     if (!selectedMember || !restaurantName.trim()) return;
 
-    const member = activeTeam.members.find((m) => m.id === selectedMember);
+    const member = activeTeam?.members.find((m) => m.id === selectedMember);
     if (!member) return;
 
+    const winId = crypto.randomUUID();
     const entry: WinEntry = {
-      id: Date.now().toString(),
+      id: winId,
       restaurant: restaurantName.trim(),
       story: storyText.trim() || undefined,
       date: new Date().toLocaleDateString(),
     };
+
+    supabase
+      .from("win_entries")
+      .insert({
+        id: winId,
+        member_id: selectedMember,
+        restaurant: entry.restaurant,
+        story: entry.story ?? null,
+      })
+      .then();
 
     const newWinCount = member.wins.length + 1;
     const prevMilestone = Math.floor((member.wins.length / member.goal) * 10);
@@ -240,20 +231,26 @@ const Index = () => {
 
   const addMember = () => {
     if (!newName.trim()) return;
+    const memberId = crypto.randomUUID();
+    const goal = parseInt(newGoal) || 30;
     updateTeam(activeTab, (team) => ({
       ...team,
       members: [
         ...team.members,
-        { id: Date.now().toString(), name: newName.trim(), goal: parseInt(newGoal) || 30, wins: [], ducksEarned: 0, funnelByWeek: {} },
+        { id: memberId, name: newName.trim(), goal, wins: [], ducksEarned: 0, funnelByWeek: {} },
       ],
     }));
+    supabase
+      .from("members")
+      .insert({ id: memberId, name: newName.trim(), goal, team_id: activeTab, ducks_earned: 0 })
+      .then();
     setNewName("");
     setNewGoal("");
     setAddMemberOpen(false);
   };
 
   const handleBarClick = (data: any) => {
-    const member = activeTeam.members.find((m) => m.name === data.name);
+    const member = activeTeam?.members.find((m) => m.name === data.name);
     if (member) setDetailMember(member);
   };
 
@@ -378,7 +375,7 @@ const Index = () => {
               <Slider
                 value={[phases.reduce((sum, p) => sum + p.progress, 0) / phases.length]}
                 onValueChange={([val]) => {
-                  setPhases((prev) => {
+                  updatePhases((prev) => {
                     const newPhases = [...prev];
                     const perPhase = 100 / newPhases.length;
                     newPhases.forEach((p, i) => {
@@ -430,7 +427,7 @@ const Index = () => {
                   <p className={`text-xs font-semibold ${colors[i % colors.length]}`}>{phase.month}</p>
                   <Input
                     value={phase.label}
-                    onChange={(e) => setPhases((prev) => prev.map((p) => p.id === phase.id ? { ...p, label: e.target.value } : p))}
+                    onChange={(e) => updatePhases((prev) => prev.map((p) => p.id === phase.id ? { ...p, label: e.target.value } : p))}
                     className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
                   />
                   <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
@@ -448,7 +445,7 @@ const Index = () => {
           </div>
           <Textarea
             value={missionPurpose}
-            onChange={(e) => setMissionPurpose(e.target.value)}
+            onChange={(e) => updateMission(e.target.value)}
             placeholder="Describe the mission and purpose of this test..."
             className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
             rows={3}
@@ -456,11 +453,11 @@ const Index = () => {
           />
           <div className="mt-3 flex justify-end">
             {!missionSubmitted ? (
-              <Button size="sm" onClick={() => setMissionSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+              <Button size="sm" onClick={() => updateMissionSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                 Submit
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => setMissionSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
+              <Button size="sm" variant="outline" onClick={() => updateMissionSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
                 Edit
               </Button>
             )}
@@ -476,7 +473,7 @@ const Index = () => {
                 type="number"
                 min={0}
                 value={totalTam || ""}
-                onChange={(e) => setTotalTam(Math.max(0, parseInt(e.target.value) || 0))}
+                onChange={(e) => updateTotalTam(Math.max(0, parseInt(e.target.value) || 0))}
                 className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
                 placeholder="0"
                 disabled={tamSubmitted}
@@ -484,11 +481,11 @@ const Index = () => {
               {tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
             </div>
             {!tamSubmitted ? (
-              <Button size="sm" onClick={() => setTamSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+              <Button size="sm" onClick={() => updateTamSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                 Submit
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => setTamSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
+              <Button size="sm" variant="outline" onClick={() => updateTamSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
                 Edit
               </Button>
             )}
@@ -688,6 +685,13 @@ function TeamTab({
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
   const teamTotal = members.reduce((s, m) => getMemberTotalWins(m), 0);
+
+  const recentWeeks = getWeekKeys(2);
+  const prevWeekKey = recentWeeks[0].key;
+  const currWeekKey = recentWeeks[1].key;
+  const currWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, currWeekKey).wins, 0);
+  const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
+  const winsUp = currWeekWins >= prevWeekWins;
   const teamGoalTotal = members.reduce((s, m) => s + m.goal, 0);
   const teamGoalPct = teamGoalTotal > 0 ? Math.min((teamTotal / teamGoalTotal) * 100, 100) : 0;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
@@ -775,7 +779,7 @@ function TeamTab({
                         <p className="text-[10px] text-secondary-foreground/50">TAM→Call</p>
                       </div>
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-accent">{totals.calls > 0 ? ((totals.connects / totals.calls) * 100).toFixed(0) : 0}%</p>
+                        <p className="font-display text-lg font-bold text-secondary-foreground">{totals.calls > 0 ? ((totals.connects / totals.calls) * 100).toFixed(0) : 0}%</p>
                         <p className="text-[10px] text-secondary-foreground/50">Call→Connect</p>
                       </div>
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
@@ -783,7 +787,7 @@ function TeamTab({
                         <p className="text-[10px] text-secondary-foreground/50">Connect→Demo</p>
                       </div>
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-accent">{totals.demos > 0 ? ((totals.wins / totals.demos) * 100).toFixed(0) : 0}%</p>
+                        <p className="font-display text-lg font-bold text-secondary-foreground">{totals.demos > 0 ? ((totals.wins / totals.demos) * 100).toFixed(0) : 0}%</p>
                         <p className="text-[10px] text-secondary-foreground/50">Demo→Win</p>
                       </div>
                     </div>
@@ -794,7 +798,13 @@ function TeamTab({
 
           {/* Stats */}
           <div className="grid grid-cols-1 gap-4">
-            <StatCard icon={<TrendingUp className="h-5 w-5 text-accent" />} label="Total Wins" value={teamTotal} />
+            <StatCard
+              icon={winsUp
+                ? <TrendingUp className="h-5 w-5 text-accent" />
+                : <TrendingDown className="h-5 w-5 text-destructive" />}
+              label="Total Wins"
+              value={teamTotal}
+            />
           </div>
 
           {/* Empty state - add first member via Manager Inputs Win Goals */}
@@ -831,12 +841,34 @@ function TeamTab({
             <div className="rounded-lg border border-border bg-card p-5 glow-card">
               <div className="mb-4 flex items-baseline justify-between">
                 <h3 className="font-display text-lg font-semibold text-foreground">Your Funnels</h3>
-                <span className="text-xs text-muted-foreground italic">Update weekly by Tuesday noon</span>
+                <span className="text-xs text-muted-foreground italic">Update weekly by Tuesday 12pm EST</span>
               </div>
               <div className="space-y-4">
                 {members.map((m) => {
                   const f = getMemberFunnel(m, currentWeek);
                   const role = (m.funnelByWeek?.[currentWeek] as WeeklyFunnel)?.role;
+                  const upsertFunnelField = (updates: Record<string, unknown>) => {
+                    const current = getMemberFunnel(m, currentWeek);
+                    supabase
+                      .from("weekly_funnels")
+                      .upsert(
+                        {
+                          member_id: m.id,
+                          week_key: currentWeek,
+                          tam: current.tam,
+                          calls: current.calls,
+                          connects: current.connects,
+                          demos: current.demos,
+                          wins: current.wins,
+                          role: current.role ?? null,
+                          submitted: current.submitted ?? false,
+                          submitted_at: current.submittedAt ?? null,
+                          ...updates,
+                        },
+                        { onConflict: "member_id,week_key" }
+                      )
+                      .then();
+                  };
                   const updateFunnel = (field: keyof FunnelData, value: string) => {
                     const num = Math.max(0, parseInt(value) || 0);
                     updateTeam(team.id, (t) => ({
@@ -845,6 +877,7 @@ function TeamTab({
                         mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [currentWeek]: { ...getMemberFunnel(mem, currentWeek), [field]: num } } } : mem
                       ),
                     }));
+                    upsertFunnelField({ [field]: num });
                   };
                   const updateRole = (val: string) => {
                     updateTeam(team.id, (t) => ({
@@ -853,6 +886,7 @@ function TeamTab({
                         mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [currentWeek]: { ...getMemberFunnel(mem, currentWeek), role: val as WeeklyRole } } } : mem
                       ),
                     }));
+                    upsertFunnelField({ role: val });
                   };
                   return (
                     <div key={m.id} className={`rounded-md p-3 ${f.submitted ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/20'}`}>
@@ -922,6 +956,7 @@ function TeamTab({
                             <Button
                               size="sm"
                               onClick={() => {
+                                const now = new Date().toLocaleDateString();
                                 updateTeam(team.id, (t) => ({
                                   ...t,
                                   members: t.members.map((mem) =>
@@ -933,13 +968,14 @@ function TeamTab({
                                             [currentWeek]: {
                                               ...getMemberFunnel(mem, currentWeek),
                                               submitted: true,
-                                              submittedAt: new Date().toLocaleDateString(),
+                                              submittedAt: now,
                                             },
                                           },
                                         }
                                       : mem
                                   ),
                                 }));
+                                upsertFunnelField({ submitted: true, submitted_at: new Date().toISOString() });
                               }}
                               className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
                             >
@@ -969,6 +1005,7 @@ function TeamTab({
                                     : mem
                                 ),
                               }));
+                              upsertFunnelField({ submitted: false, submitted_at: null });
                             }}
                             className="ml-auto text-xs h-7 border-border text-muted-foreground hover:text-foreground"
                           >

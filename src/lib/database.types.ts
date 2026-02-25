@@ -1,0 +1,72 @@
+export interface DbTeam {
+  id: string;
+  name: string;
+  owner: string;
+  lead_rep: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMember {
+  id: string;
+  team_id: string | null;
+  name: string;
+  goal: number;
+  ducks_earned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbWeeklyFunnel {
+  id: string;
+  member_id: string;
+  week_key: string;
+  role: string | null;
+  tam: number;
+  calls: number;
+  connects: number;
+  demos: number;
+  wins: number;
+  submitted: boolean;
+  submitted_at: string | null;
+}
+
+export interface DbWinEntry {
+  id: string;
+  member_id: string;
+  restaurant: string;
+  story: string | null;
+  date: string;
+  created_at: string;
+}
+
+export interface DbTestPhase {
+  id: string;
+  month: string;
+  label: string;
+  progress: number;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMission {
+  id: string;
+  content: string;
+  submitted: boolean;
+  updated_at: string;
+}
+
+export interface DbTamConfig {
+  id: string;
+  total_tam: number;
+  submitted: boolean;
+  updated_at: string;
+}
+
+export interface DbCustomRole {
+  id: string;
+  name: string;
+  created_at: string;
+}

@@ -1,0 +1,160 @@
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/lib/supabase";
+import type { DbTestPhase, DbMission, DbTamConfig, DbCustomRole } from "@/lib/database.types";
+
+export interface TestPhase {
+  id: string;
+  month: string;
+  label: string;
+  progress: number;
+}
+
+const INITIAL_PHASES: TestPhase[] = [
+  { id: "m1", month: "Month 1", label: "Get the pilot to work, get product feedback", progress: 0 },
+  { id: "m2", month: "Month 2", label: "Win, win, win", progress: 0 },
+  { id: "m3", month: "Month 3", label: "Keep winning, build recommendation", progress: 0 },
+];
+
+export function useManagerInputs() {
+  const [phases, setPhases] = useState<TestPhase[]>(INITIAL_PHASES);
+  const [missionPurpose, setMissionPurpose] = useState("");
+  const [missionSubmitted, setMissionSubmitted] = useState(false);
+  const [missionRowId, setMissionRowId] = useState<string | null>(null);
+  const [totalTam, setTotalTam] = useState(0);
+  const [tamSubmitted, setTamSubmitted] = useState(false);
+  const [tamRowId, setTamRowId] = useState<string | null>(null);
+  const [customRoles, setCustomRoles] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ── load from Supabase ──
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [pRes, misRes, tamRes, rolesRes] = await Promise.all([
+        supabase.from("test_phases").select("*").order("sort_order"),
+        supabase.from("mission").select("*").limit(1).single(),
+        supabase.from("tam_config").select("*").limit(1).single(),
+        supabase.from("custom_roles").select("*").order("created_at"),
+      ]);
+      if (cancelled) return;
+
+      if (pRes.data && pRes.data.length > 0) {
+        setPhases(
+          (pRes.data as DbTestPhase[]).map((p) => ({
+            id: p.id,
+            month: p.month,
+            label: p.label,
+            progress: p.progress,
+          }))
+        );
+      }
+
+      if (misRes.data) {
+        const m = misRes.data as DbMission;
+        setMissionRowId(m.id);
+        setMissionPurpose(m.content);
+        setMissionSubmitted(m.submitted);
+      }
+
+      if (tamRes.data) {
+        const t = tamRes.data as DbTamConfig;
+        setTamRowId(t.id);
+        setTotalTam(t.total_tam);
+        setTamSubmitted(t.submitted);
+      }
+
+      if (rolesRes.data) {
+        setCustomRoles((rolesRes.data as DbCustomRole[]).map((r) => r.name));
+      }
+
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── phases persistence ──
+  const updatePhases = useCallback((updater: (prev: TestPhase[]) => TestPhase[]) => {
+    setPhases((prev) => {
+      const next = updater(prev);
+      for (const p of next) {
+        const old = prev.find((o) => o.id === p.id);
+        if (!old) continue;
+        if (old.label !== p.label || old.progress !== p.progress || old.month !== p.month) {
+          supabase
+            .from("test_phases")
+            .update({ month: p.month, label: p.label, progress: p.progress })
+            .eq("id", p.id)
+            .then();
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const addPhase = useCallback((month: string, label: string) => {
+    const id = crypto.randomUUID();
+    const phase: TestPhase = { id, month, label: label || "TBD", progress: 0 };
+    setPhases((prev) => {
+      const sortOrder = prev.length;
+      supabase
+        .from("test_phases")
+        .insert({ id, month, label: phase.label, progress: 0, sort_order: sortOrder })
+        .then();
+      return [...prev, phase];
+    });
+  }, []);
+
+  // ── mission persistence ──
+  const updateMission = useCallback((content: string) => {
+    setMissionPurpose(content);
+    if (missionRowId) {
+      supabase.from("mission").update({ content }).eq("id", missionRowId).then();
+    }
+  }, [missionRowId]);
+
+  const updateMissionSubmitted = useCallback((submitted: boolean) => {
+    setMissionSubmitted(submitted);
+    if (missionRowId) {
+      supabase.from("mission").update({ submitted }).eq("id", missionRowId).then();
+    }
+  }, [missionRowId]);
+
+  // ── TAM persistence ──
+  const updateTotalTam = useCallback((value: number) => {
+    setTotalTam(value);
+    if (tamRowId) {
+      supabase.from("tam_config").update({ total_tam: value }).eq("id", tamRowId).then();
+    }
+  }, [tamRowId]);
+
+  const updateTamSubmitted = useCallback((submitted: boolean) => {
+    setTamSubmitted(submitted);
+    if (tamRowId) {
+      supabase.from("tam_config").update({ submitted }).eq("id", tamRowId).then();
+    }
+  }, [tamRowId]);
+
+  // ── custom roles persistence ──
+  const addCustomRole = useCallback((name: string) => {
+    setCustomRoles((prev) => [...prev, name]);
+    supabase.from("custom_roles").insert({ name }).then();
+  }, []);
+
+  return {
+    phases,
+    updatePhases,
+    addPhase,
+    missionPurpose,
+    updateMission,
+    missionSubmitted,
+    updateMissionSubmitted,
+    totalTam,
+    updateTotalTam,
+    tamSubmitted,
+    updateTamSubmitted,
+    customRoles,
+    addCustomRole,
+    loading,
+  };
+}

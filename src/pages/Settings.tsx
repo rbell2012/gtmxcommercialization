@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -36,6 +36,8 @@ const Settings = () => {
   const [editTeamName, setEditTeamName] = useState("");
   const [editTeamOwner, setEditTeamOwner] = useState("");
   const [editTeamLeadRep, setEditTeamLeadRep] = useState("");
+
+  const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
   const handleCreateTeam = () => {
     if (!newTeamName.trim()) return;
@@ -85,7 +87,7 @@ const Settings = () => {
     setEditTeamId(null);
   };
 
-  const allMembers = [
+  const allMembersUnsorted = [
     ...teams.flatMap((t) =>
       t.members.map((m) => ({ ...m, teamId: t.id as string | null, teamName: t.name }))
     ),
@@ -95,6 +97,18 @@ const Settings = () => {
       teamName: "Unassigned",
     })),
   ];
+
+  const allMembers = nameSort
+    ? [...allMembersUnsorted].sort((a, b) =>
+        nameSort === "asc"
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name)
+      )
+    : allMembersUnsorted;
+
+  const cycleNameSort = () => {
+    setNameSort((prev) => (prev === null ? "asc" : prev === "asc" ? "desc" : null));
+  };
 
   const handleAssignmentChange = (
     memberId: string,
@@ -238,11 +252,30 @@ const Settings = () => {
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">Lead Rep</label>
-                  <Input
-                    value={editTeamLeadRep}
-                    onChange={(e) => setEditTeamLeadRep(e.target.value)}
-                    className="bg-secondary/20 border-border text-foreground"
-                  />
+                  {(() => {
+                    const editingTeam = teams.find((t) => t.id === editTeamId);
+                    const teamMembers = editingTeam
+                      ? [...editingTeam.members].sort((a, b) => a.name.localeCompare(b.name))
+                      : [];
+                    return (
+                      <Select
+                        value={editTeamLeadRep || "__none__"}
+                        onValueChange={(val) => setEditTeamLeadRep(val === "__none__" ? "" : val)}
+                      >
+                        <SelectTrigger className="bg-secondary/20 border-border text-foreground">
+                          <SelectValue placeholder="Select lead rep" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border z-50">
+                          <SelectItem value="__none__">None</SelectItem>
+                          {teamMembers.map((m) => (
+                            <SelectItem key={m.id} value={m.name}>
+                              {m.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  })()}
                 </div>
                 <Button onClick={saveEditTeam} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                   Save Changes
@@ -305,8 +338,20 @@ const Settings = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50">
-                    <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Name
+                    <th
+                      className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors"
+                      onClick={cycleNameSort}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Name
+                        {nameSort === "asc" ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : nameSort === "desc" ? (
+                          <ArrowDown className="h-3 w-3" />
+                        ) : (
+                          <ArrowUpDown className="h-3 w-3 opacity-40" />
+                        )}
+                      </span>
                     </th>
                     <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Goal

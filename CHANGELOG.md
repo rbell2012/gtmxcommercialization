@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026-02-25 (Supabase Schema Migration — localStorage to Database)
+
+### Location – All pages (`src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`, `src/hooks/useManagerInputs.ts`, `src/lib/database.types.ts`, `supabase/migrations/20250224000000_create_all_tables.sql`)
+
+**Rationale:** All app state was stored in browser localStorage, meaning data was device-locked, unshareable between users, and lost on cache clear. Migrating to Supabase tables makes the data persistent, multi-user accessible, and queryable — a prerequisite for any team collaboration or analytics features.
+
+**Changes:**
+- Created SQL migration (`supabase/migrations/20250224000000_create_all_tables.sql`) defining 10 new tables organized by UI section:
+  - **Settings:** `teams`, `members` (with `team_id` null representing unassigned)
+  - **Manager Inputs:** `test_phases`, `mission` (single-row), `tam_config` (single-row), `custom_roles`
+  - **Player's Section:** `weekly_funnels` (per-member per-week, unique on `member_id + week_key`), `win_entries`
+  - **Activation/Adoption (future):** `activation_adoption_entries`
+  - **GTMx Impact (future):** `gtmx_impact_entries`
+- Added RLS policies (open read/write for now), indexes on foreign keys, `updated_at` triggers, and table comments.
+- Created `src/lib/database.types.ts` with TypeScript interfaces for all DB tables.
+- Rewrote `src/contexts/TeamsContext.tsx` to load teams, members, weekly funnels, and win entries from Supabase on mount, then write-through on every mutation (add/remove/update team, create/assign/unassign/remove member). Removed all localStorage reads and writes.
+- Created `src/hooks/useManagerInputs.ts` hook that loads and persists test phases, mission, TAM config, and custom roles to/from Supabase — replacing 6 localStorage keys and their sync effects.
+- Updated `src/pages/Index.tsx` to use the new `useManagerInputs` hook, added Supabase upserts for `weekly_funnels` on every funnel field change/role change/submit/edit, and Supabase inserts for `win_entries` on win creation and `members` on inline member creation.
+- Switched all generated IDs from `Date.now().toString()` to `crypto.randomUUID()` for UUID compatibility with the Supabase schema.
+---
+
+## 2026-02-25 (Player Section Deadline Clarification)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The update reminder text in the Player's Section said "Tuesday noon" without specifying a timezone, which could cause confusion for distributed teams. Adding "EST" removes ambiguity and ensures all users know the exact deadline.
+
+**Changes:**
+- Updated the italic reminder text in the Player's Section from "Update weekly by Tuesday noon" to "Update weekly by Tuesday 12pm EST".
+- Change applies to all pilot/project pages via the shared component.
+---
+
+## 2026-02-25 (Conversion Rate Color Fix)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Call→Connect and Demo→Win percentage numbers in the team header conversion-rate boxes were styled with `text-accent`, which was invisible or nearly invisible against the dark blue header background. Changing them to match the header text color ensures all four conversion metrics are legible at a glance.
+
+**Changes:**
+- Changed the percentage `<p>` element for Call→Connect from `text-accent` to `text-secondary-foreground` so it matches the team name ("Guest Pro") color.
+- Changed the percentage `<p>` element for Demo→Win from `text-accent` to `text-secondary-foreground` for the same reason.
+- TAM→Call and Connect→Demo percentages remain `text-primary` (orange) as before — no change needed.
+- Change applies to all pilot/project pages via the shared `TeamTab` component.
+---
+
+## 2026-02-25 (Members Badge in Header)
+
+### Location – All Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Members count was displayed in a separate white stat card below the blue team header, visually disconnected from the core team identity block. Moving it into the blue header alongside the wins count consolidates key team metadata into a single glanceable area and reduces vertical space consumed by standalone stat cards.
+
+**Changes:**
+- Added the `Users` icon, "Members" label, and member count into the blue gradient team header, positioned to the left of the wins counter.
+- Styled the new members badge with `font-display`, `text-secondary-foreground`, and matching uppercase tracking to stay consistent with the existing header typography.
+- Removed the `StatCard` for "Members" from the stats grid below the header; the grid now only contains "Total Wins".
+- Change applies to all pilot/project pages via the shared `TeamTab` component.
+---
+
+## 2026-02-25 (Total Wins Trend Icon)
+
+### Location – Pilots pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Total Wins stat card always showed a static upward-trending icon regardless of actual performance. Changing the icon to reflect week-over-week direction gives managers an at-a-glance indicator of whether their team's wins are trending up or down compared to the prior week.
+
+**Changes:**
+- Added `TrendingDown` to the `lucide-react` import alongside the existing `TrendingUp`.
+- Computed current-week and previous-week team wins in `TeamTestSignals` by summing each member's `funnelByWeek` wins for the two most recent week keys.
+- Replaced the static `TrendingUp` icon on the Total Wins `StatCard` with a conditional render: `TrendingUp` (accent color) when current week wins are greater than or equal to last week, `TrendingDown` (destructive/red color) when they are lower.
+- Change applies to all pilot/project pages since they share the same `TeamTestSignals` component.
+---
+
 ## 2026-02-25 (Dark Mode)
 
 ### Location – All pages (`src/index.css`, `src/App.tsx`, `src/pages/Index.tsx`, `src/pages/Data.tsx`, `src/pages/Settings.tsx`, `src/components/HexEmbed.tsx`, `src/components/FindingsWrite.tsx`)
