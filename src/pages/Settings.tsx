@@ -112,7 +112,6 @@ const Settings = () => {
 
   const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const [newMemberName, setNewMemberName] = useState("");
-  const [newMemberGoal, setNewMemberGoal] = useState("");
 
   const [editTeamId, setEditTeamId] = useState<string | null>(null);
   const [editTeamName, setEditTeamName] = useState("");
@@ -142,7 +141,7 @@ const Settings = () => {
     }
   }, [editingMemberId, editingField]);
 
-  const startInlineEdit = (memberId: string, field: "name" | "goal", currentValue: string) => {
+  const startInlineEdit = (memberId: string, field: "name", currentValue: string) => {
     setEditingMemberId(memberId);
     setEditingField(field);
     setEditingValue(currentValue);
@@ -154,12 +153,6 @@ const Settings = () => {
     if (editingField === "name" && trimmed) {
       updateMember(editingMemberId, { name: trimmed });
       toast({ title: "Member updated", description: `Name changed to ${trimmed}.` });
-    } else if (editingField === "goal") {
-      const num = parseInt(trimmed);
-      if (!isNaN(num) && num > 0) {
-        updateMember(editingMemberId, { goals: { wins: num } });
-        toast({ title: "Member updated", description: `Wins goal changed to ${num}.` });
-      }
     }
     cancelInlineEdit();
   };
@@ -185,11 +178,9 @@ const Settings = () => {
 
   const handleCreateMember = () => {
     if (!newMemberName.trim()) return;
-    const winsGoal = parseInt(newMemberGoal) || 30;
-    createMember(newMemberName.trim(), { wins: winsGoal });
+    createMember(newMemberName.trim());
     toast({ title: "Member created", description: `${newMemberName.trim()} is ready to be assigned to a team.` });
     setNewMemberName("");
-    setNewMemberGoal("");
     setCreateMemberOpen(false);
   };
 
@@ -776,14 +767,6 @@ const Settings = () => {
                     onKeyDown={(e) => e.key === "Enter" && handleCreateMember()}
                     className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground"
                   />
-                  <Input
-                    placeholder="Win goal (default: 30)"
-                    type="number"
-                    value={newMemberGoal}
-                    onChange={(e) => setNewMemberGoal(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleCreateMember()}
-                    className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground"
-                  />
                   <Button onClick={handleCreateMember} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                     Create Member
                   </Button>
@@ -820,9 +803,6 @@ const Settings = () => {
                     </th>
                     <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Level
-                    </th>
-                    <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      Wins Goal
                     </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Team
@@ -888,33 +868,6 @@ const Settings = () => {
                             ))}
                           </SelectContent>
                         </Select>
-                      </td>
-                      <td className="py-3 px-4 text-center text-foreground tabular-nums">
-                        {editingMemberId === m.id && editingField === "goal" ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <Input
-                              ref={inlineInputRef}
-                              type="number"
-                              value={editingValue}
-                              onChange={(e) => setEditingValue(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") saveInlineEdit();
-                                if (e.key === "Escape") cancelInlineEdit();
-                              }}
-                              onBlur={saveInlineEdit}
-                              className="h-7 w-20 text-sm text-center bg-background border-border/50"
-                            />
-                          </div>
-                        ) : (
-                          <span
-                            className="cursor-pointer inline-flex items-center gap-1 group/goal rounded px-1 -mx-1 hover:bg-muted/50 transition-colors"
-                            onClick={() => startInlineEdit(m.id, "goal", String(m.goals.wins))}
-                            title="Click to edit"
-                          >
-                            {m.goals.wins}
-                            <Edit2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover/goal:opacity-100 transition-opacity shrink-0" />
-                          </span>
-                        )}
                       </td>
                       <td className="py-3 px-4">
                         <Select

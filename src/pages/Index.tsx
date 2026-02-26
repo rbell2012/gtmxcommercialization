@@ -281,7 +281,6 @@ const Index = () => {
   const [storyText, setStoryText] = useState("");
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newGoal, setNewGoal] = useState("");
   const [detailMember, setDetailMember] = useState<TeamMember | null>(null);
   const [celebration, setCelebration] = useState<string | null>(null);
   const [addRoleOpen, setAddRoleOpen] = useState(false);
@@ -387,10 +386,9 @@ const Index = () => {
       })
       .then();
 
-    const winsGoal = member.goals.wins || 30;
     const newWinCount = member.wins.length + 1;
-    const prevMilestone = Math.floor((member.wins.length / winsGoal) * 10);
-    const newMilestone = Math.floor((newWinCount / winsGoal) * 10);
+    const prevMilestone = Math.floor(member.wins.length / 3);
+    const newMilestone = Math.floor(newWinCount / 3);
     const earnedNewDuck = newMilestone > prevMilestone;
 
     updateTeam(activeTab, (team) => ({
@@ -410,7 +408,7 @@ const Index = () => {
       setCelebration(member.name);
       toast({
         title: "🦆 Great ducking job!",
-        description: `${member.name} hit ${newMilestone * 10}% of their goal!`,
+        description: `${member.name} just earned duck #${newMilestone}!`,
       });
     }
 
@@ -422,8 +420,7 @@ const Index = () => {
   const addMember = () => {
     if (!newName.trim()) return;
     const memberId = crypto.randomUUID();
-    const winsGoal = parseInt(newGoal) || 30;
-    const goals: MemberGoals = { ...DEFAULT_GOALS, wins: winsGoal };
+    const goals: MemberGoals = { ...DEFAULT_GOALS };
     updateTeam(activeTab, (team) => ({
       ...team,
       members: [
@@ -435,13 +432,12 @@ const Index = () => {
       .from("members")
       .insert({
         id: memberId, name: newName.trim(),
-        goal: winsGoal, goal_calls: goals.calls,
-        goal_ops: goals.ops, goal_demos: goals.demos, goal_wins: goals.wins, goal_feedback: goals.feedback,
+        goal_calls: goals.calls, goal_ops: goals.ops,
+        goal_demos: goals.demos, goal_feedback: goals.feedback,
         team_id: activeTab, ducks_earned: 0, is_active: true,
       })
       .then();
     setNewName("");
-    setNewGoal("");
     setAddMemberOpen(false);
   };
 
@@ -852,7 +848,6 @@ const Index = () => {
             </DialogHeader>
             <div className="space-y-3 pt-2">
               <Input placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-              <Input placeholder="Win goal (e.g. 40)" type="number" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
               <Button onClick={addMember} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
             </div>
           </DialogContent>
@@ -893,7 +888,7 @@ const Index = () => {
           <DialogContent className="bg-card border-border max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display text-foreground">
-                {detailMember?.name}'s Wins ({detailMember?.wins.length} / {detailMember?.goals.wins})
+                {detailMember?.name}'s Wins ({detailMember?.wins.length})
                 {detailMember && detailMember.ducksEarned > 0 && (
                   <span className="ml-2">
                     {[...Array(detailMember.ducksEarned)].map((_, i) => (
@@ -992,14 +987,11 @@ function TeamTab({
   const currWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, currWeekKey).wins, 0);
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const winsUp = currWeekWins >= prevWeekWins;
-  const teamGoalTotal = members.reduce((s, m) => s + (m.goals.wins || 0), 0);
-  const teamGoalPct = teamGoalTotal > 0 ? (teamTotal / teamGoalTotal) * 100 : 0;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
 
   const chartData = members.map((m) => ({
     name: m.name,
     wins: getMemberTotalWins(m),
-    goal: m.goals.wins,
   }));
 
   const allStories = members
@@ -1048,18 +1040,11 @@ function TeamTab({
                   </div>
                   <div className="text-right">
                     <div className="font-display text-4xl font-black text-primary">
-                      {teamTotal}<span className="text-lg font-bold text-secondary-foreground/60">/{teamGoalTotal}</span>
+                      {teamTotal}
                     </div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Wins</p>
                   </div>
                 </div>
-              </div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-secondary-foreground/50">Progress</span>
-                <span className={`font-display text-sm font-bold ${teamGoalPct >= 100 ? "text-green-400" : "text-primary"}`}>{teamGoalPct.toFixed(0)}%</span>
-              </div>
-              <div className="h-5 w-full overflow-hidden rounded-full bg-secondary-foreground/10 shadow-inner">
-                <div className="progress-bar-gradient h-full rounded-full transition-all duration-700 ease-out shadow-lg" style={{ width: `${Math.min(teamGoalPct, 100)}%` }} />
               </div>
               {teamDucks > 0 && (
                 <div className="mt-3 flex items-center gap-1">
@@ -1067,9 +1052,6 @@ function TeamTab({
                     <span key={i} className="text-lg hover-scale inline-block">🦆</span>
                   ))}
                 </div>
-              )}
-              {teamTotal >= teamGoalTotal && teamGoalTotal > 0 && (
-                <p className="mt-3 text-sm font-bold text-primary animate-pulse-glow">🎉 Team goal reached! Amazing work!</p>
               )}
               {/* Conversion Rates */}
               {(() => {

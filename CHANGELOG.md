@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-02-26 (Remove Accounts, Contacts Added, and Wins Goal from Goal Metrics)
+
+### Location – Pilot pages (`src/pages/Index.tsx`), Settings (`src/pages/Settings.tsx`), State Management (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Supabase
+
+**Rationale:** The "Accounts" and "Contacts Added" funnel fields were no longer needed as tracked metrics. Additionally, the per-member "Wins Goal" was removed from the configurable goal metrics system, simplifying member creation and the team progress display. Ducks are now earned every 3 wins rather than at percentage milestones of a goal.
+
+**Changes:**
+- Removed `accounts` and `contacts_added` from `GOAL_METRICS`, `GOAL_METRIC_LABELS`, `DEFAULT_GOALS`, `DEFAULT_TEAM_GOALS_BY_LEVEL`, `DEFAULT_ENABLED_GOALS`, `FunnelData` interface, and all DB mapping/payload functions in `TeamsContext.tsx`.
+- Removed `accounts` and `contacts_added` fields from `DbTeam`, `DbMember`, and `DbWeeklyFunnel` type interfaces in `database.types.ts`.
+- Removed "Accounts" and "Contacts Added" input fields from the Player's Section form in `Index.tsx`.
+- Removed "Accounts" and "Contacts Added" rows from the Weekly Data table and Team Monthly Aggregate table.
+- Removed "Accounts" from the Funnel Overview chart metric colors and keys.
+- Removed `accounts` and `contacts_added` from all Supabase upsert payloads (TAM submit, weekly funnel submit).
+- Created and applied Supabase migration to drop `accounts`, `contacts_added`, `goal_accounts`, `goal_contacts_added`, `team_goal_accounts`, `team_goal_contacts_added`, `goal_enabled_accounts`, and `goal_enabled_contacts_added` columns.
+- Removed `wins` from `GOAL_METRICS` so it is no longer a configurable/toggleable goal metric (wins are still tracked as a funnel field).
+- Removed wins goal input from the "Add Member" dialog on both the Pilots page and Settings page.
+- Removed the "Wins Goal" column and inline editing from the Settings members table.
+- Removed the team progress bar, goal percentage display, and "Team goal reached" celebration from the team section header.
+- Changed duck earning logic from percentage-of-goal milestones to every 3 wins.
+- Updated the wins detail dialog title to show count only (no goal denominator).
+---
+
+## 2026-02-26 (Team Section Header Text Color)
+
+### Location – Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Team aggregate section in the Weekly Data table uses a dark `bg-secondary` background, but the header text ("Team", month labels like "JAN 2026", and "Total") was styled with `text-primary` / `text-muted-foreground`, making it hard to read against the dark background. Switching to white text improves contrast and readability.
+
+**Changes:**
+- Changed the "Team" label from `text-primary` to `text-white`.
+- Changed the month header cells (e.g. "JAN 2026", "FEB 2026") from `text-muted-foreground` to `text-white`.
+- Changed the "Total" header cell from `text-muted-foreground` to `text-white`.
+---
+
 ## 2026-02-26 (Netlify SPA Redirect Fix)
 
 ### Location – Deployment (`public/_redirects`)

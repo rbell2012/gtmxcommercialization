@@ -4,14 +4,13 @@ import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex } from "@
 
 // ── Goal metrics system ──
 
-export const GOAL_METRICS = ['calls', 'ops', 'demos', 'wins', 'feedback'] as const;
+export const GOAL_METRICS = ['calls', 'ops', 'demos', 'feedback'] as const;
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
   calls: 'Calls',
   ops: 'Ops',
   demos: 'Demos',
-  wins: 'Wins',
   feedback: 'Feedback',
 };
 
@@ -47,7 +46,6 @@ export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
   calls: {},
   ops: {},
   demos: {},
-  wins: {},
   feedback: {},
 };
 
@@ -55,7 +53,6 @@ export const DEFAULT_GOALS: MemberGoals = {
   calls: 0,
   ops: 0,
   demos: 0,
-  wins: 30,
   feedback: 0,
 };
 
@@ -103,7 +100,6 @@ export const DEFAULT_ENABLED_GOALS: EnabledGoals = {
   calls: false,
   ops: false,
   demos: false,
-  wins: false,
   feedback: false,
 };
 
@@ -160,7 +156,6 @@ function dbMemberToApp(
       calls: row.goal_calls ?? 0,
       ops: row.goal_ops ?? 0,
       demos: row.goal_demos ?? 0,
-      wins: row.goal_wins ?? row.goal ?? 30,
       feedback: row.goal_feedback ?? 0,
     },
     ducksEarned: row.ducks_earned,
@@ -216,14 +211,12 @@ function assembleTeams(
         calls: t.team_goal_calls ?? 0,
         ops: t.team_goal_ops ?? 0,
         demos: t.team_goal_demos ?? 0,
-        wins: t.team_goal_wins ?? 0,
         feedback: t.team_goal_feedback ?? 0,
       },
       enabledGoals: {
         calls: t.goal_enabled_calls ?? false,
         ops: t.goal_enabled_ops ?? false,
         demos: t.goal_enabled_demos ?? false,
-        wins: t.goal_enabled_wins ?? false,
         feedback: t.goal_enabled_feedback ?? false,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
@@ -266,11 +259,9 @@ export function useTeams() {
 
 function memberGoalsToDbInsert(goals: MemberGoals) {
   return {
-    goal: goals.wins,
     goal_calls: goals.calls,
     goal_ops: goals.ops,
     goal_demos: goals.demos,
-    goal_wins: goals.wins,
     goal_feedback: goals.feedback,
   };
 }
@@ -412,12 +403,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               team_goal_calls: updated.teamGoals.calls,
               team_goal_ops: updated.teamGoals.ops,
               team_goal_demos: updated.teamGoals.demos,
-              team_goal_wins: updated.teamGoals.wins,
               team_goal_feedback: updated.teamGoals.feedback,
               goal_enabled_calls: updated.enabledGoals.calls,
               goal_enabled_ops: updated.enabledGoals.ops,
               goal_enabled_demos: updated.enabledGoals.demos,
-              goal_enabled_wins: updated.enabledGoals.wins,
               goal_enabled_feedback: updated.enabledGoals.feedback,
               accelerator_config: updated.acceleratorConfig,
               team_goals_by_level: updated.teamGoalsByLevel,
@@ -436,7 +425,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 }
               }
               if (Object.keys(goalUpdates).length > 0) {
-                goalUpdates.goal = member.goals.wins;
                 supabase.from("members").update(goalUpdates).eq("id", member.id).then();
               }
               if (oldMember.ducksEarned !== member.ducksEarned) {
@@ -535,7 +523,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       for (const [metric, value] of Object.entries(updates.goals)) {
         if (value !== undefined) dbUpdates[`goal_${metric}`] = value;
       }
-      if (updates.goals.wins !== undefined) dbUpdates.goal = updates.goals.wins;
     }
 
     const applyUpdates = (m: TeamMember): TeamMember => ({
