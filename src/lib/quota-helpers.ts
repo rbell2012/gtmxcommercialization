@@ -1,7 +1,16 @@
 import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule } from "@/contexts/TeamsContext";
 
+/**
+ * Sum a single metric across only the weeks whose Monday falls in the
+ * current calendar month (week_key format: "YYYY-MM-DD").
+ */
 export function getMemberMetricTotal(m: TeamMember, metric: GoalMetric): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + ((f as any)[metric] || 0), 0);
+  const now = new Date();
+  const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+  return Object.entries(m.funnelByWeek || {}).reduce(
+    (s, [weekKey, f]) => (weekKey.startsWith(prefix) ? s + ((f as any)[metric] || 0) : s),
+    0
+  );
 }
 
 export function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMetric): number {

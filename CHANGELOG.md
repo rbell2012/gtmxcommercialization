@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-02-25 (Monthly-Scoped Goal & Quota Calculations)
+
+### Location – Quota page (`src/pages/Quota.tsx`), Pilot pages (`src/pages/Index.tsx`), Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** Monthly goals and quota calculations were summing metric values across all time instead of only the current calendar month. For example, calls logged in January were inflating the February numerator. Goals should reflect only activity from the 1st through the end of the current month.
+
+**Changes:**
+- **`getMemberMetricTotal`** (`quota-helpers.ts`): Changed from summing all `funnelByWeek` entries to filtering by the current month prefix (e.g., `"2026-02-"`). Only weeks whose Monday (`week_key`) falls within the current calendar month are included. This affects the Quota page display (`current / goal`), the `computeQuota` percentage calculation, accelerator rule evaluation, and the `countTriggeredAccelerators` helper.
+- **`getMemberTotalWins`** (`Index.tsx`): Applied the same current-month filter so that the team tab header win badges and the Test Signals total wins reflect only the current month's data.
+- Both functions use `Object.entries` instead of `Object.values` to access the `week_key` for date filtering. No database or schema changes required — this is purely a client-side aggregation fix.
+---
+
 ## 2026-02-25 (Monthly Goals, Levels, Accelerator & Quota Enhancements)
 
 ### Location – Settings (`src/pages/Settings.tsx`), Pilot pages (`src/pages/Index.tsx`), Quota page (`src/pages/Quota.tsx`), Context (`src/contexts/TeamsContext.tsx`), Helpers (`src/lib/quota-helpers.ts`), Types (`src/lib/database.types.ts`), Database (`teams` and `members` tables)

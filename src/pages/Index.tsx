@@ -164,7 +164,12 @@ function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
 }
 
 function getMemberTotalWins(m: TeamMember): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
+  const now = new Date();
+  const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+  return Object.entries(m.funnelByWeek || {}).reduce(
+    (s, [weekKey, f]) => (weekKey.startsWith(prefix) ? s + f.wins : s),
+    0
+  );
 }
 
 
