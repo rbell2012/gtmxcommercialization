@@ -1514,17 +1514,17 @@ function TeamTab({
                       sum + monthWeekKeys.reduce((ws, wk) => ws + getMemberFunnel(m, wk)[metKey], 0), 0);
                   };
                   return [
-                    <tr key="team-month-header" className="border-t border-border bg-secondary/40">
-                      <td className="sticky left-0 z-30 bg-secondary/60 py-2 pl-5 pr-2 font-bold text-primary align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
+                    <tr key="team-month-header" className="border-t border-border bg-secondary">
+                      <td className="sticky left-0 z-30 bg-secondary py-2 pl-5 pr-2 font-bold text-primary align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
                         Team
                       </td>
-                      <td className="sticky z-20 bg-secondary/60 py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
+                      <td className="sticky z-20 bg-secondary py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
                       {teamMonths.map((mo) => (
-                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap bg-secondary/40">
+                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap bg-secondary">
                           {mo.label}
                         </td>
                       ))}
-                      <td className="sticky right-0 z-10 bg-secondary/60 text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</td>
+                      <td className="sticky right-0 z-10 bg-secondary text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</td>
                     </tr>,
                     ...metricRows.map((met) => (
                       <tr key={`team-${met.key}`}>

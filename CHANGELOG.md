@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-02-26 (Team Monthly Aggregate in Weekly Data Table)
+
+### Location – Pilot pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Weekly Data table showed individual member metrics by week but provided no way to see aggregated team-level performance at a glance. Stakeholders needed a rolled-up team view broken down by month rather than by week to assess overall trends without manually summing member rows.
+
+**Changes:**
+- **`getTeamMonthKeys` helper** (`Index.tsx`): Added a utility function that groups a team's weekly date keys by calendar month, returning each month's label (e.g. "Jan 2026"), its constituent week keys, and a `colSpan` value matching the number of weeks in that month — used to align monthly cells across the existing weekly column grid.
+- **Line separator**: Added a thick `border-t-4` divider row spanning the full table width below the last member's rows, providing a clear visual break between individual and team-level data.
+- **Team monthly aggregate rows**: Below the separator, a new "Team" section displays month-labelled columns (via `colSpan`) with aggregated metrics across all members. Includes the same funnel metrics (TAM, Accounts, Contacts Added, Call, Connect, Ops, Demo, Win, Feedback) and conversion rates (TAM→Call %, Call→Con %, Con→Demo %, Demo→Win %) as the per-member rows, filtered by the team's enabled goals.
+- **TAM handling**: Monthly team TAM uses each member's latest carried TAM value for the last week of that month, summed across all members. The Total column uses the latest carried TAM across the entire date range.
+- **Opaque sticky columns**: Fixed the Team section's sticky Player, Metric, and Total columns to use fully opaque `bg-secondary` backgrounds (instead of semi-transparent `bg-secondary/60` / `bg-secondary/40`) so horizontally-scrolled content does not bleed through.
+---
+
 ## 2026-02-26 (Backfill Historic TAM Values)
 
 ### Location – Database (`public.weekly_funnels` table in Supabase)
