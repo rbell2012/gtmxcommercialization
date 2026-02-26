@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-02-25 (Superhex Realtime Sync)
+
+### Location – Context (`src/contexts/TeamsContext.tsx`), Database (`supabase/migrations/20250225250000_enable_superhex_realtime.sql`)
+
+**Rationale:** New rows added to the `superhex` table in Supabase were not reflected in the web app until the user manually refreshed the page. The data was only fetched once on component mount with no subscription to live changes. Enabling Supabase Realtime ensures reps' activity metrics appear automatically as soon as they are inserted or updated — no refresh required.
+
+**Changes:**
+- **Supabase migration** (`20250225250000_enable_superhex_realtime.sql`): Added `public.superhex` to the `supabase_realtime` publication via `ALTER PUBLICATION supabase_realtime ADD TABLE public.superhex`. Migration applied to Supabase via MCP.
+- **TeamsContext** (`TeamsContext.tsx`): Extracted the inline `load()` function into a stable `loadAll` callback (wrapped in `useCallback`) so it can be invoked both on initial mount and from the realtime handler. Added a Supabase Realtime channel (`superhex-realtime`) that subscribes to all `postgres_changes` events (`INSERT`, `UPDATE`, `DELETE`) on the `superhex` table. On any change, `loadAll()` is called to re-fetch and re-merge all data. The channel is cleaned up on unmount via `supabase.removeChannel(channel)`.
+---
+
 ## 2026-02-25 (Load Superhex Metrics & Uncap Monthly Goal Percentages)
 
 ### Location – Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`)
