@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-02-26 (Netlify SPA Redirect Fix)
+
+### Location – Deployment (`public/_redirects`)
+
+**Rationale:** The app deployed on Netlify returned a 404 when refreshing or directly navigating to any route other than the root. Because the app is a single-page application using client-side routing (React Router), Netlify's server needs to be told to serve `index.html` for all paths so the client-side router can handle them.
+
+**Changes:**
+- **`public/_redirects`**: Created a Netlify redirects file with the rule `/* /index.html 200`, which instructs Netlify to serve the SPA's `index.html` for every URL path with a 200 status, allowing React Router to resolve routes client-side.
+---
+
 ## 2026-02-26 (Team Monthly Aggregate in Weekly Data Table)
 
 ### Location – Pilot pages (`src/pages/Index.tsx`)
