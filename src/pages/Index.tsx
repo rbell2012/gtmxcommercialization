@@ -183,6 +183,20 @@ function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: str
   return 0;
 }
 
+function getTeamMonthKeys(teamWeeks: { key: string; label: string }[]): { key: string; label: string; weekKeys: string[]; colSpan: number }[] {
+  const monthMap = new Map<string, { key: string; label: string; weekKeys: string[] }>();
+  for (const w of teamWeeks) {
+    const d = new Date(w.key + "T00:00:00");
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const monthLabel = d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    if (!monthMap.has(monthKey)) {
+      monthMap.set(monthKey, { key: monthKey, label: monthLabel, weekKeys: [] });
+    }
+    monthMap.get(monthKey)!.weekKeys.push(w.key);
+  }
+  return Array.from(monthMap.values()).map((m) => ({ ...m, colSpan: m.weekKeys.length }));
+}
+
 const Duck = ({ size = 24 }: { size?: number }) => (
   <span style={{ fontSize: size }} role="img" aria-label="duck">
     🦆
@@ -1459,6 +1473,101 @@ function TeamTab({
                   ];
                   return allRows;
                 })}
+                {/* ── Team Monthly Aggregate ── */}
+                <tr>
+                  <td colSpan={teamWeeks.length + 3} className="py-0">
+                    <div className="border-t-4 border-primary/40" />
+                  </td>
+                </tr>
+                {(() => {
+                  const teamMonths = getTeamMonthKeys(teamWeeks);
+                  const weekKeyList = teamWeeks.map((wk) => wk.key);
+                  const allMetricRows: { label: string; key: keyof FunnelData }[] = [
+                    { label: "TAM", key: "tam" },
+                    { label: "Accounts", key: "accounts" },
+                    { label: "Contacts Added", key: "contacts_added" },
+                    { label: "Call", key: "calls" },
+                    { label: "Connect", key: "connects" },
+                    { label: "Ops", key: "ops" },
+                    { label: "Demo", key: "demos" },
+                    { label: "Win", key: "wins" },
+                    { label: "Feedback", key: "feedback" },
+                  ];
+                  const alwaysShow = new Set<string>(["tam", "connects"]);
+                  const metricRows = allMetricRows.filter(
+                    (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
+                  );
+                  const convRates = [
+                    { label: "TAM→Call %", numKey: "calls" as keyof FunnelData, denKey: "tam" as keyof FunnelData },
+                    { label: "Call→Con %", numKey: "connects" as keyof FunnelData, denKey: "calls" as keyof FunnelData },
+                    { label: "Con→Demo %", numKey: "demos" as keyof FunnelData, denKey: "connects" as keyof FunnelData },
+                    { label: "Demo→Win %", numKey: "wins" as keyof FunnelData, denKey: "demos" as keyof FunnelData },
+                  ];
+                  const getTeamMonthlyValue = (monthWeekKeys: string[], metKey: keyof FunnelData): number => {
+                    if (metKey === "tam") {
+                      return members.reduce((sum, m) => {
+                        const lastWeek = monthWeekKeys[monthWeekKeys.length - 1];
+                        return sum + getCarriedTam(m, lastWeek, weekKeyList);
+                      }, 0);
+                    }
+                    return members.reduce((sum, m) =>
+                      sum + monthWeekKeys.reduce((ws, wk) => ws + getMemberFunnel(m, wk)[metKey], 0), 0);
+                  };
+                  return [
+                    <tr key="team-month-header" className="border-t border-border bg-secondary/40">
+                      <td className="sticky left-0 z-30 bg-secondary/60 py-2 pl-5 pr-2 font-bold text-primary align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
+                        Team
+                      </td>
+                      <td className="sticky z-20 bg-secondary/60 py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
+                      {teamMonths.map((mo) => (
+                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap bg-secondary/40">
+                          {mo.label}
+                        </td>
+                      ))}
+                      <td className="sticky right-0 z-10 bg-secondary/60 text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</td>
+                    </tr>,
+                    ...metricRows.map((met) => (
+                      <tr key={`team-${met.key}`}>
+                        <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
+                        {teamMonths.map((mo) => {
+                          const val = getTeamMonthlyValue(mo.weekKeys, met.key);
+                          return (
+                            <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-foreground tabular-nums font-medium">
+                              {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                          );
+                        })}
+                        <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-primary tabular-nums">
+                          {met.key === "tam"
+                            ? (members.reduce((s, m) => s + getCarriedTam(m, weekKeyList[weekKeyList.length - 1] ?? "", weekKeyList), 0) || "—")
+                            : teamMonths.reduce((s, mo) => s + getTeamMonthlyValue(mo.weekKeys, met.key), 0)}
+                        </td>
+                      </tr>
+                    )),
+                    ...convRates.map((cr) => (
+                      <tr key={`team-${cr.label}`} className="bg-muted/30">
+                        <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
+                        {teamMonths.map((mo) => {
+                          const num = getTeamMonthlyValue(mo.weekKeys, cr.numKey);
+                          const den = getTeamMonthlyValue(mo.weekKeys, cr.denKey);
+                          const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
+                          return (
+                            <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                              {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
+                            </td>
+                          );
+                        })}
+                        <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
+                          {(() => {
+                            const totalNum = getTeamMonthlyValue(weekKeyList, cr.numKey);
+                            const totalDen = getTeamMonthlyValue(weekKeyList, cr.denKey);
+                            return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
+                          })()}
+                        </td>
+                      </tr>
+                    )),
+                  ];
+                })()}
               </tbody>
             </table>
           </div>
