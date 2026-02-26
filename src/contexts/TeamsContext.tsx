@@ -19,6 +19,42 @@ export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
 
 export type MemberGoals = Record<GoalMetric, number>;
 
+export interface AcceleratorRule {
+  enabled: boolean;
+  conditionOperator: '>' | '<' | 'between';
+  conditionValue1: number;
+  conditionValue2?: number;
+  actionOperator: '+' | '-' | '*';
+  actionValue: number;
+  actionUnit: '%' | '#';
+}
+
+export type AcceleratorConfig = Partial<Record<GoalMetric, AcceleratorRule[]>>;
+
+export const MEMBER_LEVELS = ['adr', 'bdr', 'rep', 'senior', 'principal', 'lead'] as const;
+export type MemberLevel = (typeof MEMBER_LEVELS)[number];
+
+export const MEMBER_LEVEL_LABELS: Record<MemberLevel, string> = {
+  adr: 'ADR',
+  bdr: 'BDR',
+  rep: 'Rep',
+  senior: 'Senior',
+  principal: 'Principal',
+  lead: 'Lead',
+};
+
+export type TeamGoalsByLevel = Record<GoalMetric, Partial<Record<MemberLevel, number>>>;
+
+export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
+  accounts: {},
+  contacts_added: {},
+  calls: {},
+  ops: {},
+  demos: {},
+  wins: {},
+  feedback: {},
+};
+
 export const DEFAULT_GOALS: MemberGoals = {
   accounts: 0,
   contacts_added: 0,
@@ -61,12 +97,25 @@ export interface WeeklyFunnel extends FunnelData {
 export interface TeamMember {
   id: string;
   name: string;
+  level: MemberLevel | null;
   goals: MemberGoals;
   wins: WinEntry[];
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
   isActive: boolean;
 }
+
+export type EnabledGoals = Record<GoalMetric, boolean>;
+
+export const DEFAULT_ENABLED_GOALS: EnabledGoals = {
+  accounts: false,
+  contacts_added: false,
+  calls: false,
+  ops: false,
+  demos: false,
+  wins: false,
+  feedback: false,
+};
 
 export interface Team {
   id: string;
@@ -81,6 +130,9 @@ export interface Team {
   tamSubmitted: boolean;
   goalsParity: boolean;
   teamGoals: MemberGoals;
+  enabledGoals: EnabledGoals;
+  acceleratorConfig: AcceleratorConfig;
+  teamGoalsByLevel: TeamGoalsByLevel;
   members: TeamMember[];
 }
 
@@ -115,6 +167,7 @@ function dbMemberToApp(
   return {
     id: row.id,
     name: row.name,
+    level: (row.level as MemberLevel) ?? null,
     goals: {
       accounts: row.goal_accounts ?? 0,
       contacts_added: row.goal_contacts_added ?? 0,
@@ -182,6 +235,17 @@ function assembleTeams(
         wins: t.team_goal_wins ?? 0,
         feedback: t.team_goal_feedback ?? 0,
       },
+      enabledGoals: {
+        accounts: t.goal_enabled_accounts ?? false,
+        contacts_added: t.goal_enabled_contacts_added ?? false,
+        calls: t.goal_enabled_calls ?? false,
+        ops: t.goal_enabled_ops ?? false,
+        demos: t.goal_enabled_demos ?? false,
+        wins: t.goal_enabled_wins ?? false,
+        feedback: t.goal_enabled_feedback ?? false,
+      },
+      acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
+      teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -203,7 +267,7 @@ interface TeamsContextType {
   reorderTeams: (orderedIds: string[]) => void;
   toggleTeamActive: (teamId: string, isActive: boolean) => void;
   createMember: (name: string, goals?: Partial<MemberGoals>) => TeamMember;
-  updateMember: (memberId: string, updates: { name?: string; goals?: Partial<MemberGoals> }) => void;
+  updateMember: (memberId: string, updates: { name?: string; goals?: Partial<MemberGoals>; level?: MemberLevel | null }) => void;
   assignMember: (memberId: string, targetTeamId: string) => void;
   unassignMember: (memberId: string, fromTeamId: string) => void;
   removeMember: (memberId: string) => void;
@@ -280,7 +344,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.totalTam !== updated.totalTam ||
             old.tamSubmitted !== updated.tamSubmitted ||
             old.goalsParity !== updated.goalsParity ||
-            JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals))
+            JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
+            JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
+            JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
+            JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel))
         ) {
           supabase
             .from("teams")
@@ -301,6 +368,15 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               team_goal_demos: updated.teamGoals.demos,
               team_goal_wins: updated.teamGoals.wins,
               team_goal_feedback: updated.teamGoals.feedback,
+              goal_enabled_accounts: updated.enabledGoals.accounts,
+              goal_enabled_contacts_added: updated.enabledGoals.contacts_added,
+              goal_enabled_calls: updated.enabledGoals.calls,
+              goal_enabled_ops: updated.enabledGoals.ops,
+              goal_enabled_demos: updated.enabledGoals.demos,
+              goal_enabled_wins: updated.enabledGoals.wins,
+              goal_enabled_feedback: updated.enabledGoals.feedback,
+              accelerator_config: updated.acceleratorConfig,
+              team_goals_by_level: updated.teamGoalsByLevel,
             })
             .eq("id", teamId)
             .then();
@@ -340,6 +416,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           sortOrder: nextOrder, isActive: true,
           startDate, endDate, totalTam: 0, tamSubmitted: false,
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
+          enabledGoals: { ...DEFAULT_ENABLED_GOALS },
+          acceleratorConfig: {},
+          teamGoalsByLevel: { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
           members: [],
         };
         supabase
@@ -395,7 +474,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
     const id = crypto.randomUUID();
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
-    const member: TeamMember = { id, name, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
+    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
     setUnassignedMembers((prev) => [...prev, member]);
     supabase
       .from("members")
@@ -404,9 +483,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     return member;
   }, []);
 
-  const updateMember = useCallback((memberId: string, updates: { name?: string; goals?: Partial<MemberGoals> }) => {
+  const updateMember = useCallback((memberId: string, updates: { name?: string; goals?: Partial<MemberGoals>; level?: MemberLevel | null }) => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.level !== undefined) dbUpdates.level = updates.level;
     if (updates.goals) {
       for (const [metric, value] of Object.entries(updates.goals)) {
         if (value !== undefined) dbUpdates[`goal_${metric}`] = value;
@@ -417,6 +497,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const applyUpdates = (m: TeamMember): TeamMember => ({
       ...m,
       ...(updates.name !== undefined && { name: updates.name }),
+      ...(updates.level !== undefined && { level: updates.level }),
       ...(updates.goals && { goals: { ...m.goals, ...updates.goals } }),
     });
 
@@ -461,12 +542,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const newId = crypto.randomUUID();
       supabase
         .from("members")
-        .insert({ id: newId, name: member.name, ...memberGoalsToDbInsert(member.goals), team_id: targetTeamId, ducks_earned: 0, is_active: true })
+        .insert({ id: newId, name: member.name, level: member.level, ...memberGoalsToDbInsert(member.goals), team_id: targetTeamId, ducks_earned: 0, is_active: true })
         .then();
 
       const freshMember: TeamMember = {
         id: newId,
         name: member.name,
+        level: member.level,
         goals: { ...member.goals },
         wins: [],
         ducksEarned: 0,
@@ -495,12 +577,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const newId = crypto.randomUUID();
       supabase
         .from("members")
-        .insert({ id: newId, name: member.name, ...memberGoalsToDbInsert(member.goals), team_id: null, ducks_earned: 0, is_active: true })
+        .insert({ id: newId, name: member.name, level: member.level, ...memberGoalsToDbInsert(member.goals), team_id: null, ducks_earned: 0, is_active: true })
         .then();
 
       const freshMember: TeamMember = {
         id: newId,
         name: member.name,
+        level: member.level,
         goals: { ...member.goals },
         wins: [],
         ducksEarned: 0,

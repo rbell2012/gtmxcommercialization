@@ -17,6 +17,15 @@ export interface DbTeam {
   team_goal_demos: number;
   team_goal_wins: number;
   team_goal_feedback: number;
+  goal_enabled_accounts: boolean;
+  goal_enabled_contacts_added: boolean;
+  goal_enabled_calls: boolean;
+  goal_enabled_ops: boolean;
+  goal_enabled_demos: boolean;
+  goal_enabled_wins: boolean;
+  goal_enabled_feedback: boolean;
+  accelerator_config: Record<string, unknown>;
+  team_goals_by_level: Record<string, unknown>;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -36,6 +45,7 @@ export interface DbMember {
   goal_feedback: number;
   ducks_earned: number;
   is_active: boolean;
+  level: string | null;
   created_at: string;
   updated_at: string;
 }

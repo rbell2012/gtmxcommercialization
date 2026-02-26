@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-02-25 (Monthly Goals, Levels, Accelerator & Quota Enhancements)
+
+### Location – Settings (`src/pages/Settings.tsx`), Pilot pages (`src/pages/Index.tsx`), Quota page (`src/pages/Quota.tsx`), Context (`src/contexts/TeamsContext.tsx`), Helpers (`src/lib/quota-helpers.ts`), Types (`src/lib/database.types.ts`), Database (`teams` and `members` tables)
+
+**Rationale:** Goal configuration needed to move from the individual project pages into the centralized Settings > Team > Edit Modal so that admins can enable/disable metrics, set per-level monthly goals, and define stackable accelerator rules that modify the Quota calculation — all from one place. Members also needed a "Level" field (ADR, BDR, Rep, Senior, Principal, Lead) so that different roles can have different goal targets.
+
+**Changes:**
+- **Supabase migrations**: Added 7 `goal_enabled_*` boolean columns and `accelerator_config` JSONB column to `teams` table (`20250225290000`). Added `level` text column to `members` and `team_goals_by_level` JSONB column to `teams` (`20250225300000`). All migrations applied to Supabase via MCP.
+- **Database types** (`database.types.ts`): Added `goal_enabled_*` booleans, `accelerator_config`, and `team_goals_by_level` to `DbTeam`. Added `level` to `DbMember`.
+- **TeamsContext** (`TeamsContext.tsx`): Added `AcceleratorRule`, `AcceleratorConfig` (array-based for stackable rules), `MemberLevel`, `MEMBER_LEVELS`, `MEMBER_LEVEL_LABELS`, `EnabledGoals`, `TeamGoalsByLevel` types and constants. Extended `Team` with `enabledGoals`, `acceleratorConfig`, `teamGoalsByLevel`. Extended `TeamMember` with `level`. Updated `assembleTeams`, `updateTeam`, `addTeam`, `createMember`, `assignMember`, `unassignMember`, and `updateMember` to handle all new fields.
+- **Settings > Team Edit Modal** (`Settings.tsx`): Added "Monthly Goals" section below dates with metric toggle switches, parity toggle, and a horizontally-scrollable table with sticky metric names and per-level (ADR/BDR/Rep/Senior/Principal/Lead) goal input columns. Added "Accelerator" section with stackable IF/THEN rules per metric (any metric, not just enabled ones), each with condition operator (>, <, between), action operator (+, -, *), value, unit (% or #), and "to Quota" target. Rules can be added/removed individually per metric.
+- **Settings > Members Table** (`Settings.tsx`): Added "Level" column with dropdown selector (ADR, BDR, Rep, Senior, Principal, Lead) between Name and Wins Goal.
+- **Project Page** (`Index.tsx`): Removed parity toggle and editable goal inputs from Monthly Goals section (now managed in Settings). Monthly Goals and Weekly Data now filter columns/rows by `team.enabledGoals`. Goals display as read-only values. Removed unused `Switch` import.
+- **Quota Page** (`Quota.tsx`): Filters metric columns by enabled goals. Displays computed Quota % (left-aligned below member name, capped at 200%, colored `#006400` green when >100%). Shows accelerator tier lock icons: unlock with "1" for 1 triggered rule, unlock with "2" for 2, and a locked icon with "MAX" for 3+.
+- **Quota Helpers** (`quota-helpers.ts`): Updated `getEffectiveGoal` to use level-based goals from `teamGoalsByLevel` (with parity dividing by same-level member count), falling back to old behavior for members without a level. Added `computeQuota` function (average completion % across enabled metrics, with all matching accelerator rules stacked in order). Added `countTriggeredAccelerators` helper for the lock icon display.
+---
+
 ## 2026-02-25 (Add "Contacts Added" to Monthly Goals System)
 
 ### Location – All Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (`members` and `teams` tables)

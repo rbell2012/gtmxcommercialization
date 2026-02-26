@@ -1,4 +1,4 @@
-import { Target, Calendar } from "lucide-react";
+import { Target, Calendar, LockOpen, Lock } from "lucide-react";
 import {
   useTeams,
   type Team,
@@ -7,7 +7,7 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getMemberMetricTotal, getEffectiveGoal, getBusinessDaysRemaining } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators } from "@/lib/quota-helpers";
 
 const METRIC_BAR_COLORS: string[] = [
   "progress-bar-orange",
@@ -54,6 +54,7 @@ const Quota = () => {
 function TeamQuotaCard({ team }: { team: Team }) {
   const activeMembers = team.members.filter((m) => m.isActive);
   const daysLeft = getBusinessDaysRemaining(team.endDate);
+  const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
 
   return (
     <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
@@ -67,6 +68,10 @@ function TeamQuotaCard({ team }: { team: Team }) {
 
       {activeMembers.length === 0 ? (
         <p className="text-sm text-muted-foreground">No active members.</p>
+      ) : visibleMetrics.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">
+          No goals configured. Enable goals in Settings.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -75,7 +80,7 @@ function TeamQuotaCard({ team }: { team: Team }) {
                 <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Member
                 </th>
-                {GOAL_METRICS.map((metric) => (
+                {visibleMetrics.map((metric) => (
                   <th
                     key={metric}
                     className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[90px]"
@@ -87,7 +92,7 @@ function TeamQuotaCard({ team }: { team: Team }) {
             </thead>
             <tbody>
               {activeMembers.map((m) => (
-                <MemberQuotaRow key={m.id} team={team} member={m} daysLeft={daysLeft} />
+                <MemberQuotaRow key={m.id} team={team} member={m} daysLeft={daysLeft} visibleMetrics={visibleMetrics} />
               ))}
             </tbody>
           </table>
@@ -101,26 +106,62 @@ function MemberQuotaRow({
   team,
   member,
   daysLeft,
+  visibleMetrics,
 }: {
   team: Team;
   member: TeamMember;
   daysLeft: number;
+  visibleMetrics: GoalMetric[];
 }) {
+  const quotaPct = computeQuota(team, member);
+  const triggeredCount = countTriggeredAccelerators(team, member);
+  const quotaColor = quotaPct > 100 ? '#006400' : undefined;
+  const quotaColorClass = quotaPct > 100 ? '' : 'text-primary';
+
   return (
     <tr className="border-b border-border/30">
       <td className="py-3 pr-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-foreground whitespace-nowrap">{member.name}</span>
-          {member.ducksEarned > 0 && (
-            <span className="flex items-center">
-              {[...Array(member.ducksEarned)].map((_, j) => (
-                <span key={j} className="text-xs">🦆</span>
-              ))}
-            </span>
+        <div className="flex flex-col items-start">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-foreground whitespace-nowrap">{member.name}</span>
+            {member.ducksEarned > 0 && (
+              <span className="flex items-center">
+                {[...Array(member.ducksEarned)].map((_, j) => (
+                  <span key={j} className="text-xs">🦆</span>
+                ))}
+              </span>
+            )}
+          </div>
+          <span
+            className={`text-xs font-bold tabular-nums mt-0.5 ${quotaColorClass}`}
+            style={quotaColor ? { color: quotaColor } : undefined}
+          >
+            {Math.min(quotaPct, 200).toFixed(0)}% Quota
+          </span>
+          {triggeredCount > 0 && (
+            <div className="flex items-center gap-1 mt-0.5">
+              {Array.from({ length: Math.min(triggeredCount, 3) }, (_, i) => {
+                const tier = i + 1;
+                const isMax = tier === 3;
+                return (
+                  <span
+                    key={tier}
+                    className={`inline-flex items-center gap-px text-xs font-bold ${quotaColorClass}`}
+                    style={quotaColor ? { color: quotaColor } : undefined}
+                  >
+                    {isMax ? (
+                      <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                    ) : (
+                      <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
           )}
         </div>
       </td>
-      {GOAL_METRICS.map((metric, metricIdx) => {
+      {visibleMetrics.map((metric, metricIdx) => {
         const goal = getEffectiveGoal(team, member, metric);
         const current = getMemberMetricTotal(member, metric);
         const needed = Math.max(0, goal - current);

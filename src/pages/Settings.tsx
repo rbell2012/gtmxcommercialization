@@ -18,7 +18,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { useTeams } from "@/contexts/TeamsContext";
+import {
+  useTeams,
+  GOAL_METRICS,
+  GOAL_METRIC_LABELS,
+  MEMBER_LEVELS,
+  MEMBER_LEVEL_LABELS,
+  DEFAULT_ENABLED_GOALS,
+  DEFAULT_GOALS,
+  DEFAULT_TEAM_GOALS_BY_LEVEL,
+  type GoalMetric,
+  type MemberLevel,
+  type MemberGoals,
+  type EnabledGoals,
+  type AcceleratorConfig,
+  type AcceleratorRule,
+  type TeamGoalsByLevel,
+} from "@/contexts/TeamsContext";
 import { useToast } from "@/hooks/use-toast";
 
 function addMonths(dateStr: string, months: number): string {
@@ -104,6 +120,11 @@ const Settings = () => {
   const [editTeamLeadRep, setEditTeamLeadRep] = useState("");
   const [editTeamStartDate, setEditTeamStartDate] = useState("");
   const [editTeamEndDate, setEditTeamEndDate] = useState("");
+  const [editTeamParity, setEditTeamParity] = useState(false);
+  const [editTeamGoals, setEditTeamGoals] = useState<MemberGoals>({ ...DEFAULT_GOALS });
+  const [editEnabledGoals, setEditEnabledGoals] = useState<EnabledGoals>({ ...DEFAULT_ENABLED_GOALS });
+  const [editAcceleratorConfig, setEditAcceleratorConfig] = useState<AcceleratorConfig>({});
+  const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -192,6 +213,11 @@ const Settings = () => {
     setEditTeamLeadRep(team.leadRep);
     setEditTeamStartDate(team.startDate ?? "");
     setEditTeamEndDate(team.endDate ?? "");
+    setEditTeamParity(team.goalsParity);
+    setEditTeamGoals({ ...team.teamGoals });
+    setEditEnabledGoals({ ...team.enabledGoals });
+    setEditAcceleratorConfig({ ...team.acceleratorConfig });
+    setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
   };
 
   const saveEditTeam = () => {
@@ -203,6 +229,11 @@ const Settings = () => {
       leadRep: editTeamLeadRep.trim(),
       startDate: editTeamStartDate || null,
       endDate: editTeamEndDate || null,
+      goalsParity: editTeamParity,
+      teamGoals: { ...editTeamGoals },
+      enabledGoals: { ...editEnabledGoals },
+      acceleratorConfig: { ...editAcceleratorConfig },
+      teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
     }));
     toast({ title: "Team updated" });
     setEditTeamId(null);
@@ -399,7 +430,7 @@ const Settings = () => {
           )}
 
           <Dialog open={!!editTeamId} onOpenChange={(open) => !open && setEditTeamId(null)}>
-            <DialogContent className="bg-card border-border">
+            <DialogContent className="bg-card border-border max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-display text-foreground">Edit Team</DialogTitle>
               </DialogHeader>
@@ -472,6 +503,221 @@ const Settings = () => {
                     />
                   </div>
                 </div>
+
+                {/* ── Monthly Goals ── */}
+                <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-foreground">Monthly Goals</h4>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs font-medium text-muted-foreground">Parity</label>
+                      <Switch
+                        checked={editTeamParity}
+                        onCheckedChange={setEditTeamParity}
+                        className="scale-75"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex">
+                    {/* Sticky left: toggles + metric names */}
+                    <div className="shrink-0 border-r border-border/50">
+                      <div className="h-7 flex items-center px-1">
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Metric</span>
+                      </div>
+                      {GOAL_METRICS.map((metric) => (
+                        <div key={metric} className="h-8 flex items-center gap-1.5 pr-2">
+                          <Switch
+                            checked={editEnabledGoals[metric]}
+                            onCheckedChange={(checked) =>
+                              setEditEnabledGoals((prev) => ({ ...prev, [metric]: checked }))
+                            }
+                            className="scale-[0.6] shrink-0"
+                          />
+                          <span className="text-[11px] font-medium text-foreground whitespace-nowrap">
+                            {GOAL_METRIC_LABELS[metric]}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Scrollable right: level columns */}
+                    <div className="overflow-x-auto flex-1">
+                      <div className="inline-flex flex-col min-w-max">
+                        <div className="flex h-7">
+                          {MEMBER_LEVELS.map((lvl) => (
+                            <div key={lvl} className="w-16 text-center flex items-center justify-center">
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                {MEMBER_LEVEL_LABELS[lvl]}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {GOAL_METRICS.map((metric) => {
+                          const enabled = editEnabledGoals[metric];
+                          return (
+                            <div key={metric} className="flex h-8">
+                              {MEMBER_LEVELS.map((lvl) => (
+                                <div key={lvl} className="w-16 flex items-center justify-center">
+                                  {enabled ? (
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      value={editTeamGoalsByLevel[metric]?.[lvl] || ""}
+                                      onChange={(e) => {
+                                        const num = Math.max(0, parseInt(e.target.value) || 0);
+                                        setEditTeamGoalsByLevel((prev) => ({
+                                          ...prev,
+                                          [metric]: { ...(prev[metric] || {}), [lvl]: num },
+                                        }));
+                                      }}
+                                      className="h-6 w-14 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
+                                    />
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground">—</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Accelerator ── */}
+                {(() => {
+                  const newRule = (): AcceleratorRule => ({
+                    enabled: true,
+                    conditionOperator: '>',
+                    conditionValue1: 0,
+                    conditionValue2: 0,
+                    actionOperator: '+',
+                    actionValue: 0,
+                    actionUnit: '%',
+                  });
+
+                  const getRules = (metric: GoalMetric): AcceleratorRule[] =>
+                    editAcceleratorConfig[metric] ?? [];
+
+                  const setRules = (metric: GoalMetric, rules: AcceleratorRule[]) => {
+                    setEditAcceleratorConfig((prev) => ({ ...prev, [metric]: rules }));
+                  };
+
+                  const updateRule = (metric: GoalMetric, idx: number, updates: Partial<AcceleratorRule>) => {
+                    const rules = [...getRules(metric)];
+                    rules[idx] = { ...rules[idx], ...updates };
+                    setRules(metric, rules);
+                  };
+
+                  const addRule = (metric: GoalMetric) => {
+                    setRules(metric, [...getRules(metric), newRule()]);
+                  };
+
+                  const removeRule = (metric: GoalMetric, idx: number) => {
+                    setRules(metric, getRules(metric).filter((_, i) => i !== idx));
+                  };
+
+                  return (
+                    <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
+                      <h4 className="text-sm font-semibold text-foreground">Accelerator</h4>
+                      <div className="space-y-4">
+                        {GOAL_METRICS.map((metric) => {
+                          const rules = getRules(metric);
+                          return (
+                            <div key={metric} className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-foreground">
+                                  {GOAL_METRIC_LABELS[metric]}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => addRule(metric)}
+                                  className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
+                                >
+                                  + Add Rule
+                                </button>
+                              </div>
+                              {rules.map((rule, idx) => (
+                                <div key={idx} className="ml-2 flex flex-wrap items-center gap-1.5 text-xs rounded-md bg-background/50 p-1.5 border border-border/30">
+                                  <span className="font-semibold text-muted-foreground">IF</span>
+                                  <span className="font-medium text-foreground">{GOAL_METRIC_LABELS[metric]}</span>
+                                  <select
+                                    value={rule.conditionOperator}
+                                    onChange={(e) => updateRule(metric, idx, { conditionOperator: e.target.value as AcceleratorRule['conditionOperator'] })}
+                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                  >
+                                    <option value=">">&gt;</option>
+                                    <option value="<">&lt;</option>
+                                    <option value="between">between</option>
+                                  </select>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={rule.conditionValue1 || ""}
+                                    onChange={(e) => updateRule(metric, idx, { conditionValue1: Math.max(0, parseInt(e.target.value) || 0) })}
+                                    className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                  />
+                                  {rule.conditionOperator === 'between' && (
+                                    <>
+                                      <span className="text-muted-foreground">and</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={rule.conditionValue2 || ""}
+                                        onChange={(e) => updateRule(metric, idx, { conditionValue2: Math.max(0, parseInt(e.target.value) || 0) })}
+                                        className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                      />
+                                    </>
+                                  )}
+                                  <span className="font-semibold text-muted-foreground">THEN</span>
+                                  <select
+                                    value={rule.actionOperator}
+                                    onChange={(e) => updateRule(metric, idx, { actionOperator: e.target.value as AcceleratorRule['actionOperator'] })}
+                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                  >
+                                    <option value="+">+</option>
+                                    <option value="-">-</option>
+                                    <option value="*">*</option>
+                                  </select>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={rule.actionValue || ""}
+                                    onChange={(e) => updateRule(metric, idx, { actionValue: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                    className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                  />
+                                  <select
+                                    value={rule.actionUnit}
+                                    onChange={(e) => updateRule(metric, idx, { actionUnit: e.target.value as AcceleratorRule['actionUnit'] })}
+                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                  >
+                                    <option value="%">%</option>
+                                    <option value="#">#</option>
+                                  </select>
+                                  <span className="text-muted-foreground font-medium">to Quota</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeRule(metric, idx)}
+                                    className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+                                    title="Remove rule"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                              {rules.length === 0 && (
+                                <p className="ml-2 text-[10px] text-muted-foreground italic">No rules. Click "+ Add Rule" to create one.</p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground italic">
+                        Rules stack — all matching rules for a metric are applied in order to the Quota.
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 <Button onClick={saveEditTeam} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                   Save Changes
                 </Button>
@@ -573,6 +819,9 @@ const Settings = () => {
                       </span>
                     </th>
                     <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Level
+                    </th>
+                    <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       Wins Goal
                     </th>
                     <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -619,6 +868,26 @@ const Settings = () => {
                             )}
                           </div>
                         )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <Select
+                          value={m.level || "__none__"}
+                          onValueChange={(val) =>
+                            updateMember(m.id, { level: val === "__none__" ? null : (val as MemberLevel) })
+                          }
+                        >
+                          <SelectTrigger className="h-7 w-28 bg-background border-border/50 text-foreground text-xs mx-auto">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-card border-border z-50">
+                            <SelectItem value="__none__">—</SelectItem>
+                            {MEMBER_LEVELS.map((lvl) => (
+                              <SelectItem key={lvl} value={lvl}>
+                                {MEMBER_LEVEL_LABELS[lvl]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="py-3 px-4 text-center text-foreground tabular-nums">
                         {editingMemberId === m.id && editingField === "goal" ? (
