@@ -4,12 +4,10 @@ import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex } from "@
 
 // ── Goal metrics system ──
 
-export const GOAL_METRICS = ['accounts', 'contacts_added', 'calls', 'ops', 'demos', 'wins', 'feedback'] as const;
+export const GOAL_METRICS = ['calls', 'ops', 'demos', 'wins', 'feedback'] as const;
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
-  accounts: 'Accounts',
-  contacts_added: 'Contacts Added',
   calls: 'Calls',
   ops: 'Ops',
   demos: 'Demos',
@@ -46,8 +44,6 @@ export const MEMBER_LEVEL_LABELS: Record<MemberLevel, string> = {
 export type TeamGoalsByLevel = Record<GoalMetric, Partial<Record<MemberLevel, number>>>;
 
 export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
-  accounts: {},
-  contacts_added: {},
   calls: {},
   ops: {},
   demos: {},
@@ -56,8 +52,6 @@ export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
 };
 
 export const DEFAULT_GOALS: MemberGoals = {
-  accounts: 0,
-  contacts_added: 0,
   calls: 0,
   ops: 0,
   demos: 0,
@@ -78,8 +72,6 @@ export type WeeklyRole = string;
 
 export interface FunnelData {
   tam: number;
-  accounts: number;
-  contacts_added: number;
   calls: number;
   connects: number;
   ops: number;
@@ -108,8 +100,6 @@ export interface TeamMember {
 export type EnabledGoals = Record<GoalMetric, boolean>;
 
 export const DEFAULT_ENABLED_GOALS: EnabledGoals = {
-  accounts: false,
-  contacts_added: false,
   calls: false,
   ops: false,
   demos: false,
@@ -151,8 +141,6 @@ function dbMemberToApp(
   for (const f of funnels) {
     funnelByWeek[f.week_key] = {
       tam: f.tam,
-      accounts: f.accounts ?? 0,
-      contacts_added: f.contacts_added ?? 0,
       calls: f.calls,
       connects: f.connects,
       ops: f.ops ?? 0,
@@ -169,8 +157,6 @@ function dbMemberToApp(
     name: row.name,
     level: (row.level as MemberLevel) ?? null,
     goals: {
-      accounts: row.goal_accounts ?? 0,
-      contacts_added: row.goal_contacts_added ?? 0,
       calls: row.goal_calls ?? 0,
       ops: row.goal_ops ?? 0,
       demos: row.goal_demos ?? 0,
@@ -227,8 +213,6 @@ function assembleTeams(
       tamSubmitted: t.tam_submitted ?? false,
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
-        accounts: t.team_goal_accounts ?? 0,
-        contacts_added: t.team_goal_contacts_added ?? 0,
         calls: t.team_goal_calls ?? 0,
         ops: t.team_goal_ops ?? 0,
         demos: t.team_goal_demos ?? 0,
@@ -236,8 +220,6 @@ function assembleTeams(
         feedback: t.team_goal_feedback ?? 0,
       },
       enabledGoals: {
-        accounts: t.goal_enabled_accounts ?? false,
-        contacts_added: t.goal_enabled_contacts_added ?? false,
         calls: t.goal_enabled_calls ?? false,
         ops: t.goal_enabled_ops ?? false,
         demos: t.goal_enabled_demos ?? false,
@@ -285,8 +267,6 @@ export function useTeams() {
 function memberGoalsToDbInsert(goals: MemberGoals) {
   return {
     goal: goals.wins,
-    goal_accounts: goals.accounts,
-    goal_contacts_added: goals.contacts_added,
     goal_calls: goals.calls,
     goal_ops: goals.ops,
     goal_demos: goals.demos,
@@ -353,8 +333,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           week_key: weekKey,
           role: null,
           tam: 0,
-          accounts: 0,
-          contacts_added: 0,
           calls: row.calls_count,
           connects: row.connects_count,
           ops: 0,
@@ -431,15 +409,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               total_tam: updated.totalTam,
               tam_submitted: updated.tamSubmitted,
               goals_parity: updated.goalsParity,
-              team_goal_accounts: updated.teamGoals.accounts,
-              team_goal_contacts_added: updated.teamGoals.contacts_added,
               team_goal_calls: updated.teamGoals.calls,
               team_goal_ops: updated.teamGoals.ops,
               team_goal_demos: updated.teamGoals.demos,
               team_goal_wins: updated.teamGoals.wins,
               team_goal_feedback: updated.teamGoals.feedback,
-              goal_enabled_accounts: updated.enabledGoals.accounts,
-              goal_enabled_contacts_added: updated.enabledGoals.contacts_added,
               goal_enabled_calls: updated.enabledGoals.calls,
               goal_enabled_ops: updated.enabledGoals.ops,
               goal_enabled_demos: updated.enabledGoals.demos,

@@ -101,7 +101,7 @@ function formatDateRange(startDate: string | null, endDate: string | null): stri
   return end ? `${start} – ${end}` : start;
 }
 
-const emptyFunnel: WeeklyFunnel = { tam: 0, accounts: 0, contacts_added: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
+const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
 
 function getWeekKeys(count = 8): { key: string; label: string }[] {
   const weeks: { key: string; label: string }[] = [];
@@ -435,7 +435,7 @@ const Index = () => {
       .from("members")
       .insert({
         id: memberId, name: newName.trim(),
-        goal: winsGoal, goal_accounts: goals.accounts, goal_calls: goals.calls,
+        goal: winsGoal, goal_calls: goals.calls,
         goal_ops: goals.ops, goal_demos: goals.demos, goal_wins: goals.wins, goal_feedback: goals.feedback,
         team_id: activeTab, ducks_earned: 0, is_active: true,
       })
@@ -690,7 +690,6 @@ const Index = () => {
                         member_id: m.id,
                         week_key: weekKey,
                         tam: tamPerMember,
-                        accounts: existing.accounts,
                         calls: existing.calls,
                         connects: existing.connects,
                         ops: existing.ops,
@@ -1160,8 +1159,6 @@ function TeamTab({
                           member_id: m.id,
                           week_key: currentWeek,
                           tam: current.tam,
-                          accounts: current.accounts,
-                          contacts_added: current.contacts_added,
                           calls: current.calls,
                           connects: current.connects,
                           ops: current.ops,
@@ -1235,14 +1232,6 @@ function TeamTab({
                         </Dialog>
                       </div>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Accounts</label>
-                          <Input type="number" min={0} value={f.accounts || ""} onChange={(e) => updateFunnel("accounts", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Contacts Added</label>
-                          <Input type="number" min={0} value={f.contacts_added || ""} onChange={(e) => updateFunnel("contacts_added", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
                           <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
@@ -1395,8 +1384,6 @@ function TeamTab({
                 {members.map((m, mIdx) => {
                   const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                     { label: "TAM", key: "tam" },
-                    { label: "Accounts", key: "accounts" },
-                    { label: "Contacts Added", key: "contacts_added" },
                     { label: "Call", key: "calls" },
                     { label: "Connect", key: "connects" },
                     { label: "Ops", key: "ops" },
@@ -1484,8 +1471,6 @@ function TeamTab({
                   const weekKeyList = teamWeeks.map((wk) => wk.key);
                   const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                     { label: "TAM", key: "tam" },
-                    { label: "Accounts", key: "accounts" },
-                    { label: "Contacts Added", key: "contacts_added" },
                     { label: "Call", key: "calls" },
                     { label: "Connect", key: "connects" },
                     { label: "Ops", key: "ops" },
@@ -1515,16 +1500,16 @@ function TeamTab({
                   };
                   return [
                     <tr key="team-month-header" className="border-t border-border bg-secondary">
-                      <td className="sticky left-0 z-30 bg-secondary py-2 pl-5 pr-2 font-bold text-primary align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
+                      <td className="sticky left-0 z-30 bg-secondary py-2 pl-5 pr-2 font-bold text-white align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
                         Team
                       </td>
-                      <td className="sticky z-20 bg-secondary py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
+                      <td className="sticky z-20 bg-secondary py-2 px-2 text-xs font-semibold text-white uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
                       {teamMonths.map((mo) => (
-                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap bg-secondary">
+                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-white uppercase tracking-wider whitespace-nowrap bg-secondary">
                           {mo.label}
                         </td>
                       ))}
-                      <td className="sticky right-0 z-10 bg-secondary text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</td>
+                      <td className="sticky right-0 z-10 bg-secondary text-center py-2 pl-2 pr-5 text-xs font-semibold text-white uppercase tracking-wider">Total</td>
                     </tr>,
                     ...metricRows.map((met) => (
                       <tr key={`team-${met.key}`}>
@@ -1593,7 +1578,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
 
   const METRIC_COLORS: Record<string, string> = {
     TAM: "hsl(340, 55%, 55%)",
-    Accounts: "hsl(45, 70%, 50%)",
     Call: "hsl(215, 55%, 55%)",
     Connect: "hsl(140, 50%, 45%)",
     Ops: "hsl(30, 65%, 50%)",
@@ -1603,7 +1587,6 @@ function WeekOverWeekView({ team }: { team: Team }) {
   };
   const metricKeys: { key: keyof FunnelData; label: string }[] = [
     { key: "tam", label: "TAM" },
-    { key: "accounts", label: "Accounts" },
     { key: "calls", label: "Call" },
     { key: "connects", label: "Connect" },
     { key: "ops", label: "Ops" },
