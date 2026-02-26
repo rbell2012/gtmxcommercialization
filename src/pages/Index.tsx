@@ -763,7 +763,8 @@ const Index = () => {
                             {visibleMetrics.map((metric, metricIdx) => {
                               const actual = getMemberMetricTotal(m, metric);
                               const goal = getEffectiveGoal(team, m, metric);
-                              const pct = goal > 0 ? Math.min((actual / goal) * 100, 100) : 0;
+                              const pct = goal > 0 ? (actual / goal) * 100 : 0;
+                              const barPct = Math.min(pct, 100);
                               return (
                                 <td key={metric} className="py-3 px-2">
                                   <div className="flex flex-col items-center gap-1">
@@ -773,10 +774,10 @@ const Index = () => {
                                     <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                                       <div
                                         className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                        style={{ width: `${pct}%` }}
+                                        style={{ width: `${barPct}%` }}
                                       />
                                     </div>
-                                    <span className="text-[10px] text-muted-foreground tabular-nums">{pct.toFixed(0)}%</span>
+                                    <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
                                   </div>
                                 </td>
                               );
@@ -802,7 +803,8 @@ const Index = () => {
                                 {visibleMetrics.map((metric, metricIdx) => {
                                   const actual = getMemberMetricTotal(m, metric);
                                   const goal = getEffectiveGoal(team, m, metric);
-                                  const pct = goal > 0 ? Math.min((actual / goal) * 100, 100) : 0;
+                                  const pct = goal > 0 ? (actual / goal) * 100 : 0;
+                                  const barPct = Math.min(pct, 100);
                                   return (
                                     <td key={metric} className="py-2 px-2">
                                       <div className="flex flex-col items-center gap-0.5">
@@ -810,7 +812,7 @@ const Index = () => {
                                         <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                                           <div
                                             className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                            style={{ width: `${pct}%` }}
+                                            style={{ width: `${barPct}%` }}
                                           />
                                         </div>
                                       </div>
@@ -978,7 +980,7 @@ function TeamTab({
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const winsUp = currWeekWins >= prevWeekWins;
   const teamGoalTotal = members.reduce((s, m) => s + (m.goals.wins || 0), 0);
-  const teamGoalPct = teamGoalTotal > 0 ? Math.min((teamTotal / teamGoalTotal) * 100, 100) : 0;
+  const teamGoalPct = teamGoalTotal > 0 ? (teamTotal / teamGoalTotal) * 100 : 0;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
 
   const chartData = members.map((m) => ({
@@ -1041,10 +1043,10 @@ function TeamTab({
               </div>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-secondary-foreground/50">Progress</span>
-                <span className="font-display text-sm font-bold text-primary">{teamGoalPct.toFixed(0)}%</span>
+                <span className={`font-display text-sm font-bold ${teamGoalPct >= 100 ? "text-green-400" : "text-primary"}`}>{teamGoalPct.toFixed(0)}%</span>
               </div>
               <div className="h-5 w-full overflow-hidden rounded-full bg-secondary-foreground/10 shadow-inner">
-                <div className="progress-bar-gradient h-full rounded-full transition-all duration-700 ease-out shadow-lg" style={{ width: `${teamGoalPct}%` }} />
+                <div className="progress-bar-gradient h-full rounded-full transition-all duration-700 ease-out shadow-lg" style={{ width: `${Math.min(teamGoalPct, 100)}%` }} />
               </div>
               {teamDucks > 0 && (
                 <div className="mt-3 flex items-center gap-1">

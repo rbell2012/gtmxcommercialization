@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex } from "@/lib/database.types";
 
 // ── Goal metrics system ──
 
@@ -304,17 +304,77 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [tRes, mRes, fRes, wRes] = await Promise.all([
+      const [tRes, mRes, fRes, wRes, sRes] = await Promise.all([
         supabase.from("teams").select("*").is("archived_at", null),
         supabase.from("members").select("*"),
         supabase.from("weekly_funnels").select("*"),
         supabase.from("win_entries").select("*"),
+        supabase.from("superhex").select("*"),
       ]);
       if (cancelled) return;
+
+      const dbMembers = (mRes.data ?? []) as DbMember[];
+      const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
+      const superhexRows = (sRes.data ?? []) as DbSuperhex[];
+
+      // Build name -> member_id lookup (case-insensitive, trimmed)
+      const memberIdByName = new Map<string, string>();
+      for (const m of dbMembers) {
+        memberIdByName.set(m.name.toLowerCase().trim(), m.id);
+      }
+
+      // Merge superhex data into funnels
+      const funnelKey = (memberId: string, weekKey: string) =>
+        `${memberId}::${weekKey}`;
+      const funnelIndex = new Map<string, number>();
+      for (let i = 0; i < dbFunnels.length; i++) {
+        funnelIndex.set(funnelKey(dbFunnels[i].member_id, dbFunnels[i].week_key), i);
+      }
+
+      for (const row of superhexRows) {
+        const memberId = memberIdByName.get(row.rep_name.toLowerCase().trim());
+        if (!memberId) {
+          console.warn(`[superhex] No member match for rep_name="${row.rep_name}"`);
+          continue;
+        }
+        const weekKey = row.activity_week;
+        const key = funnelKey(memberId, weekKey);
+        const existingIdx = funnelIndex.get(key);
+
+        if (existingIdx !== undefined) {
+          // Existing manual row — superhex is baseline, non-zero manual values win
+          const f = dbFunnels[existingIdx];
+          f.calls = f.calls > 0 ? f.calls : row.calls_count;
+          f.connects = f.connects > 0 ? f.connects : row.connects_count;
+          f.demos = f.demos > 0 ? f.demos : row.total_demos;
+          f.wins = f.wins > 0 ? f.wins : row.total_wins;
+        } else {
+          // No manual row — create synthetic funnel from superhex
+          const synthetic: DbWeeklyFunnel = {
+            id: `superhex-${row.id}`,
+            member_id: memberId,
+            week_key: weekKey,
+            role: null,
+            tam: 0,
+            accounts: 0,
+            contacts_added: 0,
+            calls: row.calls_count,
+            connects: row.connects_count,
+            ops: 0,
+            demos: row.total_demos,
+            wins: row.total_wins,
+            feedback: 0,
+            submitted: false,
+            submitted_at: null,
+          };
+          dbFunnels.push(synthetic);
+        }
+      }
+
       const { teams: t, unassigned: u } = assembleTeams(
         (tRes.data ?? []) as DbTeam[],
-        (mRes.data ?? []) as DbMember[],
-        (fRes.data ?? []) as DbWeeklyFunnel[],
+        dbMembers,
+        dbFunnels,
         (wRes.data ?? []) as DbWinEntry[]
       );
       setTeams(t);

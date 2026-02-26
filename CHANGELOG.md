@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-02-25 (Load Superhex Metrics & Uncap Monthly Goal Percentages)
+
+### Location – Pilot pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Weekly rep metrics (calls, connects, demos, wins) were being entered manually, but the data already exists in the `superhex` Supabase table populated from an external source. Loading this data as the baseline — with manual entries still taking precedence — eliminates duplicate data entry. Additionally, Monthly Goals percentages were capped at 100%, hiding the fact that reps had exceeded their targets (e.g., 732/600 calls showing 100% instead of 122%).
+
+**Changes:**
+- **TeamsContext** (`TeamsContext.tsx`): Added `DbSuperhex` import. Extended the initial `load()` fetch to also query the `superhex` table. Added merge logic that builds a case-insensitive name lookup from `members`, matches each `superhex.rep_name` to a `member_id`, and either creates a synthetic `DbWeeklyFunnel` row (when no manual entry exists) or overlays superhex values as baseline (when a manual row exists, non-zero manual values take precedence). Unmatched rep names are logged to the console as warnings. Column mapping: `calls_count` → `calls`, `connects_count` → `connects`, `total_demos` → `demos`, `total_wins` → `wins`. `total_activity_count` is not yet mapped.
+- **Monthly Goals percentages** (`Index.tsx`): Removed the `Math.min(..., 100)` cap on displayed percentages in three places: active members, former members, and the team-level progress section. The progress bar width remains capped at 100% via a separate `barPct` variable. Percentage text now turns green (`text-green-400`) with bold weight when >= 100%. Team-level progress text also turns green when >= 100%.
+---
+
 ## 2026-02-25 (Monthly-Scoped Goal & Quota Calculations)
 
 ### Location – Quota page (`src/pages/Quota.tsx`), Pilot pages (`src/pages/Index.tsx`), Helpers (`src/lib/quota-helpers.ts`)
