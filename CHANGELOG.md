@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-02-26 (Backfill Historic TAM Values)
+
+### Location – Database (`public.weekly_funnels` table in Supabase)
+
+**Rationale:** Historic TAM values were missing for several project teams, leaving weekly funnel data blank from the week of 9/29/2025 onward (and from 6/30/2025 for Guest Pro). These needed to be manually populated so historical reporting and funnel metrics reflect accurate TAM figures.
+
+**Changes:**
+- **Project Sterno** (3 members: Morgan Weeks, Ross Armstrong, Will Andrews): Inserted 61 new `weekly_funnels` rows with TAM = 433 per member (1300 / 3) for weeks 2025-09-29 through 2026-02-23. Five pre-existing rows already had TAM = 433 and were left unchanged.
+- **Project Mad Max** (3 members: Carly King, Shane Hughes, Zoe Lang): Inserted 60 new `weekly_funnels` rows with TAM = 600 per member (1800 / 3) for weeks 2025-09-29 through 2026-02-23. Six pre-existing rows already had TAM = 600 and were left unchanged.
+- **Project Guest Pro** (1 member: Lo Picton): Inserted 20 new `weekly_funnels` rows with TAM = 2400 (2400 / 1) for weeks 2025-09-29 through 2026-02-23. Two pre-existing rows were updated from TAM = 4000 to TAM = 2400 for consistency. Additionally, inserted 13 new rows with TAM = 2400 for the earlier range of weeks 2025-06-30 through 2025-09-22.
+---
+
 ## 2026-02-25 (Superhex Realtime Sync)
 
 ### Location – Context (`src/contexts/TeamsContext.tsx`), Database (`supabase/migrations/20250225250000_enable_superhex_realtime.sql`)
