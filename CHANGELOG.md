@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-03-02 (Help page updated with latest features)
+
+### Location – Help page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page ("How to Use GTMx Pilots") was written when it was first created and did not reflect the many features added in the same session: renamed sections, reordered layout, persistent collapse, Lifetime Stats, Monthly Stats, historical goal/roster accuracy, rep override week selector, edit submission audit log, and thousands separators. Users reading the guide would see outdated section names, missing features, and stale descriptions.
+
+**Changes:**
+- Updated all section name references throughout the page: "Manager Inputs" → "Summary", "Test Signals" → "Monthly Data", "Player's Section" → "Rep Self-Overrides".
+- Updated the Pilots Page intro to list the four sections in their new order (Summary, Monthly Data, Weekly Data, Rep Self-Overrides) and added notes on persistent collapse state and thousands separators.
+- Added "Lifetime Stats" subsection under Summary describing the orange-bordered cumulative performance card.
+- Expanded the "Month Look-Back" subsection with roster accuracy (member history tracking) and goal/accelerator accuracy (historical snapshots) descriptions.
+- Updated the manual TAM fallback description to mention the computed Touched Accounts, Avg TAM, and Touch Rate stats now shown alongside the editable input.
+- Restructured section 3b (now "Monthly Data") into three subsections: Monthly Stats (blue-bordered card with month badge), Monthly Goals (moved here from Summary, with historical config note), and Funnel Overview & Player Selection.
+- Reordered Weekly Data to 3c and Rep Self-Overrides to 3d to match the current page layout.
+- Added "Week Selector" documentation in Rep Self-Overrides explaining the dropdown for choosing any week within the team's date range.
+- Added "Submit & Edit Submission" documentation describing the confirmation dialog, name entry, and audit trail logging.
+- Updated the "Your Funnels" description to clarify that entered values overwrite report values.
+- Added "Historical accuracy" bullet to the Quota section noting that past months use the correct goals, accelerators, and roster.
+- Updated the Real-Time Data section to reference "Rep Self-Overrides" instead of "Player's Section".
+- Updated the Settings member-move description to reflect the new in-place move with history tracking.
+- Added new tips: week selector usage, look-back with correct historical data, persistent collapse preference.
+- Updated existing tips: former members note now mentions cross-project moves, collapse tip now mentions auto-save and cross-pilot sharing.
+- Added Help link mention in the "Navigating the App" subsection and updated deep link anchor descriptions with new section names.
+---
+
+## 2026-03-02 (Rep override week selector & edit submission audit log)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`), Supabase (`funnel_edit_log` table), Database Types (`src/lib/database.types.ts`)
+
+**Rationale:** Reps could only enter override data for the current week, with no way to go back and update a prior week's numbers. Additionally, when a submitted week was re-opened for editing there was no record of who made the change, creating an accountability gap.
+
+**Changes:**
+- Added a week selector dropdown in the Rep Self-Overrides "Your Funnels" section header. Reps can now choose any week within the team's date range; the current week is labeled "(current)" and selected by default.
+- All funnel reads, writes, role updates, submit, and edit-submission actions within Rep Self-Overrides now operate on the selected week (`repOverrideWeek` state) rather than the hardcoded current week.
+- Replaced the inline "Edit Submission" button logic with a confirmation dialog that prompts the editor to enter their name before unlocking a submitted week.
+- Created a new `funnel_edit_log` Supabase table (`member_id`, `week_key`, `edited_by`, `edited_at`) to persist an audit trail of who re-opened each submitted funnel week. Migration applied to Supabase and saved locally at `supabase/migrations/20250302210000_create_funnel_edit_log.sql`.
+- Added the `DbFunnelEditLog` TypeScript interface to `src/lib/database.types.ts`.
+---
+
+## 2026-03-02 (Dashboard section reordering & header renames)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`)
+
+**Rationale:** The dashboard section ordering and naming did not reflect the intended information hierarchy. Monthly Goals needed to appear directly after Monthly Stats for a natural top-down reading flow, the Weekly Data grid needed to precede the rep input section, and several section headers used internal/working titles that were confusing for end users.
+
+**Changes:**
+- Moved the Monthly Goals table from the top-level "Summary" (formerly Manager Inputs) section into the `TeamTab` component, positioned immediately after Monthly Stats inside the Monthly Data collapsible. Added `memberGoalsHistory` as a new prop to `TeamTab` to support historical goal overlays in the new location.
+- Swapped the order of Weekly Data and Player's Section so that Weekly Data now renders first.
+- Renamed the "Manager Inputs" section header to "Summary".
+- Renamed the "Test Signals" section header to "Monthly Data".
+- Renamed the "Player's Section" header to "Rep Self-Overrides".
+- Replaced the 🎮 emoji on Rep Self-Overrides with a Lucide `Scale` icon, rendered inline with the heading text.
+---
+
 ## 2026-03-02 (Persistent section collapse & Lifetime Stats relocation)
 
 ### Location – Pilots/Index (`src/pages/Index.tsx`)

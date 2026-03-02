@@ -18,9 +18,9 @@ export default function Help() {
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page gives you one-click access to each active team, Data &amp; Findings, Quota, and Settings.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page gives you one-click access to each active team, Data &amp; Findings, Quota, Settings, and Help.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
-          <li>The <strong>Settings</strong> link (gear icon) is on the far right.</li>
+          <li>The <strong>Help</strong> link (question-mark icon) and <strong>Settings</strong> link (gear icon) are on the far right, next to the theme toggle.</li>
         </ul>
 
         <H3>Deep Linking</H3>
@@ -28,10 +28,10 @@ export default function Help() {
           Every pilot page supports URL-based navigation. You can share a link
           like <code className="text-sm bg-muted px-1 rounded">/Pilots/Mad_Max#weekly-data</code> to
           point someone directly to the Weekly Data section of a specific pilot.
-          Available anchors: <code className="text-sm bg-muted px-1 rounded">#manager-inputs</code>,{" "}
-          <code className="text-sm bg-muted px-1 rounded">#test-signals</code>,{" "}
-          <code className="text-sm bg-muted px-1 rounded">#players-section</code>,{" "}
-          <code className="text-sm bg-muted px-1 rounded">#weekly-data</code>.
+          Available anchors: <code className="text-sm bg-muted px-1 rounded">#manager-inputs</code> (Summary),{" "}
+          <code className="text-sm bg-muted px-1 rounded">#test-signals</code> (Monthly Data),{" "}
+          <code className="text-sm bg-muted px-1 rounded">#weekly-data</code>,{" "}
+          <code className="text-sm bg-muted px-1 rounded">#players-section</code> (Rep Self-Overrides).
         </p>
 
         <H3>Dark Mode</H3>
@@ -107,7 +107,7 @@ export default function Help() {
           <li><strong>Add a member</strong> by clicking "New Member" — enter a name and optionally set their level.</li>
           <li><strong>Edit inline</strong> — click a member's name or level in the table to edit in place. A pencil icon appears on hover.</li>
           <li><strong>Remove a member</strong> — this archives them (soft delete). Their funnel data and win stories remain on the team for historical reporting.</li>
-          <li><strong>Move a member</strong> between teams — the member is archived on the source team (data stays) and a fresh record is created on the target team.</li>
+          <li><strong>Move a member</strong> between teams — the member's team assignment is updated in place so all historical data follows them. A history record tracks which teams they've been on and when, ensuring past months show the correct roster on each team.</li>
         </ul>
       </Section>
 
@@ -119,14 +119,18 @@ export default function Help() {
             Pilots
           </Link>{" "}
           page is the heart of the app. Each team gets its own tab with four
-          collapsible sections.
+          collapsible sections: <strong>Summary</strong>,{" "}
+          <strong>Monthly Data</strong>, <strong>Weekly Data</strong>, and{" "}
+          <strong>Rep Self-Overrides</strong>.
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li><strong>Switch teams</strong> by clicking tabs at the top or using the nav bar links.</li>
-          <li><strong>Collapse/expand sections</strong> by clicking any section header (Manager Inputs, Test Signals, Player's Section, Weekly Data). A chevron icon indicates the current state.</li>
+          <li><strong>Collapse/expand sections</strong> by clicking any section header. A chevron icon indicates the current state.</li>
+          <li><strong>Collapse state persists</strong> across page refreshes and browser restarts. Collapsing a section on one pilot collapses it on all pilots automatically.</li>
+          <li>Large numbers throughout the page display with <strong>thousands separators</strong> for easier scanning.</li>
         </ul>
 
-        <H3 id="manager-inputs">3a. Manager Inputs</H3>
+        <H3 id="manager-inputs">3a. Summary</H3>
 
         <H4>Test Phases</H4>
         <ul className="list-disc pl-5 space-y-1">
@@ -137,8 +141,40 @@ export default function Help() {
           <li>If no dates are set, you'll see a link to Settings to configure them.</li>
         </ul>
 
+        <H4>Month Look-Back</H4>
+        <p>
+          Click any <strong>month segment</strong> in the test phases bar to view
+          that month's historical data across the entire page. A banner shows
+          which month you're viewing with a <strong>"Back to Current"</strong>{" "}
+          link to return. Historical views are fully accurate:
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong>Roster accuracy:</strong> Past months show the members who
+            were actually on the team during that period. If someone moved to
+            another project, they still appear on their old team for the months
+            they were there, and TAM/member counts adjust accordingly.
+          </li>
+          <li>
+            <strong>Goal &amp; accelerator accuracy:</strong> Goals, enabled
+            metrics, accelerator rules, parity settings, and per-level targets
+            are all snapshotted each time they change. Viewing a past month shows
+            the configuration that was in effect during that period, not the
+            current configuration.
+          </li>
+        </ul>
+
         <H4>Mission &amp; Purpose</H4>
         <p>A free-text field where managers describe the team's mission. Saved automatically.</p>
+
+        <H4>Lifetime Stats</H4>
+        <p>
+          An orange-bordered card showing cumulative performance across the{" "}
+          <strong>entire test duration</strong>, regardless of which month is
+          selected. Includes conversion funnels (Touch Rate, Call→Connect,
+          Connect→Demo, Demo→Win) and stat totals (Ops, Demos, Wins, Feedback,
+          Activity).
+        </p>
 
         <H4>Total TAM</H4>
         <ul className="list-disc pl-5 space-y-1">
@@ -151,10 +187,19 @@ export default function Help() {
             <strong>When no external data exists (manual fallback):</strong>{" "}
             Enter a Total TAM value and click <strong>Submit</strong>. The value
             is divided equally across active members and persisted to each
-            member's weekly funnel. Click <strong>Edit</strong> to change it —
-            the new value applies from the current week forward while older weeks
-            retain their original value.
+            member's weekly funnel. Touched Accounts, Avg TAM, and Touch Rate
+            are computed and displayed alongside the editable Total TAM. Click{" "}
+            <strong>Edit</strong> to change it — the new value applies from the
+            current week forward while older weeks retain their original value.
           </li>
+        </ul>
+
+        <H3 id="test-signals">3b. Monthly Data</H3>
+
+        <H4>Monthly Stats</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>A blue-bordered card showing current-month totals for Ops, Demos, Wins, Feedback, and Activity, with a badge indicating the selected month (e.g. "Mar 2026").</li>
+          <li>The <strong>Total Wins</strong> card includes a trend arrow — up (green) if wins are higher than last week, down (red) if lower.</li>
         </ul>
 
         <H4>Monthly Goals</H4>
@@ -162,21 +207,12 @@ export default function Help() {
           <li>Displays a read-only table of each enabled metric with the member's current value, goal target, progress bar, and percentage.</li>
           <li>Percentages are uncapped — values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
+          <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
           <li>Goals are configured in Settings, not on this page.</li>
         </ul>
 
-        <H4>Month Look-Back</H4>
-        <p>
-          Click any <strong>month segment</strong> in the test phases bar to view
-          that month's historical data across the entire page. A banner shows
-          which month you're viewing with a <strong>"Back to Current"</strong>{" "}
-          link to return.
-        </p>
-
-        <H3 id="test-signals">3b. Test Signals</H3>
+        <H4>Funnel Overview &amp; Player Selection</H4>
         <ul className="list-disc pl-5 space-y-1">
-          <li><strong>Stat cards</strong> show current-month totals for Ops, Demos, Wins, Feedback, and Activity.</li>
-          <li>The <strong>Total Wins</strong> card includes a trend arrow — up (green) if wins are higher than last week, down (red) if lower.</li>
           <li>
             The <strong>Funnel Overview</strong> chart shows week-over-week
             trends. Toggle metrics on/off using the buttons above the chart.
@@ -190,25 +226,7 @@ export default function Help() {
           </li>
         </ul>
 
-        <H3 id="players-section">3c. Player's Section</H3>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>
-            <strong>Your Funnels:</strong> Each active member has a weekly input
-            form with fields for Activity, Calls, Connects, Ops, Demos, Wins,
-            and Feedback, plus a role dropdown (TOFU, Closing, etc.).
-          </li>
-          <li>
-            External data from the reporting system is merged as a baseline —
-            any non-zero value you enter manually will take precedence.
-          </li>
-          <li>
-            <strong>Win Stories:</strong> Record wins with a restaurant name,
-            story, and date. A duck is earned for every 3 wins.
-          </li>
-          <li>Data should be updated weekly by <strong>Tuesday 12pm EST</strong>.</li>
-        </ul>
-
-        <H3 id="weekly-data">3d. Weekly Data</H3>
+        <H3 id="weekly-data">3c. Weekly Data</H3>
         <ul className="list-disc pl-5 space-y-1">
           <li>A comprehensive grid showing every metric per member per week, starting from the team's start date through the current week.</li>
           <li>Columns are <strong>Monday-aligned</strong>. The most recent weeks are visible first — scroll left to see older weeks.</li>
@@ -219,6 +237,35 @@ export default function Help() {
             Below a thick separator line, the <strong>Team Monthly Aggregate</strong>{" "}
             section shows summed team totals grouped by calendar month.
           </li>
+        </ul>
+
+        <H3 id="players-section">3d. Rep Self-Overrides</H3>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong>Week Selector:</strong> A dropdown in the section header lets
+            reps choose any week within the team's date range. The current week
+            is labeled "(current)" and selected by default. All reads, writes,
+            and submissions in this section operate on the selected week.
+          </li>
+          <li>
+            <strong>Your Funnels:</strong> Each active member has a weekly input
+            form with fields for Activity, Calls, Connects, Ops, Demos, Wins,
+            and Feedback, plus a role dropdown (TOFU, Closing, etc.). Any value
+            entered here will completely overwrite the value from the report for
+            that metric and week.
+          </li>
+          <li>
+            <strong>Submit &amp; Edit Submission:</strong> Once funnels are
+            submitted for a week, they are locked. To re-open a submitted week,
+            click <strong>Edit Submission</strong> — a confirmation dialog will
+            ask for your name. This is logged to an audit trail so managers can
+            see who unlocked the week and when.
+          </li>
+          <li>
+            <strong>Win Stories:</strong> Record wins with a restaurant name,
+            story, and date. A duck is earned for every 3 wins.
+          </li>
+          <li>Data should be updated weekly by <strong>Tuesday 12pm EST</strong>.</li>
         </ul>
       </Section>
 
@@ -263,6 +310,12 @@ export default function Help() {
             showing summed values. Accelerator breakdown tooltips show
             "TM" (team) or "SF" (self) badges.
           </li>
+          <li>
+            <strong>Historical accuracy:</strong> Viewing a past month uses the
+            goals, accelerators, and roster that were in effect during that
+            period, so quota calculations are always correct for the time frame
+            you're looking at.
+          </li>
         </ul>
       </Section>
 
@@ -298,7 +351,7 @@ export default function Help() {
           </li>
           <li>
             External data provides the <strong>baseline</strong>. Any non-zero
-            value entered manually in the Player's Section will override the
+            value entered manually in Rep Self-Overrides will override the
             external value for that metric and week.
           </li>
         </ul>
@@ -322,11 +375,22 @@ export default function Help() {
           </li>
           <li>
             <strong>Former members</strong> remain visible in read-only mode
-            throughout the app. Their historical data is never lost.
+            throughout the app. Their historical data is never lost, even when
+            they move between projects.
           </li>
           <li>
             <strong>Collapse sections</strong> you aren't using to reduce
-            scrolling on the Pilots page.
+            scrolling on the Pilots page. Your preference is saved automatically
+            and shared across all pilots.
+          </li>
+          <li>
+            <strong>Use the week selector</strong> in Rep Self-Overrides to go
+            back and update a prior week's funnel data.
+          </li>
+          <li>
+            <strong>Look back in time</strong> — click any past month in the
+            test phases bar to see historical data with the correct roster,
+            goals, and accelerators.
           </li>
           <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for
