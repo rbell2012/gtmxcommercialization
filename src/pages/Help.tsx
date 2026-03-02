@@ -406,14 +406,14 @@ function Section({ id, title, children }: { id: string; title: string; children:
   return (
     <section id={id} className="mb-10 scroll-mt-16">
       <h2 className="text-2xl font-semibold mb-3 border-b border-border pb-2">{title}</h2>
-      <div className="space-y-3 text-sm leading-relaxed">{children}</div>
+      <div className="space-y-3 text-sm leading-relaxed [&>p]:pl-4 [&>ul]:pl-4 [&>h4]:pl-4">{children}</div>
     </section>
   );
 }
 
 function H3({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
-    <h3 id={id} className="text-lg font-semibold mt-5 mb-1 scroll-mt-16">
+    <h3 id={id} className="text-lg font-semibold mt-5 mb-1 scroll-mt-16 text-accent">
       {children}
     </h3>
   );
