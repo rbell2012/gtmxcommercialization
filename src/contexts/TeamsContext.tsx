@@ -4,14 +4,16 @@ import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetric
 
 // ── Goal metrics system ──
 
-export const GOAL_METRICS = ['calls', 'ops', 'demos', 'feedback'] as const;
+export const GOAL_METRICS = ['calls', 'ops', 'demos', 'wins', 'feedback', 'activity'] as const;
 export type GoalMetric = (typeof GOAL_METRICS)[number];
 
 export const GOAL_METRIC_LABELS: Record<GoalMetric, string> = {
   calls: 'Calls',
   ops: 'Ops',
   demos: 'Demos',
+  wins: 'Wins',
   feedback: 'Feedback',
+  activity: 'Activity',
 };
 
 export type MemberGoals = Record<GoalMetric, number>;
@@ -46,14 +48,18 @@ export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
   calls: {},
   ops: {},
   demos: {},
+  wins: {},
   feedback: {},
+  activity: {},
 };
 
 export const DEFAULT_GOALS: MemberGoals = {
   calls: 0,
   ops: 0,
   demos: 0,
+  wins: 0,
   feedback: 0,
+  activity: 0,
 };
 
 // ── App types ──
@@ -75,6 +81,7 @@ export interface FunnelData {
   demos: number;
   wins: number;
   feedback: number;
+  activity: number;
 }
 
 export interface WeeklyFunnel extends FunnelData {
@@ -102,7 +109,9 @@ export const DEFAULT_ENABLED_GOALS: EnabledGoals = {
   calls: false,
   ops: false,
   demos: false,
+  wins: false,
   feedback: false,
+  activity: false,
 };
 
 export interface Team {
@@ -145,6 +154,7 @@ function dbMemberToApp(
       demos: f.demos,
       wins: f.wins,
       feedback: f.feedback ?? 0,
+      activity: f.activity ?? 0,
       role: f.role ?? undefined,
       submitted: f.submitted,
       submittedAt: f.submitted_at ?? undefined,
@@ -158,7 +168,9 @@ function dbMemberToApp(
       calls: row.goal_calls ?? 0,
       ops: row.goal_ops ?? 0,
       demos: row.goal_demos ?? 0,
+      wins: row.goal_wins ?? 0,
       feedback: row.goal_feedback ?? 0,
+      activity: row.goal_activity ?? 0,
     },
     ducksEarned: row.ducks_earned,
     isActive: row.is_active,
@@ -215,13 +227,17 @@ function assembleTeams(
         calls: t.team_goal_calls ?? 0,
         ops: t.team_goal_ops ?? 0,
         demos: t.team_goal_demos ?? 0,
+        wins: t.team_goal_wins ?? 0,
         feedback: t.team_goal_feedback ?? 0,
+        activity: t.team_goal_activity ?? 0,
       },
       enabledGoals: {
         calls: t.goal_enabled_calls ?? false,
         ops: t.goal_enabled_ops ?? false,
         demos: t.goal_enabled_demos ?? false,
+        wins: t.goal_enabled_wins ?? false,
         feedback: t.goal_enabled_feedback ?? false,
+        activity: t.goal_enabled_activity ?? false,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
@@ -266,7 +282,9 @@ function memberGoalsToDbInsert(goals: MemberGoals) {
     goal_calls: goals.calls,
     goal_ops: goals.ops,
     goal_demos: goals.demos,
+    goal_wins: goals.wins,
     goal_feedback: goals.feedback,
+    goal_activity: goals.activity,
   };
 }
 
@@ -323,6 +341,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         f.demos = f.demos > 0 ? f.demos : row.total_demos;
         f.wins = f.wins > 0 ? f.wins : row.total_wins;
         f.feedback = f.feedback > 0 ? f.feedback : row.total_feedback;
+        f.activity = f.activity > 0 ? f.activity : row.total_activity_count;
       } else {
         // No manual row — create synthetic funnel from superhex
         const synthetic: DbWeeklyFunnel = {
@@ -337,6 +356,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           demos: row.total_demos,
           wins: row.total_wins,
           feedback: row.total_feedback,
+          activity: row.total_activity_count,
           submitted: false,
           submitted_at: null,
         };
@@ -437,11 +457,15 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               team_goal_calls: updated.teamGoals.calls,
               team_goal_ops: updated.teamGoals.ops,
               team_goal_demos: updated.teamGoals.demos,
+              team_goal_wins: updated.teamGoals.wins,
               team_goal_feedback: updated.teamGoals.feedback,
+              team_goal_activity: updated.teamGoals.activity,
               goal_enabled_calls: updated.enabledGoals.calls,
               goal_enabled_ops: updated.enabledGoals.ops,
               goal_enabled_demos: updated.enabledGoals.demos,
+              goal_enabled_wins: updated.enabledGoals.wins,
               goal_enabled_feedback: updated.enabledGoals.feedback,
+              goal_enabled_activity: updated.enabledGoals.activity,
               accelerator_config: updated.acceleratorConfig,
               team_goals_by_level: updated.teamGoalsByLevel,
             })

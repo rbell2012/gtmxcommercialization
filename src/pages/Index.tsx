@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity } from "lucide-react";
+import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
 import { getMemberMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
+import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -24,59 +25,6 @@ function addMonths(dateStr: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-interface ComputedPhase {
-  monthIndex: number;
-  monthLabel: string;
-  progress: number;
-  label: string;
-}
-
-function generateTestPhases(
-  startDate: string | null,
-  endDate: string | null,
-  labels: Record<number, string>
-): ComputedPhase[] {
-  if (!startDate || !endDate) return [];
-
-  const start = new Date(startDate + "T00:00:00");
-  const end = new Date(endDate + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const phases: ComputedPhase[] = [];
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-  const endMonthStart = new Date(end.getFullYear(), end.getMonth(), 1);
-
-  let index = 0;
-  while (cursor <= endMonthStart) {
-    const monthName = cursor.toLocaleString("en-US", { month: "long" });
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const monthEnd = new Date(year, month + 1, 0);
-    const monthStart = new Date(year, month, 1);
-
-    let progress = 0;
-    if (today > monthEnd) {
-      progress = 100;
-    } else if (today >= monthStart) {
-      const totalDays = monthEnd.getDate();
-      const dayOfMonth = today.getDate();
-      progress = Math.round((dayOfMonth / totalDays) * 100);
-    }
-
-    phases.push({
-      monthIndex: index,
-      monthLabel: `(${index + 1}) ${monthName}`,
-      progress,
-      label: labels[index] ?? "",
-    });
-
-    cursor.setMonth(cursor.getMonth() + 1);
-    index++;
-  }
-
-  return phases;
-}
 
 function computeOverallProgress(startDate: string | null, endDate: string | null): number {
   if (!startDate || !endDate) return 0;
@@ -173,8 +121,8 @@ function getCarriedTam(member: TeamMember, weekKey: string, orderedWeekKeys: str
   return 0;
 }
 
-function getMemberTotalWins(m: TeamMember): number {
-  const now = new Date();
+function getMemberTotalWins(m: TeamMember, referenceDate?: Date): number {
+  const now = referenceDate ?? new Date();
   const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
   return Object.entries(m.funnelByWeek || {}).reduce(
     (s, [weekKey, f]) => (weekKey.startsWith(prefix) ? s + f.wins : s),
@@ -272,6 +220,9 @@ const Index = () => {
     addCustomRole,
   } = useManagerInputs();
   const [editingField, setEditingField] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) =>
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const resolvedTeam = pilotId
     ? teams.find((t) => pilotNameToSlug(t.name) === pilotId) ?? teams[0]
@@ -288,6 +239,8 @@ const Index = () => {
   const [newRoleName, setNewRoleName] = useState("");
 
   const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
+  const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
+  const referenceDate = selectedMonth ?? undefined;
 
   useEffect(() => {
     if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
@@ -471,7 +424,7 @@ const Index = () => {
         }}>
           <TabsList className="mb-6 grid w-full bg-muted p-1 h-auto" style={{ gridTemplateColumns: `repeat(${teams.length}, minmax(0, 1fr))` }}>
             {teams.map((team) => {
-              const total = team.members.reduce((s, m) => s + getMemberTotalWins(m), 0);
+              const total = team.members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
               return (
                 <TabsTrigger
                   key={team.id}
@@ -538,12 +491,24 @@ const Index = () => {
           </TabsList>
 
         {/* ===== MANAGER INPUTS ===== */}
-        <div id="manager-inputs" className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg scroll-mt-16">
-          <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-            📋 Manager Inputs
-          </h2>
+        <div
+          id="manager-inputs"
+          className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg scroll-mt-16 cursor-pointer select-none"
+          onClick={() => toggleSection("manager-inputs")}
+        >
+          <div className="flex items-center gap-2">
+            {collapsedSections["manager-inputs"] ? (
+              <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+            )}
+            <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
+              📋 Manager Inputs
+            </h2>
+          </div>
         </div>
 
+        {!collapsedSections["manager-inputs"] && <>
         {/* Test Phases */}
         <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
           <div className="mb-3 flex items-center justify-between">
@@ -568,13 +533,40 @@ const Index = () => {
           </div>
           {computedPhases.length > 0 ? (
             <>
+              {selectedMonth && !isCurrentMonth(selectedMonth) && (
+                <div className="mb-3 flex items-center justify-between rounded-md bg-primary/10 border border-primary/30 px-3 py-1.5">
+                  <span className="text-xs font-medium text-primary">
+                    Viewing: {selectedMonth.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                  </span>
+                  <button
+                    onClick={() => setSelectedMonth(null)}
+                    className="text-xs font-semibold text-primary hover:text-primary/80 underline"
+                  >
+                    Back to Current
+                  </button>
+                </div>
+              )}
               <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
                 {computedPhases.map((phase, i) => {
                   const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
                   const widthPct = 100 / computedPhases.length;
                   const fillPct = phase.progress;
+                  const now = new Date();
+                  const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                  const phaseIsSelected = selectedMonth
+                    ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
+                    : phaseIsCurrentMonth;
                   return (
-                    <div key={phase.monthIndex} className="relative h-full" style={{ width: `${widthPct}%` }}>
+                    <div
+                      key={phase.monthIndex}
+                      className={`relative h-full cursor-pointer transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
+                      style={{ width: `${widthPct}%` }}
+                      onClick={() => {
+                        if (phaseIsCurrentMonth && !selectedMonth) return;
+                        if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                        setSelectedMonth(phaseToDate(phase));
+                      }}
+                    >
                       <div
                         className="h-full transition-all duration-500 ease-out"
                         style={{
@@ -591,12 +583,26 @@ const Index = () => {
               <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${computedPhases.length}, minmax(0, 1fr))` }}>
                 {computedPhases.map((phase, i) => {
                   const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+                  const now = new Date();
+                  const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                  const phaseIsSelected = selectedMonth
+                    ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
+                    : phaseIsCurrentMonth;
                   return (
-                    <div key={phase.monthIndex} className="text-center">
-                      <p className={`text-xs font-semibold ${colors[i % colors.length]}`}>{phase.monthLabel}</p>
+                    <div
+                      key={phase.monthIndex}
+                      className={`text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                      onClick={() => {
+                        if (phaseIsCurrentMonth && !selectedMonth) return;
+                        if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                        setSelectedMonth(phaseToDate(phase));
+                      }}
+                    >
+                      <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colors[i % colors.length]}`}>{phase.monthLabel}</p>
                       <Input
                         value={phase.label}
                         onChange={(e) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
                         placeholder="—"
                         className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
                       />
@@ -674,21 +680,38 @@ const Index = () => {
               </div>
             );
           }
+          const fbTouched = activeMembers.reduce((s, m) => s + m.touchedAccounts, 0);
+          const fbAvg = activeMembers.length > 0 ? Math.round((activeTeam.totalTam || 0) / activeMembers.length) : 0;
+          const fbRate = (activeTeam.totalTam || 0) > 0 ? ((fbTouched / activeTeam.totalTam) * 100).toFixed(0) : "0";
           return (
             <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${activeTeam.tamSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={activeTeam.totalTam || ""}
-                    onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, totalTam: Math.max(0, parseInt(e.target.value) || 0) }))}
-                    className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
-                    placeholder="0"
-                    disabled={activeTeam.tamSubmitted}
-                  />
-                  {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+                <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-3">
+                    <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={activeTeam.totalTam || ""}
+                      onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, totalTam: Math.max(0, parseInt(e.target.value) || 0) }))}
+                      className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
+                      placeholder="0"
+                      disabled={activeTeam.tamSubmitted}
+                    />
+                    {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-muted-foreground">Touched Accounts</label>
+                    <span className="font-display text-2xl font-bold text-foreground">{fbTouched.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-muted-foreground">Avg TAM</label>
+                    <span className="font-display text-2xl font-bold text-foreground">{fbAvg.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-muted-foreground">Touch Rate</label>
+                    <span className="font-display text-2xl font-bold text-primary">{fbRate}%</span>
+                  </div>
                 </div>
                 {!activeTeam.tamSubmitted ? (
                   <Button size="sm" onClick={() => {
@@ -805,7 +828,7 @@ const Index = () => {
                               </div>
                             </td>
                             {visibleMetrics.map((metric, metricIdx) => {
-                              const actual = getMemberMetricTotal(m, metric);
+                              const actual = getMemberMetricTotal(m, metric, referenceDate);
                               const goal = getEffectiveGoal(team, m, metric);
                               const pct = goal > 0 ? (actual / goal) * 100 : 0;
                               const barPct = Math.min(pct, 100);
@@ -845,7 +868,7 @@ const Index = () => {
                                   <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">{m.name}</span>
                                 </td>
                                 {visibleMetrics.map((metric, metricIdx) => {
-                                  const actual = getMemberMetricTotal(m, metric);
+                                  const actual = getMemberMetricTotal(m, metric, referenceDate);
                                   const goal = getEffectiveGoal(team, m, metric);
                                   const pct = goal > 0 ? (actual / goal) * 100 : 0;
                                   const barPct = Math.min(pct, 100);
@@ -875,6 +898,7 @@ const Index = () => {
             </div>
           );
         })}
+        </>}
 
         <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
           <DialogContent className="bg-card border-border">
@@ -913,6 +937,7 @@ const Index = () => {
                 newRoleName={newRoleName}
                 setNewRoleName={setNewRoleName}
                 addRole={addRole}
+                referenceDate={referenceDate}
               />
             </TabsContent>
           ))}
@@ -974,6 +999,7 @@ function TeamTab({
   newRoleName,
   setNewRoleName,
   addRole,
+  referenceDate,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -993,11 +1019,16 @@ function TeamTab({
   newRoleName: string;
   setNewRoleName: (v: string) => void;
   addRole: () => void;
+  referenceDate?: Date;
 }) {
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const toggleSection = (key: string) =>
+    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
   const activeMembers = members.filter((m) => m.isActive);
-  const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m), 0);
+  const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
 
   const weeklyScrollRef = useRef<HTMLDivElement>(null);
@@ -1023,13 +1054,14 @@ function TeamTab({
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const winsUp = currWeekWins >= prevWeekWins;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
-  const teamTotalOps = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'ops'), 0);
-  const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos'), 0);
-  const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback'), 0);
+  const teamTotalOps = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'ops', referenceDate), 0);
+  const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos', referenceDate), 0);
+  const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback', referenceDate), 0);
+  const teamTotalActivity = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'activity', referenceDate), 0);
 
   const chartData = members.map((m) => ({
     name: m.name,
-    wins: getMemberTotalWins(m),
+    wins: getMemberTotalWins(m, referenceDate),
   }));
 
   const allStories = members
@@ -1042,12 +1074,22 @@ function TeamTab({
     <div className="space-y-8">
       {/* ===== TEST SIGNALS ===== */}
       <div id="test-signals" className="scroll-mt-16">
-        <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
-          <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-            📡 Test Signals
-          </h2>
+        <div
+          className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
+          onClick={() => toggleSection("test-signals")}
+        >
+          <div className="flex items-center gap-2">
+            {collapsedSections["test-signals"] ? (
+              <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+            )}
+            <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
+              📡 Test Signals
+            </h2>
+          </div>
         </div>
-        <div className="space-y-6">
+        {!collapsedSections["test-signals"] && <div className="space-y-6">
           {/* Team Total Bar */}
           <div className="relative overflow-hidden rounded-2xl border-2 border-secondary/30 bg-gradient-to-br from-secondary via-secondary/90 to-secondary/80 p-6 shadow-xl">
             <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl" />
@@ -1185,17 +1227,27 @@ function TeamTab({
 
           {/* Week Over Week */}
           <WeekOverWeekView team={team} />
-        </div>
+        </div>}
       </div>
 
       {/* ===== PLAYER'S SECTION ===== */}
       <div id="players-section" className="scroll-mt-16">
-        <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
-          <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-            🎮 Player's Section
-          </h2>
+        <div
+          className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
+          onClick={() => toggleSection("players-section")}
+        >
+          <div className="flex items-center gap-2">
+            {collapsedSections["players-section"] ? (
+              <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+            )}
+            <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
+              🎮 Player's Section
+            </h2>
+          </div>
         </div>
-        <div className="space-y-6">
+        {!collapsedSections["players-section"] && <div className="space-y-6">
 
           {activeMembers.length > 0 && (
             <div className="rounded-lg border border-border bg-card p-5 glow-card">
@@ -1419,18 +1471,28 @@ function TeamTab({
               </div>
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* ===== WEEKLY DATA GRID ===== */}
       {members.length > 0 && (
         <div id="weekly-data" className="scroll-mt-16">
-          <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-              📊 Weekly Data
-            </h2>
+          <div
+            className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
+            onClick={() => toggleSection("weekly-data")}
+          >
+            <div className="flex items-center gap-2">
+              {collapsedSections["weekly-data"] ? (
+                <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+              )}
+              <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
+                📊 Weekly Data
+              </h2>
+            </div>
           </div>
-          <div ref={weeklyScrollRef} className="rounded-lg border border-border bg-card py-5 glow-card overflow-x-auto">
+          {!collapsedSections["weekly-data"] && <div ref={weeklyScrollRef} className="rounded-lg border border-border bg-card py-5 glow-card overflow-x-auto">
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead>
                 <tr className="border-b border-border">
@@ -1458,7 +1520,7 @@ function TeamTab({
                       { label: "Feedback", key: "feedback" },
                       { label: "Activity", key: "activity" },
                     ];
-                    const alwaysShow = new Set<string>(["tam", "connects"]);
+                    const alwaysShow = new Set<string>(["tam", "connects", "wins"]);
                     const metricRows = allMetricRows.filter(
                       (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
                     );
@@ -1564,7 +1626,7 @@ function TeamTab({
                     { label: "Feedback", key: "feedback" },
                     { label: "Activity", key: "activity" },
                   ];
-                  const alwaysShow = new Set<string>(["tam", "connects"]);
+                  const alwaysShow = new Set<string>(["tam", "connects", "wins"]);
                   const metricRows = allMetricRows.filter(
                     (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
                   );
@@ -1667,7 +1729,7 @@ function TeamTab({
                 })()}
               </tbody>
             </table>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -1700,13 +1762,13 @@ function WeekOverWeekView({ team }: { team: Team }) {
   };
   const metricKeys: { key: keyof FunnelData; label: string }[] = [
     { key: "tam", label: "TAM" },
+    { key: "activity", label: "Activity" },
     { key: "calls", label: "Call" },
     { key: "connects", label: "Connect" },
     { key: "ops", label: "Ops" },
     { key: "demos", label: "Demo" },
     { key: "wins", label: "Win" },
     { key: "feedback", label: "Feedback" },
-    { key: "activity", label: "Activity" },
   ];
 
   const weekKeyList = weeks.map((w) => w.key);

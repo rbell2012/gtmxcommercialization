@@ -13,11 +13,15 @@ export interface DbTeam {
   team_goal_calls: number;
   team_goal_ops: number;
   team_goal_demos: number;
+  team_goal_wins: number;
   team_goal_feedback: number;
+  team_goal_activity: number;
   goal_enabled_calls: boolean;
   goal_enabled_ops: boolean;
   goal_enabled_demos: boolean;
+  goal_enabled_wins: boolean;
   goal_enabled_feedback: boolean;
+  goal_enabled_activity: boolean;
   accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   archived_at: string | null;
@@ -32,7 +36,9 @@ export interface DbMember {
   goal_calls: number;
   goal_ops: number;
   goal_demos: number;
+  goal_wins: number;
   goal_feedback: number;
+  goal_activity: number;
   ducks_earned: number;
   is_active: boolean;
   level: string | null;
@@ -52,6 +58,7 @@ export interface DbWeeklyFunnel {
   demos: number;
   wins: number;
   feedback: number;
+  activity: number;
   submitted: boolean;
   submitted_at: string | null;
 }

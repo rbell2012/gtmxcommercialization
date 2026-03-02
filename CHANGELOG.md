@@ -1,5 +1,88 @@
 # Changelog
 
+## 2026-03-02 (Month look-back capability on Pilots and Quota pages)
+
+### Location – Pilots / Projects (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Helpers (`src/lib/quota-helpers.ts`, `src/lib/test-phases.ts`)
+
+**Rationale:** There was no way to view historical monthly data. For example, on March 1 a user could not look back at February's quota, goals, or stats. Adding a month selector to the existing test phases bar lets users click any past month to see that month's data across the entire page, while keeping the current month as the default with no visual or behavioral changes.
+
+**Changes:**
+- Created shared `src/lib/test-phases.ts` extracting `ComputedPhase` type and `generateTestPhases()` from `Index.tsx` so both pages reuse the same logic; added `year`/`month` fields, plus `isCurrentMonth()` and `phaseToDate()` helpers.
+- Updated `getMemberMetricTotal`, `getBusinessDaysRemaining`, `computeQuota`, and `countTriggeredAccelerators` in `quota-helpers.ts` to accept an optional `referenceDate` parameter; when omitted behavior is unchanged (current month). Past months return 0 business days remaining.
+- **Pilots page:** Added `selectedMonth` state. Made each test phases bar segment and month label clickable — selecting a month highlights it with a ring/background and shows a "Viewing: [Month Year]" banner with a "Back to Current" link. Threaded `referenceDate` through tab header win counts, Monthly Goals table (active + former members), and all TeamTab stats (totals, stat cards, chart data). Updated local `getMemberTotalWins` to accept `referenceDate`. Current month view remains identical.
+- **Quota page:** Added a single unified test phases bar at the top of the page that merges all active teams' month ranges into one timeline. One `selectedMonth` state controls all team cards below. Threaded `referenceDate` through `TeamQuotaCard` (business days remaining) and `MemberQuotaRow` (metric totals, quota computation, accelerator calculations).
+---
+
+## 2026-03-02 (Add stats to fallback TAM manual input)
+
+### Location – Pilots / Projects (`src/pages/Index.tsx`)
+
+**Rationale:** When no metrics_touched_accounts data is available, the fallback TAM section only showed an editable Total TAM input. This made it visually inconsistent with the metrics-driven version, which displays Touched Accounts, Avg TAM, and Touch Rate alongside Total TAM. Adding these stats to the fallback view gives managers the same at-a-glance context regardless of data source.
+
+**Changes:**
+- Added computed `fbTouched` (sum of member `touchedAccounts`), `fbAvg` (totalTam / active members), and `fbRate` (touch rate percentage) variables in the fallback TAM branch.
+- Expanded the fallback TAM card layout to display Touched Accounts, Avg TAM, and Touch Rate as read-only stats next to the editable Total TAM input, matching the visual style of the metrics-driven version.
+- Total TAM remains editable with the existing Submit/Edit workflow unchanged.
+---
+
+## 2026-03-02 (Reorder Funnel Overview metric tiles)
+
+### Location – Pilots / Projects (`src/pages/Index.tsx`)
+
+**Rationale:** The metric toggle tiles in the Funnel Overview chart header needed a specific display order to better reflect the logical flow from TAM through Activity, outreach metrics, pipeline stages, and feedback.
+
+**Changes:**
+- Reordered the `metricKeys` array in the `WeekOverWeekView` component from TAM → Call → Connect → Ops → Demo → Win → Feedback → Activity to the new order: TAM → Activity → Call → Connect → Ops → Demo → Win → Feedback.
+- This change affects both the toggle button display order in the chart header and the chart line rendering order.
+---
+
+## 2026-03-01 (Collapsible section headers on Pilots page)
+
+### Location – Pilots / Projects (`src/pages/Index.tsx`)
+
+**Rationale:** The Pilots page has grown to include multiple large sections (Manager Inputs, Test Signals, Player's Section, Weekly Data). Making the section headers collapsible allows users to hide sections they aren't actively using, reducing scrolling and improving focus.
+
+**Changes:**
+- Added `ChevronDown` and `ChevronRight` lucide-react icons to the imports.
+- Added `collapsedSections` state (a `Record<string, boolean>`) and a `toggleSection` helper in the `Index` component to manage the "Manager Inputs" section collapse.
+- Added a separate `collapsedSections` state and `toggleSection` helper inside the `TeamTab` component to manage "Test Signals", "Player's Section", and "Weekly Data" section collapse independently per tab.
+- Made the "Manager Inputs" header bar clickable — toggling hides/shows Test Phases, Mission & Purpose, Total TAM, and Monthly Goals.
+- Made the "Test Signals" header bar clickable — toggling hides/shows the team summary card, stat cards, empty state, and Week Over Week chart.
+- Made the "Player's Section" header bar clickable — toggling hides/shows the funnel inputs and Win Stories.
+- Made the "Weekly Data" header bar clickable — toggling hides/shows the full weekly data grid.
+- Each header displays a chevron-right icon when collapsed and chevron-down when expanded.
+- All sections start expanded by default.
+- Action buttons (e.g. "New Team", "New Member") use `e.stopPropagation()` where applicable to prevent toggling the section when clicking them.
+---
+
+## 2026-03-01 (Add wins & activity as GoalMetrics, surface superhex ops/demos/wins/feedback/activity across all pages)
+
+### Location – Projects / Pilots (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Settings (`src/pages/Settings.tsx`), State Management (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Supabase
+
+**Rationale:** The superhex table now contains ops, demos, wins, feedback, and total_activity_count values. These needed to be surfaced across all project and quota pages. Additionally, `wins` and `activity` were not part of the GoalMetric system, meaning they couldn't have goals set, appear on the Quota page, or use accelerators.
+
+**Changes:**
+- Added `wins` and `activity` to `GOAL_METRICS` in `TeamsContext.tsx`, making them full goal metrics with toggles, level-based goals, and accelerator support across Settings, Quota, and project pages.
+- Added `activity` field to `FunnelData` interface and mapped superhex `total_activity_count` into it via the merge logic.
+- Added `GOAL_METRIC_LABELS` entries: `wins: 'Wins'`, `activity: 'Activity'`.
+- Updated `DEFAULT_GOALS`, `DEFAULT_ENABLED_GOALS`, and `DEFAULT_TEAM_GOALS_BY_LEVEL` to include `wins` and `activity`.
+- Updated `dbMemberToApp` to read `goal_wins` and `goal_activity` from member rows and `activity` from funnel rows.
+- Updated `memberGoalsToDbInsert` to persist `goal_wins` and `goal_activity`.
+- Updated `assembleTeams` to read `team_goal_wins`, `team_goal_activity`, `goal_enabled_wins`, `goal_enabled_activity` from team rows.
+- Updated `updateTeam` DB write to persist the new team goal and enabled-goal fields.
+- Superhex merge now maps `total_activity_count` → `activity` in both existing-row override and synthetic-funnel creation.
+- Added `activity` input field to "Your Funnels" section and included it in all funnel upsert operations.
+- Added `Activity` row to the Weekly Data Grid (per-member and team aggregate), controlled by its goal toggle.
+- Added `wins` to the `alwaysShow` set so the Wins row always appears in the Weekly Data Grid regardless of goal toggle state.
+- Added `Activity` to the Week Over Week chart with color `hsl(60, 60%, 45%)`.
+- Expanded Test Signals stat cards from 4 to 5: Ops, Demos, Wins, Feedback, Activity (with `Activity` icon from lucide-react).
+- Replaced "⏰ Totals due by team meeting" text with "Any value entered in here will completely overwrite the value given by the report."
+- Added `goal_wins` and `goal_activity` columns to `members` table, `team_goal_wins`, `team_goal_activity`, `goal_enabled_wins`, `goal_enabled_activity` columns to `teams` table, and `activity` column to `weekly_funnels` table in Supabase (migration applied + local migration file created).
+- Updated `DbTeam`, `DbMember`, and `DbWeeklyFunnel` interfaces in `database.types.ts` to match new schema.
+- Settings page auto-adapts: wins and activity goal toggles, level-based goal inputs, and accelerator rules now appear automatically since Settings iterates over `GOAL_METRICS`.
+- Quota page auto-adapts: wins and activity metrics appear with progress bars, needed/day calculations, and quota percentages when their goal toggles are enabled.
+---
+
 ## 2026-03-01 (Update Ops and Demos stat card icons and colors)
 
 ### Location – Dashboard (`src/pages/Index.tsx`)

@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { Target, Calendar, LockOpen, Lock } from "lucide-react";
 import {
   useTeams,
@@ -7,7 +8,9 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getMemberMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const METRIC_BAR_COLORS: string[] = [
   "progress-bar-orange",
@@ -18,20 +21,39 @@ const METRIC_BAR_COLORS: string[] = [
   "progress-bar-blue",
 ];
 
+const BAR_COLORS = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
+
 function formatPerDay(needed: number, days: number): string {
   if (days <= 0) return "--";
   const val = needed / days;
   return val % 1 === 0 ? String(val) : val.toFixed(1);
 }
 
+function mergePhases(teams: Team[]): ComputedPhase[] {
+  const seen = new Map<string, ComputedPhase>();
+  for (const team of teams) {
+    const phases = generateTestPhases(team.startDate, team.endDate, {});
+    for (const p of phases) {
+      const key = `${p.year}-${p.month}`;
+      if (!seen.has(key)) seen.set(key, p);
+    }
+  }
+  return Array.from(seen.values()).sort(
+    (a, b) => a.year - b.year || a.month - b.month
+  ).map((p, i) => ({ ...p, monthIndex: i }));
+}
+
 const Quota = () => {
   const { teams } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
+  const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
+  const referenceDate = selectedMonth ?? undefined;
+
+  const allPhases = useMemo(() => mergePhases(activeTeams), [activeTeams]);
 
   return (
     <div className="min-h-screen bg-background px-4 py-8 md:px-8">
       <div className="mx-auto max-w-5xl">
-        {/* Header */}
         <div className="mb-8 flex items-center gap-3">
           <Target className="h-8 w-8 text-primary" />
           <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
@@ -39,21 +61,105 @@ const Quota = () => {
           </h1>
         </div>
 
+        {allPhases.length > 0 && (
+          <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
+            {selectedMonth && !isCurrentMonth(selectedMonth) && (
+              <div className="mb-3 flex items-center justify-between rounded-md bg-primary/10 border border-primary/30 px-3 py-1.5">
+                <span className="text-xs font-medium text-primary">
+                  Viewing: {selectedMonth.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                </span>
+                <button
+                  onClick={() => setSelectedMonth(null)}
+                  className="text-xs font-semibold text-primary hover:text-primary/80 underline"
+                >
+                  Back to Current
+                </button>
+              </div>
+            )}
+            <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
+              {allPhases.map((phase, i) => {
+                const widthPct = 100 / allPhases.length;
+                const fillPct = phase.progress;
+                const now = new Date();
+                const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                const phaseIsSelected = selectedMonth
+                  ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
+                  : phaseIsCurrentMonth;
+                return (
+                  <div
+                    key={`${phase.year}-${phase.month}`}
+                    className={`relative h-full cursor-pointer transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
+                    style={{ width: `${widthPct}%` }}
+                    onClick={() => {
+                      if (phaseIsCurrentMonth && !selectedMonth) return;
+                      if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                      setSelectedMonth(phaseToDate(phase));
+                    }}
+                  >
+                    <div
+                      className="h-full transition-all duration-500 ease-out"
+                      style={{
+                        width: `${fillPct}%`,
+                        backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
+                        borderRadius: i === 0 && fillPct > 0 ? "9999px 0 0 9999px" : i === allPhases.length - 1 && fillPct >= 100 ? "0 9999px 9999px 0" : "0",
+                      }}
+                    />
+                    {i < allPhases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${allPhases.length}, minmax(0, 1fr))` }}>
+              {allPhases.map((phase, i) => {
+                const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+                const now = new Date();
+                const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                const phaseIsSelected = selectedMonth
+                  ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
+                  : phaseIsCurrentMonth;
+                const monthName = new Date(phase.year, phase.month, 1).toLocaleString("en-US", { month: "short" });
+                return (
+                  <div
+                    key={`${phase.year}-${phase.month}`}
+                    className={`text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                    onClick={() => {
+                      if (phaseIsCurrentMonth && !selectedMonth) return;
+                      if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                      setSelectedMonth(phaseToDate(phase));
+                    }}
+                  >
+                    <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colors[i % colors.length]}`}>
+                      {monthName}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {activeTeams.length === 0 && (
           <p className="text-sm text-muted-foreground">No active teams.</p>
         )}
 
         {activeTeams.map((team) => (
-          <TeamQuotaCard key={team.id} team={team} />
+          <TeamQuotaCard key={team.id} team={team} referenceDate={referenceDate} />
         ))}
       </div>
     </div>
   );
 };
 
-function TeamQuotaCard({ team }: { team: Team }) {
+function TeamQuotaCard({
+  team,
+  referenceDate,
+}: {
+  team: Team;
+  referenceDate?: Date;
+}) {
   const activeMembers = team.members.filter((m) => m.isActive);
-  const daysLeft = getBusinessDaysRemaining(team.endDate);
+  const daysLeft = getBusinessDaysRemaining(team.endDate, referenceDate);
   const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
 
   return (
@@ -92,7 +198,7 @@ function TeamQuotaCard({ team }: { team: Team }) {
             </thead>
             <tbody>
               {activeMembers.map((m) => (
-                <MemberQuotaRow key={m.id} team={team} member={m} daysLeft={daysLeft} visibleMetrics={visibleMetrics} />
+                <MemberQuotaRow key={m.id} team={team} member={m} daysLeft={daysLeft} visibleMetrics={visibleMetrics} referenceDate={referenceDate} />
               ))}
             </tbody>
           </table>
@@ -102,19 +208,50 @@ function TeamQuotaCard({ team }: { team: Team }) {
   );
 }
 
+function formatCondition(rule: TriggeredAccelerator["rule"]): string {
+  if (rule.conditionOperator === "between") {
+    return `between ${rule.conditionValue1} and ${rule.conditionValue2 ?? rule.conditionValue1}`;
+  }
+  return `${rule.conditionOperator} ${rule.conditionValue1}`;
+}
+
+function formatAction(rule: TriggeredAccelerator["rule"]): string {
+  const unit = rule.actionUnit === "%" ? "%" : "";
+  return `${rule.actionOperator}${rule.actionValue}${unit} to quota`;
+}
+
+function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
+  const label = GOAL_METRIC_LABELS[detail.metric];
+  return (
+    <div className="text-xs leading-relaxed">
+      <p className="font-semibold mb-1">{label} Accelerator</p>
+      <p className="text-muted-foreground">
+        {label} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+        {" "}({formatCondition(detail.rule)})
+      </p>
+      <p className="text-muted-foreground mt-0.5">
+        Effect: <span className="font-semibold text-foreground">{formatAction(detail.rule)}</span>
+      </p>
+    </div>
+  );
+}
+
 function MemberQuotaRow({
   team,
   member,
   daysLeft,
   visibleMetrics,
+  referenceDate,
 }: {
   team: Team;
   member: TeamMember;
   daysLeft: number;
   visibleMetrics: GoalMetric[];
+  referenceDate?: Date;
 }) {
-  const quotaPct = computeQuota(team, member);
-  const triggeredCount = countTriggeredAccelerators(team, member);
+  const quotaPct = computeQuota(team, member, referenceDate);
+  const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
+  const triggeredDetails = getTriggeredAcceleratorDetails(team, member, referenceDate);
   const quotaColor = quotaPct > 100 ? '#006400' : undefined;
   const quotaColorClass = quotaPct > 100 ? '' : 'text-primary';
 
@@ -143,18 +280,27 @@ function MemberQuotaRow({
               {Array.from({ length: Math.min(triggeredCount, 3) }, (_, i) => {
                 const tier = i + 1;
                 const isMax = tier === 3;
+                const detail = triggeredDetails[i];
                 return (
-                  <span
-                    key={tier}
-                    className={`inline-flex items-center gap-px text-xs font-bold ${quotaColorClass}`}
-                    style={quotaColor ? { color: quotaColor } : undefined}
-                  >
-                    {isMax ? (
-                      <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
-                    ) : (
-                      <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                  <Tooltip key={tier}>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={`inline-flex items-center gap-px text-xs font-bold cursor-help ${quotaColorClass}`}
+                        style={quotaColor ? { color: quotaColor } : undefined}
+                      >
+                        {isMax ? (
+                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                        ) : (
+                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    {detail && (
+                      <TooltipContent side="top" className="max-w-[220px]">
+                        <AcceleratorTooltip detail={detail} />
+                      </TooltipContent>
                     )}
-                  </span>
+                  </Tooltip>
                 );
               })}
             </div>
@@ -163,7 +309,7 @@ function MemberQuotaRow({
       </td>
       {visibleMetrics.map((metric, metricIdx) => {
         const goal = getEffectiveGoal(team, member, metric);
-        const current = getMemberMetricTotal(member, metric);
+        const current = getMemberMetricTotal(member, metric, referenceDate);
         const needed = Math.max(0, goal - current);
         const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
 
