@@ -198,3 +198,13 @@ export interface DbMetricsFeedback {
   created_at: string;
   updated_at: string;
 }
+
+export interface DbAuditLog {
+  id: string;
+  table_name: string;
+  record_id: string;
+  action: string;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  changed_at: string;
+}

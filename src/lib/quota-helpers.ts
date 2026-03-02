@@ -14,6 +14,12 @@ export function getMemberMetricTotal(m: TeamMember, metric: GoalMetric, referenc
   );
 }
 
+export function getMemberLifetimeMetricTotal(m: TeamMember, metric: GoalMetric): number {
+  return Object.values(m.funnelByWeek || {}).reduce(
+    (s, f) => s + ((f as any)[metric] || 0), 0
+  );
+}
+
 export function getTeamMetricTotal(team: Team, metric: GoalMetric, referenceDate?: Date): number {
   return team.members
     .filter((m) => m.isActive)

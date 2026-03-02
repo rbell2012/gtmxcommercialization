@@ -13,8 +13,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
+import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
-import { getMemberMetricTotal, getScopedMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
 import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
@@ -130,7 +131,13 @@ function getMemberTotalWins(m: TeamMember, referenceDate?: Date): number {
   );
 }
 
+function getMemberLifetimeWins(m: TeamMember): number {
+  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
+}
 
+function getMemberLifetimeFunnelTotal(m: TeamMember, field: 'calls' | 'connects' | 'demos' | 'wins'): number {
+  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + (f[field] || 0), 0);
+}
 
 function getTeamMonthKeys(teamWeeks: { key: string; label: string }[]): { key: string; label: string; weekKeys: string[]; colSpan: number }[] {
   const monthMap = new Map<string, { key: string; label: string; weekKeys: string[] }>();
@@ -220,9 +227,18 @@ const Index = () => {
     addCustomRole,
   } = useManagerInputs();
   const [editingField, setEditingField] = useState<string | null>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem("collapsed-sections-index");
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
   const toggleSection = (key: string) =>
-    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem("collapsed-sections-index", JSON.stringify(next)); } catch {}
+      return next;
+    });
 
   const resolvedTeam = pilotId
     ? teams.find((t) => pilotNameToSlug(t.name) === pilotId) ?? teams[0]
@@ -286,13 +302,15 @@ const Index = () => {
       ...prev,
       [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: label },
     }));
-    supabase
-      .from("team_phase_labels")
-      .upsert(
-        { team_id: teamId, month_index: monthIndex, label },
-        { onConflict: "team_id,month_index" }
-      )
-      .then();
+    dbMutate(
+      supabase
+        .from("team_phase_labels")
+        .upsert(
+          { team_id: teamId, month_index: monthIndex, label },
+          { onConflict: "team_id,month_index" }
+        ),
+      "update phase label",
+    );
   }, []);
 
   const teamLabels = phaseLabels[activeTeam?.id ?? ""] ?? {};
@@ -330,15 +348,17 @@ const Index = () => {
       date: new Date().toLocaleDateString(),
     };
 
-    supabase
-      .from("win_entries")
-      .insert({
-        id: winId,
-        member_id: selectedMember,
-        restaurant: entry.restaurant,
-        story: entry.story ?? null,
-      })
-      .then();
+    dbMutate(
+      supabase
+        .from("win_entries")
+        .insert({
+          id: winId,
+          member_id: selectedMember,
+          restaurant: entry.restaurant,
+          story: entry.story ?? null,
+        }),
+      "add win entry",
+    );
 
     const newWinCount = member.wins.length + 1;
     const prevMilestone = Math.floor(member.wins.length / 3);
@@ -382,16 +402,18 @@ const Index = () => {
         { id: memberId, name: newName.trim(), goals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true },
       ],
     }));
-    supabase
-      .from("members")
-      .insert({
-        id: memberId, name: newName.trim(),
-        goal_calls: goals.calls, goal_ops: goals.ops,
-        goal_demos: goals.demos, goal_wins: goals.wins,
-        goal_feedback: goals.feedback, goal_activity: goals.activity,
-        team_id: activeTab, ducks_earned: 0, is_active: true,
-      })
-      .then();
+    dbMutate(
+      supabase
+        .from("members")
+        .insert({
+          id: memberId, name: newName.trim(),
+          goal_calls: goals.calls, goal_ops: goals.ops,
+          goal_demos: goals.demos, goal_wins: goals.wins,
+          goal_feedback: goals.feedback, goal_activity: goals.activity,
+          team_id: activeTab, ducks_earned: 0, is_active: true,
+        }),
+      "add member",
+    );
     setNewName("");
     setAddMemberOpen(false);
   };
@@ -435,7 +457,7 @@ const Index = () => {
                     {team.name}
                     {total > 0 && (
                       <span className="rounded-full bg-background/20 px-2 py-0.5 text-xs">
-                        {total}
+                        {total.toLocaleString()}
                       </span>
                     )}
                   </span>
@@ -735,27 +757,29 @@ const Index = () => {
                     }));
                     for (const m of members) {
                       const existing = getMemberFunnel(m, weekKey);
-                      supabase
-                        .from("weekly_funnels")
-                        .upsert(
-                          {
-                            member_id: m.id,
-                            week_key: weekKey,
-                            tam: tamPerMember,
-                            calls: existing.calls,
-                            connects: existing.connects,
-                            ops: existing.ops,
-                            demos: existing.demos,
-                            wins: existing.wins,
-                            feedback: existing.feedback,
-                            activity: existing.activity,
-                            role: existing.role ?? null,
-                            submitted: existing.submitted ?? false,
-                            submitted_at: existing.submittedAt ?? null,
-                          },
-                          { onConflict: "member_id,week_key" }
-                        )
-                        .then();
+                      dbMutate(
+                        supabase
+                          .from("weekly_funnels")
+                          .upsert(
+                            {
+                              member_id: m.id,
+                              week_key: weekKey,
+                              tam: tamPerMember,
+                              calls: existing.calls,
+                              connects: existing.connects,
+                              ops: existing.ops,
+                              demos: existing.demos,
+                              wins: existing.wins,
+                              feedback: existing.feedback,
+                              activity: existing.activity,
+                              role: existing.role ?? null,
+                              submitted: existing.submitted ?? false,
+                              submitted_at: existing.submittedAt ?? null,
+                            },
+                            { onConflict: "member_id,week_key" }
+                          ),
+                        "upsert TAM funnel",
+                      );
                     }
                   }} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                     Submit
@@ -1037,9 +1061,19 @@ function TeamTab({
   memberTeamHistory: MemberTeamHistoryEntry[];
   allMembersById: Map<string, TeamMember>;
 }) {
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const storageKey = `collapsed-sections-team-${team.id}`;
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
   const toggleSection = (key: string) =>
-    setCollapsedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
 
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
@@ -1074,6 +1108,16 @@ function TeamTab({
   const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos', referenceDate), 0);
   const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback', referenceDate), 0);
   const teamTotalActivity = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'activity', referenceDate), 0);
+
+  const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops'), 0);
+  const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos'), 0);
+  const lifetimeWins = members.reduce((s, m) => s + getMemberLifetimeWins(m), 0);
+  const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback'), 0);
+  const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
+  const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
+  const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects'), 0);
+  const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos'), 0);
+  const lifetimeWinsUp = lifetimeWins >= 0;
 
   const chartData = members.map((m) => ({
     name: m.name,
@@ -1136,7 +1180,7 @@ function TeamTab({
                   </div>
                   <div className="text-right">
                     <div className="font-display text-4xl font-black text-primary">
-                      {teamTotal}
+                      {teamTotal.toLocaleString()}
                     </div>
                     <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Wins</p>
                   </div>
@@ -1149,7 +1193,7 @@ function TeamTab({
                   ))}
                 </div>
               )}
-              {/* Conversion Rates */}
+              {/* Monthly Conversion Rates */}
               {(() => {
                 const allWeeks = getWeekKeys(8);
                   const totals = {
@@ -1199,35 +1243,123 @@ function TeamTab({
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <StatCard
-              icon={<Handshake className="h-5 w-5 text-accent" />}
-              label="Ops"
-              value={teamTotalOps}
-            />
-            <StatCard
-              icon={<Video className="h-5 w-5 text-primary" />}
-              label="Demos"
-              value={teamTotalDemos}
-            />
-            <StatCard
-              icon={winsUp
-                ? <TrendingUp className="h-5 w-5 text-accent" />
-                : <TrendingDown className="h-5 w-5 text-destructive" />}
-              label="Wins"
-              value={teamTotal}
-            />
-            <StatCard
-              icon={<MessageCircle className="h-5 w-5 text-primary" />}
-              label="Feedback"
-              value={teamTotalFeedback}
-            />
-            <StatCard
-              icon={<Activity className="h-5 w-5 text-accent" />}
-              label="Activity"
-              value={teamTotalActivity}
-            />
+          {/* ── Monthly Stats (adjustable by phase selection) ── */}
+          <div className="rounded-xl border-2 border-primary/30 bg-card p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-primary" />
+              <h3 className="font-display text-sm font-bold uppercase tracking-wider text-primary">
+                Monthly Stats
+              </h3>
+              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-semibold text-primary">
+                {(referenceDate ?? new Date()).toLocaleString("en-US", { month: "short", year: "numeric" })}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <StatCard
+                icon={<Handshake className="h-5 w-5 text-accent" />}
+                label="Ops"
+                value={teamTotalOps}
+              />
+              <StatCard
+                icon={<Video className="h-5 w-5 text-primary" />}
+                label="Demos"
+                value={teamTotalDemos}
+              />
+              <StatCard
+                icon={winsUp
+                  ? <TrendingUp className="h-5 w-5 text-accent" />
+                  : <TrendingDown className="h-5 w-5 text-destructive" />}
+                label="Wins"
+                value={teamTotal}
+              />
+              <StatCard
+                icon={<MessageCircle className="h-5 w-5 text-primary" />}
+                label="Feedback"
+                value={teamTotalFeedback}
+              />
+              <StatCard
+                icon={<Activity className="h-5 w-5 text-accent" />}
+                label="Activity"
+                value={teamTotalActivity}
+              />
+            </div>
+          </div>
+
+          {/* ── Lifetime Stats (entire test, not adjustable) ── */}
+          <div className="rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-accent" />
+              <h3 className="font-display text-sm font-bold uppercase tracking-wider text-accent">
+                Lifetime Stats
+              </h3>
+              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
+                Entire Test
+              </span>
+            </div>
+            <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                {(() => {
+                  const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                  const tt = members.reduce((s, m) => s + m.touchedTam, 0);
+                  const hasMetrics = tt > 0;
+                  if (hasMetrics) {
+                    return (
+                      <>
+                        <p className="font-display text-lg font-bold text-accent">{((ta / tt) * 100).toFixed(0)}%</p>
+                        <p className="text-[10px] text-muted-foreground">Touch Rate</p>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="font-display text-lg font-bold text-accent">{team.totalTam > 0 ? ((lifetimeCalls / team.totalTam) * 100).toFixed(0) : 0}%</p>
+                      <p className="text-[10px] text-muted-foreground">TAM→Call</p>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Call→Connect</p>
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Demo→Win</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <StatCard
+                icon={<Handshake className="h-5 w-5 text-accent" />}
+                label="Ops"
+                value={lifetimeOps}
+              />
+              <StatCard
+                icon={<Video className="h-5 w-5 text-primary" />}
+                label="Demos"
+                value={lifetimeDemos}
+              />
+              <StatCard
+                icon={lifetimeWinsUp
+                  ? <TrendingUp className="h-5 w-5 text-accent" />
+                  : <TrendingDown className="h-5 w-5 text-destructive" />}
+                label="Wins"
+                value={lifetimeWins}
+              />
+              <StatCard
+                icon={<MessageCircle className="h-5 w-5 text-primary" />}
+                label="Feedback"
+                value={lifetimeFeedback}
+              />
+              <StatCard
+                icon={<Activity className="h-5 w-5 text-accent" />}
+                label="Activity"
+                value={lifetimeActivity}
+              />
+            </div>
           </div>
 
           {/* Empty state */}
@@ -1277,28 +1409,30 @@ function TeamTab({
                   const role = (m.funnelByWeek?.[currentWeek] as WeeklyFunnel)?.role;
                   const upsertFunnelField = (updates: Record<string, unknown>) => {
                     const current = getMemberFunnel(m, currentWeek);
-                    supabase
-                      .from("weekly_funnels")
-                      .upsert(
-                        {
-                          member_id: m.id,
-                          week_key: currentWeek,
-                          tam: current.tam,
-                          calls: current.calls,
-                          connects: current.connects,
-                          ops: current.ops,
-                          demos: current.demos,
-                          wins: current.wins,
-                          feedback: current.feedback,
-                          activity: current.activity,
-                          role: current.role ?? null,
-                          submitted: current.submitted ?? false,
-                          submitted_at: current.submittedAt ?? null,
-                          ...updates,
-                        },
-                        { onConflict: "member_id,week_key" }
-                      )
-                      .then();
+                    dbMutate(
+                      supabase
+                        .from("weekly_funnels")
+                        .upsert(
+                          {
+                            member_id: m.id,
+                            week_key: currentWeek,
+                            tam: current.tam,
+                            calls: current.calls,
+                            connects: current.connects,
+                            ops: current.ops,
+                            demos: current.demos,
+                            wins: current.wins,
+                            feedback: current.feedback,
+                            activity: current.activity,
+                            role: current.role ?? null,
+                            submitted: current.submitted ?? false,
+                            submitted_at: current.submittedAt ?? null,
+                            ...updates,
+                          },
+                          { onConflict: "member_id,week_key" }
+                        ),
+                      "upsert funnel",
+                    );
                   };
                   const updateFunnel = (field: keyof FunnelData, value: string) => {
                     const num = Math.max(0, parseInt(value) || 0);
@@ -1983,13 +2117,19 @@ function WeekOverWeekView({ team }: { team: Team }) {
   );
 }
 
+function fmtNum(v: string | number): string {
+  if (typeof v === "number") return v.toLocaleString();
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString() : v;
+}
+
 function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card">
       {icon}
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="font-display text-lg font-bold text-foreground">{value}</p>
+        <p className="font-display text-lg font-bold text-foreground">{fmtNum(value)}</p>
       </div>
     </div>
   );

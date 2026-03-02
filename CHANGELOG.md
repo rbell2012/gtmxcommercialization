@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-02 (Lifetime Stats & Monthly Stats sections with thousands separators)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** The Test Signals section only showed stats filtered to the currently selected month/phase, with no way to see cumulative performance across the entire test. Managers needed both a month-level view (adjustable via phase selection) and a lifetime view (spanning the full test duration) to compare short-term trends against overall trajectory. Additionally, large numbers lacked thousands separators, making them harder to scan at a glance.
+
+**Changes:**
+- Added `getMemberLifetimeMetricTotal` helper to `quota-helpers.ts` that sums a metric across all weeks in `funnelByWeek` without any month filtering.
+- Added `getMemberLifetimeWins` and `getMemberLifetimeFunnelTotal` helpers in `Index.tsx` for lifetime funnel aggregation (calls, connects, demos, wins).
+- Computed lifetime totals for Ops, Demos, Wins, Feedback, Activity, Calls, and Connects in the `TeamView` component.
+- Wrapped the existing month-filtered stat cards in a new **Monthly Stats** section with a blue (`border-primary/30`) border, Calendar icon header, and a dynamic badge showing the selected month (e.g. "Mar 2026").
+- Added a new **Lifetime Stats** section with an orange (`border-accent/30`) border, Trophy icon header, "Entire Test" badge, and a subtle accent gradient background. This section includes both conversion rates (Touch Rate / TAM→Call, Call→Connect, Connect→Demo, Demo→Win) and stat cards (Ops, Demos, Wins, Feedback, Activity) aggregated across all weeks regardless of month selection.
+- The two sections are visually distinguishable by border color, icon, badge label, and background treatment.
+- Added a `fmtNum` utility that applies `toLocaleString()` for thousands separators. Applied it inside `StatCard` so all numeric stat values are automatically formatted.
+- Applied `.toLocaleString()` to the large Wins number in the team header card and the tab badge win counts.
+---
+
 ## 2026-03-02 (Member history tracking — preserve performance across project moves)
 
 ### Location – Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Pilots/Index (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Migration (`supabase/migrations/20250302100000_create_member_team_history.sql`)

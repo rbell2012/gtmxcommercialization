@@ -1,5 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts, DbMemberTeamHistory } from "@/lib/database.types";
 
 // ── Goal metrics system ──
@@ -483,20 +484,29 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── initial load + realtime subscription ──
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedLoadAll = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => loadAll(), 500);
+  }, [loadAll]);
+
   useEffect(() => {
     loadAll();
 
     const channel = supabase
-      .channel("superhex-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "superhex" },
-        () => { loadAll(); }
-      )
+      .channel("gtmx-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadAll)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [loadAll]);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [loadAll, debouncedLoadAll]);
 
   // ── mutations ──
 
@@ -523,36 +533,38 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
             JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig))
         ) {
-          supabase
-            .from("teams")
-            .update({
-              name: updated.name,
-              owner: updated.owner,
-              lead_rep: updated.leadRep,
-              is_active: updated.isActive,
-              start_date: updated.startDate,
-              end_date: updated.endDate,
-              total_tam: updated.totalTam,
-              tam_submitted: updated.tamSubmitted,
-              goals_parity: updated.goalsParity,
-              team_goal_calls: updated.teamGoals.calls,
-              team_goal_ops: updated.teamGoals.ops,
-              team_goal_demos: updated.teamGoals.demos,
-              team_goal_wins: updated.teamGoals.wins,
-              team_goal_feedback: updated.teamGoals.feedback,
-              team_goal_activity: updated.teamGoals.activity,
-              goal_enabled_calls: updated.enabledGoals.calls,
-              goal_enabled_ops: updated.enabledGoals.ops,
-              goal_enabled_demos: updated.enabledGoals.demos,
-              goal_enabled_wins: updated.enabledGoals.wins,
-              goal_enabled_feedback: updated.enabledGoals.feedback,
-              goal_enabled_activity: updated.enabledGoals.activity,
-              accelerator_config: updated.acceleratorConfig,
-              team_goals_by_level: updated.teamGoalsByLevel,
-              goal_scope_config: updated.goalScopeConfig,
-            })
-            .eq("id", teamId)
-            .then();
+          dbMutate(
+            supabase
+              .from("teams")
+              .update({
+                name: updated.name,
+                owner: updated.owner,
+                lead_rep: updated.leadRep,
+                is_active: updated.isActive,
+                start_date: updated.startDate,
+                end_date: updated.endDate,
+                total_tam: updated.totalTam,
+                tam_submitted: updated.tamSubmitted,
+                goals_parity: updated.goalsParity,
+                team_goal_calls: updated.teamGoals.calls,
+                team_goal_ops: updated.teamGoals.ops,
+                team_goal_demos: updated.teamGoals.demos,
+                team_goal_wins: updated.teamGoals.wins,
+                team_goal_feedback: updated.teamGoals.feedback,
+                team_goal_activity: updated.teamGoals.activity,
+                goal_enabled_calls: updated.enabledGoals.calls,
+                goal_enabled_ops: updated.enabledGoals.ops,
+                goal_enabled_demos: updated.enabledGoals.demos,
+                goal_enabled_wins: updated.enabledGoals.wins,
+                goal_enabled_feedback: updated.enabledGoals.feedback,
+                goal_enabled_activity: updated.enabledGoals.activity,
+                accelerator_config: updated.acceleratorConfig,
+                team_goals_by_level: updated.teamGoalsByLevel,
+                goal_scope_config: updated.goalScopeConfig,
+              })
+              .eq("id", teamId),
+            "update team",
+          );
         }
         if (old) {
           for (const member of updated.members) {
@@ -565,10 +577,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 }
               }
               if (Object.keys(goalUpdates).length > 0) {
-                supabase.from("members").update(goalUpdates).eq("id", member.id).then();
+                dbMutate(supabase.from("members").update(goalUpdates).eq("id", member.id), "update member goals");
               }
               if (oldMember.ducksEarned !== member.ducksEarned) {
-                supabase.from("members").update({ ducks_earned: member.ducksEarned }).eq("id", member.id).then();
+                dbMutate(supabase.from("members").update({ ducks_earned: member.ducksEarned }).eq("id", member.id), "update ducks earned");
               }
             }
           }
@@ -594,10 +606,12 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           goalScopeConfig: { ...DEFAULT_GOAL_SCOPE_CONFIG },
           members: [],
         };
-        supabase
-          .from("teams")
-          .insert({ id: tempId, name, owner, sort_order: nextOrder, is_active: true, start_date: startDate, end_date: endDate })
-          .then();
+        dbMutate(
+          supabase
+            .from("teams")
+            .insert({ id: tempId, name, owner, sort_order: nextOrder, is_active: true, start_date: startDate, end_date: endDate }),
+          "create team",
+        );
         return [...prev, newTeam];
       });
     },
@@ -614,14 +628,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         }
         const now = new Date().toISOString();
         for (const m of team.members) {
-          supabase.from("members").update({ team_id: null }).eq("id", m.id).then();
-          supabase.from("member_team_history").update({ ended_at: now }).eq("member_id", m.id).is("ended_at", null).then();
-          supabase.from("member_team_history").insert({ member_id: m.id, team_id: null }).then();
+          dbMutate(supabase.from("members").update({ team_id: null }).eq("id", m.id), "unassign member on team remove");
+          dbMutate(supabase.from("member_team_history").update({ ended_at: now }).eq("member_id", m.id).is("ended_at", null), "close member history");
+          dbMutate(supabase.from("member_team_history").insert({ member_id: m.id, team_id: null }), "create unassigned history");
         }
       }
       return prev.filter((t) => t.id !== teamId);
     });
-    supabase.from("teams").update({ archived_at: new Date().toISOString() }).eq("id", teamId).then();
+    dbMutate(supabase.from("teams").update({ archived_at: new Date().toISOString() }).eq("id", teamId), "archive team");
   }, []);
 
   const reorderTeams = useCallback((orderedIds: string[]) => {
@@ -634,7 +648,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         })
         .filter(Boolean) as Team[];
       for (const t of reordered) {
-        supabase.from("teams").update({ sort_order: t.sortOrder }).eq("id", t.id).then();
+        dbMutate(supabase.from("teams").update({ sort_order: t.sortOrder }).eq("id", t.id), "reorder team");
       }
       return reordered;
     });
@@ -644,7 +658,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     setTeams((prev) =>
       prev.map((t) => (t.id === teamId ? { ...t, isActive } : t))
     );
-    supabase.from("teams").update({ is_active: isActive }).eq("id", teamId).then();
+    dbMutate(supabase.from("teams").update({ is_active: isActive }).eq("id", teamId), "toggle team active");
   }, []);
 
   const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
@@ -652,11 +666,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
     const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true, touchedAccounts: 0, touchedTam: 0 };
     setUnassignedMembers((prev) => [...prev, member]);
-    supabase
-      .from("members")
-      .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true })
-      .then();
-    supabase.from("member_team_history").insert({ member_id: id, team_id: null }).then();
+    dbMutate(
+      supabase
+        .from("members")
+        .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true }),
+      "create member",
+    );
+    dbMutate(supabase.from("member_team_history").insert({ member_id: id, team_id: null }), "create member history");
     return member;
   }, []);
 
@@ -688,7 +704,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     );
 
     if (Object.keys(dbUpdates).length > 0) {
-      supabase.from("members").update(dbUpdates).eq("id", memberId).then();
+      dbMutate(supabase.from("members").update(dbUpdates).eq("id", memberId), "update member");
     }
   }, []);
 
@@ -701,9 +717,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           t.id === targetTeamId ? { ...t, members: [...t.members, fromUnassigned] } : t
         )
       );
-      supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId).then();
-      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
-      supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }).then();
+      dbMutate(supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId), "assign member to team");
+      dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
+      dbMutate(supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }), "create assigned history");
       return;
     }
 
@@ -715,9 +731,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       })?.id;
       if (!member || sourceTeamId === targetTeamId) return prev;
 
-      supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId).then();
-      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
-      supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }).then();
+      dbMutate(supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId), "reassign member");
+      dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
+      dbMutate(supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }), "create reassigned history");
 
       return prev.map((t) => {
         if (t.id === sourceTeamId)
@@ -735,9 +751,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const member = team?.members.find((m) => m.id === memberId && m.isActive);
       if (!member) return prev;
 
-      supabase.from("members").update({ team_id: null }).eq("id", memberId).then();
-      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
-      supabase.from("member_team_history").insert({ member_id: memberId, team_id: null }).then();
+      dbMutate(supabase.from("members").update({ team_id: null }).eq("id", memberId), "unassign member");
+      dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
+      dbMutate(supabase.from("member_team_history").insert({ member_id: memberId, team_id: null }), "create unassigned history");
 
       setUnassignedMembers((um) => [...um, member]);
 
@@ -759,8 +775,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         ),
       }))
     );
-    supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
-    supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
+    dbMutate(supabase.from("members").update({ is_active: false }).eq("id", memberId), "deactivate member");
+    dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
   }, []);
 
   return (
