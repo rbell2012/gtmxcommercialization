@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-03-02 (Fix accelerators not applied to quota & remove icon hover tooltips)
+
+### Location – Quota (`src/pages/Quota.tsx`), Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** Accelerators were being detected and displayed as lock icons on the Quota page, but their effects were not applied to the final quota percentage. The root cause was that `computeQuota` and `computeQuotaBreakdown` only iterated enabled metrics when checking accelerator rules, while the icon logic (`countTriggeredAccelerators`) checked all metrics — so accelerators on non-enabled metrics were shown but never calculated. Additionally, hover tooltips on individual accelerator icons were removed in favor of the single consolidated breakdown tooltip on the quota percentage.
+
+**Changes:**
+- Changed accelerator evaluation loops in `computeQuota` and `computeQuotaBreakdown` to iterate over all `GOAL_METRICS` instead of only `enabledMetrics`, matching `countTriggeredAccelerators` behavior.
+- Added a 200% cap (`Math.min(quota, 200)`) in both `computeQuota` and `computeQuotaBreakdown` return values so the cap is enforced at the logic level, not just display.
+- Removed individual `Tooltip`/`TooltipTrigger`/`TooltipContent` wrappers from the accelerator lock icons, leaving them as plain display elements.
+- Removed the now-unused `AcceleratorTooltip` component, `formatCondition` helper, `getTriggeredAcceleratorDetails` import, and `TriggeredAccelerator` type from `Quota.tsx`.
+---
+
+## 2026-03-02 (Hover tooltips on Quota page accelerator icons and quota percentage)
+
+### Location – Quota (`src/pages/Quota.tsx`), Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** The accelerator unlock icons and quota percentage on the Quota page showed outcomes but gave no visibility into how those values were determined. Adding hover tooltips lets managers quickly see the exact numbers and logic behind each accelerator unlock and the full quota calculation without leaving the page.
+
+**Changes:**
+- Added `getTriggeredAcceleratorDetails()` function in `quota-helpers.ts` that returns an array of `TriggeredAccelerator` objects (metric, current value, and the full rule) instead of just a count.
+- Added `computeQuotaBreakdown()` function in `quota-helpers.ts` that returns a `QuotaBreakdown` object containing per-metric ratios (current / goal = %), base average quota, each accelerator step with before/after values, and the final quota.
+- Wrapped each accelerator unlock icon (`LockOpen`/`Lock`) in a Radix tooltip showing which metric triggered it, the member's current value vs. the rule condition, and the effect on quota.
+- Wrapped the quota percentage text in a Radix tooltip showing the full breakdown: each enabled metric's current/goal/%, the base average, any accelerator adjustments with arrows, and the final quota value.
+- Added `cursor-help` cursor style to both hoverable elements for discoverability.
+---
+
 ## 2026-03-02 (Month look-back capability on Pilots and Quota pages)
 
 ### Location – Pilots / Projects (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Helpers (`src/lib/quota-helpers.ts`, `src/lib/test-phases.ts`)

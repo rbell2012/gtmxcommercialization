@@ -53,6 +53,19 @@ export const DEFAULT_TEAM_GOALS_BY_LEVEL: TeamGoalsByLevel = {
   activity: {},
 };
 
+export type GoalScope = 'individual' | 'team';
+
+export type GoalScopeConfig = Record<GoalMetric, GoalScope>;
+
+export const DEFAULT_GOAL_SCOPE_CONFIG: GoalScopeConfig = {
+  calls: 'individual',
+  ops: 'individual',
+  demos: 'individual',
+  wins: 'individual',
+  feedback: 'individual',
+  activity: 'individual',
+};
+
 export const DEFAULT_GOALS: MemberGoals = {
   calls: 0,
   ops: 0,
@@ -130,6 +143,7 @@ export interface Team {
   enabledGoals: EnabledGoals;
   acceleratorConfig: AcceleratorConfig;
   teamGoalsByLevel: TeamGoalsByLevel;
+  goalScopeConfig: GoalScopeConfig;
   members: TeamMember[];
 }
 
@@ -241,6 +255,7 @@ function assembleTeams(
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
+      goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -440,7 +455,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
             JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
             JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
-            JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel))
+            JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
+            JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig))
         ) {
           supabase
             .from("teams")
@@ -468,6 +484,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               goal_enabled_activity: updated.enabledGoals.activity,
               accelerator_config: updated.acceleratorConfig,
               team_goals_by_level: updated.teamGoalsByLevel,
+              goal_scope_config: updated.goalScopeConfig,
             })
             .eq("id", teamId)
             .then();
@@ -509,6 +526,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },
           acceleratorConfig: {},
           teamGoalsByLevel: { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
+          goalScopeConfig: { ...DEFAULT_GOAL_SCOPE_CONFIG },
           members: [],
         };
         supabase

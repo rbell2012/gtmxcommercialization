@@ -14,7 +14,7 @@ import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
-import { getMemberMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getScopedMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
 import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];

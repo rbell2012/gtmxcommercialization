@@ -34,6 +34,9 @@ import {
   type AcceleratorConfig,
   type AcceleratorRule,
   type TeamGoalsByLevel,
+  type GoalScopeConfig,
+  type GoalScope,
+  DEFAULT_GOAL_SCOPE_CONFIG,
 } from "@/contexts/TeamsContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -124,6 +127,7 @@ const Settings = () => {
   const [editEnabledGoals, setEditEnabledGoals] = useState<EnabledGoals>({ ...DEFAULT_ENABLED_GOALS });
   const [editAcceleratorConfig, setEditAcceleratorConfig] = useState<AcceleratorConfig>({});
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
+  const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -209,6 +213,7 @@ const Settings = () => {
     setEditEnabledGoals({ ...team.enabledGoals });
     setEditAcceleratorConfig({ ...team.acceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
+    setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
   };
 
   const saveEditTeam = () => {
@@ -225,6 +230,7 @@ const Settings = () => {
       enabledGoals: { ...editEnabledGoals },
       acceleratorConfig: { ...editAcceleratorConfig },
       teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
+      goalScopeConfig: { ...editGoalScopeConfig },
     }));
     toast({ title: "Team updated" });
     setEditTeamId(null);
@@ -509,10 +515,11 @@ const Settings = () => {
                     </div>
                   </div>
                   <div className="flex">
-                    {/* Sticky left: toggles + metric names */}
+                    {/* Sticky left: toggles + metric names + scope */}
                     <div className="shrink-0 border-r border-border/50">
-                      <div className="h-7 flex items-center px-1">
+                      <div className="h-7 flex items-center px-1 gap-4">
                         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Metric</span>
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
                       </div>
                       {GOAL_METRICS.map((metric) => (
                         <div key={metric} className="h-8 flex items-center gap-1.5 pr-2">
@@ -523,9 +530,30 @@ const Settings = () => {
                             }
                             className="scale-[0.6] shrink-0"
                           />
-                          <span className="text-[11px] font-medium text-foreground whitespace-nowrap">
+                          <span className="text-[11px] font-medium text-foreground whitespace-nowrap w-14">
                             {GOAL_METRIC_LABELS[metric]}
                           </span>
+                          {editEnabledGoals[metric] ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditGoalScopeConfig((prev) => ({
+                                  ...prev,
+                                  [metric]: prev[metric] === 'individual' ? 'team' : 'individual',
+                                }))
+                              }
+                              className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border transition-colors shrink-0 ${
+                                editGoalScopeConfig[metric] === 'team'
+                                  ? 'bg-primary/15 border-primary/40 text-primary'
+                                  : 'bg-muted/50 border-border/50 text-muted-foreground'
+                              }`}
+                              title={editGoalScopeConfig[metric] === 'team' ? 'Team goal — sum of all members' : 'Individual goal — per rep'}
+                            >
+                              {editGoalScopeConfig[metric] === 'team' ? 'Team' : 'Indiv'}
+                            </button>
+                          ) : (
+                            <span className="text-[9px] text-muted-foreground w-9">—</span>
+                          )}
                         </div>
                       ))}
                     </div>

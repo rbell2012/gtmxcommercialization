@@ -5,10 +5,11 @@ import {
   type Team,
   type TeamMember,
   type GoalMetric,
+  type AcceleratorRule,
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getMemberMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, computeQuotaBreakdown, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -186,14 +187,20 @@ function TeamQuotaCard({
                 <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   Member
                 </th>
-                {visibleMetrics.map((metric) => (
-                  <th
-                    key={metric}
-                    className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[90px]"
-                  >
-                    {GOAL_METRIC_LABELS[metric]}
-                  </th>
-                ))}
+                {visibleMetrics.map((metric) => {
+                  const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
+                  return (
+                    <th
+                      key={metric}
+                      className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[90px]"
+                    >
+                      {GOAL_METRIC_LABELS[metric]}
+                      {isTeamScope && (
+                        <span className="block text-[8px] font-bold text-primary/60 normal-case tracking-normal">(team)</span>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -208,30 +215,53 @@ function TeamQuotaCard({
   );
 }
 
-function formatCondition(rule: TriggeredAccelerator["rule"]): string {
-  if (rule.conditionOperator === "between") {
-    return `between ${rule.conditionValue1} and ${rule.conditionValue2 ?? rule.conditionValue1}`;
-  }
-  return `${rule.conditionOperator} ${rule.conditionValue1}`;
-}
-
-function formatAction(rule: TriggeredAccelerator["rule"]): string {
+function formatAction(rule: AcceleratorRule): string {
   const unit = rule.actionUnit === "%" ? "%" : "";
   return `${rule.actionOperator}${rule.actionValue}${unit} to quota`;
 }
 
-function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
-  const label = GOAL_METRIC_LABELS[detail.metric];
+function QuotaBreakdownTooltip({ breakdown }: { breakdown: QuotaBreakdown }) {
   return (
     <div className="text-xs leading-relaxed">
-      <p className="font-semibold mb-1">{label} Accelerator</p>
-      <p className="text-muted-foreground">
-        {label} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
-        {" "}({formatCondition(detail.rule)})
-      </p>
-      <p className="text-muted-foreground mt-0.5">
-        Effect: <span className="font-semibold text-foreground">{formatAction(detail.rule)}</span>
-      </p>
+      <p className="font-semibold mb-1.5">Quota Breakdown</p>
+      <div className="space-y-0.5">
+        {breakdown.metricRatios.map((r) => (
+          <div key={r.metric} className="flex justify-between gap-4 text-muted-foreground">
+            <span>{GOAL_METRIC_LABELS[r.metric]}</span>
+            <span>
+              <span className="font-semibold text-foreground">{r.current}</span>
+              {" / "}
+              <span className="font-semibold text-foreground">{r.goal}</span>
+              {" = "}
+              <span className="font-semibold text-foreground">{r.pct.toFixed(1)}%</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="my-1.5 border-t border-border" />
+      <div className="flex justify-between gap-4 text-muted-foreground">
+        <span>Base avg</span>
+        <span className="font-semibold text-foreground">{breakdown.baseQuota.toFixed(1)}%</span>
+      </div>
+      {breakdown.acceleratorSteps.length > 0 && (
+        <>
+          {breakdown.acceleratorSteps.map((step, i) => (
+            <div key={i} className="flex justify-between gap-4 text-muted-foreground mt-0.5">
+              <span>{GOAL_METRIC_LABELS[step.metric]} accel</span>
+              <span>
+                <span className="font-semibold text-foreground">{formatAction(step.rule)}</span>
+                {" \u2192 "}
+                <span className="font-semibold text-foreground">{step.quotaAfter.toFixed(1)}%</span>
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+      <div className="my-1.5 border-t border-border" />
+      <div className="flex justify-between gap-4 font-semibold text-foreground">
+        <span>Final</span>
+        <span>{Math.min(breakdown.finalQuota, 200).toFixed(1)}%</span>
+      </div>
     </div>
   );
 }
@@ -250,8 +280,8 @@ function MemberQuotaRow({
   referenceDate?: Date;
 }) {
   const quotaPct = computeQuota(team, member, referenceDate);
+  const quotaBreakdown = computeQuotaBreakdown(team, member, referenceDate);
   const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
-  const triggeredDetails = getTriggeredAcceleratorDetails(team, member, referenceDate);
   const quotaColor = quotaPct > 100 ? '#006400' : undefined;
   const quotaColorClass = quotaPct > 100 ? '' : 'text-primary';
 
@@ -269,38 +299,36 @@ function MemberQuotaRow({
               </span>
             )}
           </div>
-          <span
-            className={`text-xs font-bold tabular-nums mt-0.5 ${quotaColorClass}`}
-            style={quotaColor ? { color: quotaColor } : undefined}
-          >
-            {Math.min(quotaPct, 200).toFixed(0)}% Quota
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className={`text-xs font-bold tabular-nums mt-0.5 cursor-help ${quotaColorClass}`}
+                style={quotaColor ? { color: quotaColor } : undefined}
+              >
+                {Math.min(quotaPct, 200).toFixed(0)}% Quota
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-[280px]">
+              <QuotaBreakdownTooltip breakdown={quotaBreakdown} />
+            </TooltipContent>
+          </Tooltip>
           {triggeredCount > 0 && (
             <div className="flex items-center gap-1 mt-0.5">
               {Array.from({ length: Math.min(triggeredCount, 3) }, (_, i) => {
                 const tier = i + 1;
                 const isMax = tier === 3;
-                const detail = triggeredDetails[i];
                 return (
-                  <Tooltip key={tier}>
-                    <TooltipTrigger asChild>
-                      <span
-                        className={`inline-flex items-center gap-px text-xs font-bold cursor-help ${quotaColorClass}`}
-                        style={quotaColor ? { color: quotaColor } : undefined}
-                      >
-                        {isMax ? (
-                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
-                        ) : (
-                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
-                        )}
-                      </span>
-                    </TooltipTrigger>
-                    {detail && (
-                      <TooltipContent side="top" className="max-w-[220px]">
-                        <AcceleratorTooltip detail={detail} />
-                      </TooltipContent>
+                  <span
+                    key={tier}
+                    className={`inline-flex items-center gap-px text-xs font-bold ${quotaColorClass}`}
+                    style={quotaColor ? { color: quotaColor } : undefined}
+                  >
+                    {isMax ? (
+                      <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                    ) : (
+                      <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
                     )}
-                  </Tooltip>
+                  </span>
                 );
               })}
             </div>
@@ -309,7 +337,8 @@ function MemberQuotaRow({
       </td>
       {visibleMetrics.map((metric, metricIdx) => {
         const goal = getEffectiveGoal(team, member, metric);
-        const current = getMemberMetricTotal(member, metric, referenceDate);
+        const current = getScopedMetricTotal(team, member, metric, referenceDate);
+        const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
         const needed = Math.max(0, goal - current);
         const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
 
@@ -319,6 +348,9 @@ function MemberQuotaRow({
               <span className="text-xs font-semibold text-foreground tabular-nums">
                 {current} <span className="text-muted-foreground font-normal">/</span> {goal}
               </span>
+              {isTeamScope && (
+                <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+              )}
               <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}

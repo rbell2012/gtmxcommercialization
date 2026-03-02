@@ -24,6 +24,7 @@ export interface DbTeam {
   goal_enabled_activity: boolean;
   accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
+  goal_scope_config: Record<string, unknown> | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
