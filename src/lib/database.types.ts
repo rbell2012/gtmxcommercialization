@@ -116,3 +116,67 @@ export interface DbSuperhex {
   created_at: string;
   updated_at: string;
 }
+
+export interface DbMetricsTam {
+  id: string;
+  source: string;
+  rep_name: string;
+  tam: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsTouchedAccounts {
+  id: string;
+  source: string;
+  rep_name: string;
+  touched_accounts: number;
+  tam: number;
+  touch_rate: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsDemos {
+  id: string;
+  activity_week: string;
+  rep: string;
+  demos: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsOps {
+  id: string;
+  opportunity_close_week: string;
+  opportunity_name: string;
+  full_name: string;
+  gtmx_team: string;
+  opportunity_iswon: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsWins {
+  id: string;
+  activity_week: string;
+  date_added: string;
+  rep_name: string;
+  name: string;
+  gtmx_team: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsFeedback {
+  id: string;
+  activity_week: string;
+  date_added: string;
+  rep_name: string;
+  source: string;
+  feedback_completed: number;
+  chorus_comments: string;
+  created_at: string;
+  updated_at: string;
+}

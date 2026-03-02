@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-01 (Add External Metrics Tables to Supabase)
+
+### Location – Database (`supabase/migrations/`), Types (`src/lib/database.types.ts`), Supabase
+
+**Rationale:** New Supabase tables were needed to store externally sourced metrics data (TAM, touched accounts, demos, opportunities, wins, and feedback) for reporting and analytics across the GTMx platform.
+
+**Changes:**
+- Created 6 new Supabase tables: `metrics_tam`, `metrics_touched_accounts`, `metrics_demos`, `metrics_ops`, `metrics_wins`, and `metrics_feedback`.
+- Each table follows existing schema patterns: UUID primary key, `created_at`/`updated_at` timestamps with auto-update triggers, and RLS enabled with open CRUD policies.
+- `metrics_tam`: stores TAM per rep by source.
+- `metrics_touched_accounts`: stores touched account counts, TAM, and touch rate per rep by source.
+- `metrics_demos`: stores demo counts per rep per activity week.
+- `metrics_ops`: stores opportunity records with close week, name, rep, team, and win status (boolean).
+- `metrics_wins`: stores win records per rep with activity week, date added, name, team, and source.
+- `metrics_feedback`: stores feedback completion counts and chorus comments per rep per activity week.
+- Added corresponding TypeScript interfaces (`DbMetricsTam`, `DbMetricsTouchedAccounts`, `DbMetricsDemos`, `DbMetricsOps`, `DbMetricsWins`, `DbMetricsFeedback`) to `database.types.ts`.
+- Created local migration file `20250301000000_create_metrics_tables.sql` and applied migration directly to Supabase.
+---
+
 ## 2026-02-26 (Remove Accounts, Contacts Added, and Wins Goal from Goal Metrics)
 
 ### Location – Pilot pages (`src/pages/Index.tsx`), Settings (`src/pages/Settings.tsx`), State Management (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Supabase
