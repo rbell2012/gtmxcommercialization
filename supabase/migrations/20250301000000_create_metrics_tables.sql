@@ -43,7 +43,7 @@ create policy "metrics_touched_accounts_delete" on public.metrics_touched_accoun
 create table if not exists public.metrics_demos (
   id            uuid        primary key default gen_random_uuid(),
   activity_week text        not null default '',
-  rep           text        not null default '',
+  rep_name      text        not null default '',
   demos         integer     not null default 0,
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()

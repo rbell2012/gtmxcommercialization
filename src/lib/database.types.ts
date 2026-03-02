@@ -140,7 +140,7 @@ export interface DbMetricsTouchedAccounts {
 export interface DbMetricsDemos {
   id: string;
   activity_week: string;
-  rep: string;
+  rep_name: string;
   demos: number;
   created_at: string;
   updated_at: string;
