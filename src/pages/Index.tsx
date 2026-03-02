@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight } from "lucide-react";
-import { useTeams, getTeamMembersForMonth, type Team, type TeamMember, type MemberTeamHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
+import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -216,7 +216,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, allMembersById } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     missionPurpose,
@@ -229,14 +229,14 @@ const Index = () => {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     try {
-      const stored = localStorage.getItem("collapsed-sections-index");
+      const stored = localStorage.getItem("collapsed-sections");
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
   const toggleSection = (key: string) =>
     setCollapsedSections((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem("collapsed-sections-index", JSON.stringify(next)); } catch {}
+      try { localStorage.setItem("collapsed-sections", JSON.stringify(next)); } catch {}
       return next;
     });
 
@@ -795,9 +795,11 @@ const Index = () => {
         })()}
 
         {/* ===== GOALS ===== */}
-        {teams.filter((t) => t.id === activeTab).map((team) => {
-          const members = team.members;
-          const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
+        {teams.filter((t) => t.id === activeTab).map((rawTeam) => {
+          const team = getHistoricalTeam(rawTeam, referenceDate, teamGoalsHistory);
+          const members = rawTeam.members;
+          const activeMembers = getTeamMembersForMonth(rawTeam, referenceDate, memberTeamHistory, allMembersById)
+            .map((m) => getHistoricalMember(m, referenceDate, memberGoalsHistory));
           const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
           return (
             <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
@@ -896,7 +898,9 @@ const Index = () => {
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm opacity-50">
                           <tbody>
-                            {members.filter((m) => !m.isActive).map((m) => (
+                            {members.filter((m) => !m.isActive).map((rawM) => {
+                              const m = getHistoricalMember(rawM, referenceDate, memberGoalsHistory);
+                              return (
                               <tr key={m.id} className="border-b border-border/30">
                                 <td className="py-2 pr-3">
                                   <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">{m.name}</span>
@@ -921,7 +925,8 @@ const Index = () => {
                                   );
                                 })}
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -949,7 +954,7 @@ const Index = () => {
           {teams.map((team) => (
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
-                team={team}
+                team={getHistoricalTeam(team, referenceDate, teamGoalsHistory)}
                 onAddMemberClick={() => {
                   const isFirst = teams[0].id === team.id;
                   navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
@@ -974,6 +979,8 @@ const Index = () => {
                 referenceDate={referenceDate}
                 memberTeamHistory={memberTeamHistory}
                 allMembersById={allMembersById}
+                collapsedSections={collapsedSections}
+                toggleSection={toggleSection}
               />
             </TabsContent>
           ))}
@@ -1038,6 +1045,8 @@ function TeamTab({
   referenceDate,
   memberTeamHistory,
   allMembersById,
+  collapsedSections,
+  toggleSection,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -1060,20 +1069,9 @@ function TeamTab({
   referenceDate?: Date;
   memberTeamHistory: MemberTeamHistoryEntry[];
   allMembersById: Map<string, TeamMember>;
+  collapsedSections: Record<string, boolean>;
+  toggleSection: (key: string) => void;
 }) {
-  const storageKey = `collapsed-sections-team-${team.id}`;
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : {};
-    } catch { return {}; }
-  });
-  const toggleSection = (key: string) =>
-    setCollapsedSections((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
-      return next;
-    });
 
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
@@ -1150,6 +1148,83 @@ function TeamTab({
           </div>
         </div>
         {!collapsedSections["test-signals"] && <div className="space-y-6">
+          {/* ── Lifetime Stats (entire test, not adjustable) ── */}
+          <div className="rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-accent" />
+              <h3 className="font-display text-sm font-bold uppercase tracking-wider text-accent">
+                Lifetime Stats
+              </h3>
+              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
+                Entire Test
+              </span>
+            </div>
+            <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                {(() => {
+                  const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                  const tt = members.reduce((s, m) => s + m.touchedTam, 0);
+                  const hasMetrics = tt > 0;
+                  if (hasMetrics) {
+                    return (
+                      <>
+                        <p className="font-display text-lg font-bold text-accent">{((ta / tt) * 100).toFixed(0)}%</p>
+                        <p className="text-[10px] text-muted-foreground">Touch Rate</p>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <p className="font-display text-lg font-bold text-accent">{team.totalTam > 0 ? ((lifetimeCalls / team.totalTam) * 100).toFixed(0) : 0}%</p>
+                      <p className="text-[10px] text-muted-foreground">TAM→Call</p>
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Call→Connect</p>
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
+              </div>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
+                <p className="text-[10px] text-muted-foreground">Demo→Win</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <StatCard
+                icon={<Handshake className="h-5 w-5 text-accent" />}
+                label="Ops"
+                value={lifetimeOps}
+              />
+              <StatCard
+                icon={<Video className="h-5 w-5 text-primary" />}
+                label="Demos"
+                value={lifetimeDemos}
+              />
+              <StatCard
+                icon={lifetimeWinsUp
+                  ? <TrendingUp className="h-5 w-5 text-accent" />
+                  : <TrendingDown className="h-5 w-5 text-destructive" />}
+                label="Wins"
+                value={lifetimeWins}
+              />
+              <StatCard
+                icon={<MessageCircle className="h-5 w-5 text-primary" />}
+                label="Feedback"
+                value={lifetimeFeedback}
+              />
+              <StatCard
+                icon={<Activity className="h-5 w-5 text-accent" />}
+                label="Activity"
+                value={lifetimeActivity}
+              />
+            </div>
+          </div>
+
           {/* Team Total Bar */}
           <div className="relative overflow-hidden rounded-2xl border-2 border-secondary/30 bg-gradient-to-br from-secondary via-secondary/90 to-secondary/80 p-6 shadow-xl">
             <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl" />
@@ -1281,83 +1356,6 @@ function TeamTab({
                 icon={<Activity className="h-5 w-5 text-accent" />}
                 label="Activity"
                 value={teamTotalActivity}
-              />
-            </div>
-          </div>
-
-          {/* ── Lifetime Stats (entire test, not adjustable) ── */}
-          <div className="rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <Trophy className="h-4 w-4 text-accent" />
-              <h3 className="font-display text-sm font-bold uppercase tracking-wider text-accent">
-                Lifetime Stats
-              </h3>
-              <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
-                Entire Test
-              </span>
-            </div>
-            <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                {(() => {
-                  const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
-                  const tt = members.reduce((s, m) => s + m.touchedTam, 0);
-                  const hasMetrics = tt > 0;
-                  if (hasMetrics) {
-                    return (
-                      <>
-                        <p className="font-display text-lg font-bold text-accent">{((ta / tt) * 100).toFixed(0)}%</p>
-                        <p className="text-[10px] text-muted-foreground">Touch Rate</p>
-                      </>
-                    );
-                  }
-                  return (
-                    <>
-                      <p className="font-display text-lg font-bold text-accent">{team.totalTam > 0 ? ((lifetimeCalls / team.totalTam) * 100).toFixed(0) : 0}%</p>
-                      <p className="text-[10px] text-muted-foreground">TAM→Call</p>
-                    </>
-                  );
-                })()}
-              </div>
-              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
-                <p className="text-[10px] text-muted-foreground">Call→Connect</p>
-              </div>
-              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
-                <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
-              </div>
-              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
-                <p className="text-[10px] text-muted-foreground">Demo→Win</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <StatCard
-                icon={<Handshake className="h-5 w-5 text-accent" />}
-                label="Ops"
-                value={lifetimeOps}
-              />
-              <StatCard
-                icon={<Video className="h-5 w-5 text-primary" />}
-                label="Demos"
-                value={lifetimeDemos}
-              />
-              <StatCard
-                icon={lifetimeWinsUp
-                  ? <TrendingUp className="h-5 w-5 text-accent" />
-                  : <TrendingDown className="h-5 w-5 text-destructive" />}
-                label="Wins"
-                value={lifetimeWins}
-              />
-              <StatCard
-                icon={<MessageCircle className="h-5 w-5 text-primary" />}
-                label="Feedback"
-                value={lifetimeFeedback}
-              />
-              <StatCard
-                icon={<Activity className="h-5 w-5 text-accent" />}
-                label="Activity"
-                value={lifetimeActivity}
               />
             </div>
           </div>

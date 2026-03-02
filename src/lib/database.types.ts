@@ -187,6 +187,28 @@ export interface DbMemberTeamHistory {
   ended_at: string | null;
 }
 
+export interface DbTeamGoalsHistory {
+  id: string;
+  team_id: string;
+  month: string;
+  goals_parity: boolean;
+  team_goals: Record<string, unknown>;
+  enabled_goals: Record<string, unknown>;
+  accelerator_config: Record<string, unknown>;
+  team_goals_by_level: Record<string, unknown>;
+  goal_scope_config: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DbMemberGoalsHistory {
+  id: string;
+  member_id: string;
+  month: string;
+  goals: Record<string, unknown>;
+  level: string | null;
+  created_at: string;
+}
+
 export interface DbMetricsFeedback {
   id: string;
   activity_week: string;

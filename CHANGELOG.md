@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-03-02 (Historical goals & accelerators — month-accurate past views)
+
+### Location – Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Pilots/Index (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Migration (`supabase/migrations/20250302300000_create_goals_history.sql`)
+
+**Rationale:** Member history tracking was already in place so that viewing a past month showed the correct roster. However, goals and accelerator rules were only stored as current values on the `teams` and `members` tables. When a manager changed a team's monthly goals, enabled metrics, accelerator rules, goals-by-level, goal scope, or member-level goals/levels from one month to the next, viewing a prior month would incorrectly display the current configuration instead of what was actually in effect during that period. This made historical quota and goal-attainment views unreliable.
+
+**Changes:**
+- Created `team_goals_history` table in Supabase with `team_id`, `month` (YYYY-MM), `goals_parity`, `team_goals`, `enabled_goals`, `accelerator_config`, `team_goals_by_level`, and `goal_scope_config` (all JSONB), with a unique constraint on `(team_id, month)`. Includes indexes, RLS policies, and backfill of current state for the current month. Applied migration to live Supabase.
+- Created `member_goals_history` table with `member_id`, `month`, `goals` (JSONB), and `level`, with a unique constraint on `(member_id, month)`. Includes indexes, RLS policies, and backfill. Applied migration to live Supabase.
+- Added `DbTeamGoalsHistory` and `DbMemberGoalsHistory` interfaces to `database.types.ts`.
+- Added `TeamGoalsHistoryEntry` and `MemberGoalsHistoryEntry` app-level types to `TeamsContext.tsx`.
+- Both history tables are fetched on startup alongside existing data and stored in context state (`teamGoalsHistory`, `memberGoalsHistory`).
+- Auto-snapshot on change: when `updateTeam` detects any goal/accelerator field change, it upserts the current month's snapshot to `team_goals_history`. A new `snapshotMemberGoals` helper upserts to `member_goals_history` whenever member goals or level change (via both `updateTeam` inline member edits and `updateMember`).
+- Added `getHistoricalTeam()` overlay helper that replaces a team's goal config with the snapshot for a given past month (returns the team unchanged for the current month or when no snapshot exists).
+- Added `getHistoricalMember()` overlay helper that replaces a member's goals and level with the snapshot for a given past month.
+- Updated the Monthly Goals section in `Index.tsx` to wrap teams and members with `getHistoricalTeam`/`getHistoricalMember` when viewing past months. The `TeamTab` component also receives a historical team so funnel metric visibility respects past enabled-goals config.
+- Updated `TeamQuotaCard` in `Quota.tsx` to apply historical overlays, so quota calculations, goal breakdowns, and accelerator triggers all use the goals/accelerators that were in effect during the viewed month.
+- Existing quota helper functions (`getEffectiveGoal`, `computeQuota`, `computeQuotaBreakdown`, etc.) required no changes — they operate on the overlaid team/member objects transparently.
+---
+
 ## 2026-03-02 (Lifetime Stats & Monthly Stats sections with thousands separators)
 
 ### Location – Pilots/Index (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)

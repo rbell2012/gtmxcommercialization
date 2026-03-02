@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts, DbMemberTeamHistory } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
 
 // ── Goal metrics system ──
 
@@ -161,6 +161,86 @@ export interface MemberTeamHistoryEntry {
   endedAt: string | null;
 }
 
+export interface TeamGoalsHistoryEntry {
+  id: string;
+  teamId: string;
+  month: string;
+  goalsParity: boolean;
+  teamGoals: MemberGoals;
+  enabledGoals: EnabledGoals;
+  acceleratorConfig: AcceleratorConfig;
+  teamGoalsByLevel: TeamGoalsByLevel;
+  goalScopeConfig: GoalScopeConfig;
+}
+
+export interface MemberGoalsHistoryEntry {
+  id: string;
+  memberId: string;
+  month: string;
+  goals: MemberGoals;
+  level: MemberLevel | null;
+}
+
+function toMonthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function currentMonthKey(): string {
+  return toMonthKey(new Date());
+}
+
+/**
+ * Overlays historical goal config onto a Team for a past month.
+ * Returns the team unchanged for the current month or if no snapshot exists.
+ */
+export function getHistoricalTeam(
+  team: Team,
+  referenceDate: Date | undefined,
+  teamGoalsHistory: TeamGoalsHistoryEntry[],
+): Team {
+  if (!referenceDate) return team;
+  const now = new Date();
+  if (referenceDate.getFullYear() === now.getFullYear() && referenceDate.getMonth() === now.getMonth()) {
+    return team;
+  }
+  const month = toMonthKey(referenceDate);
+  const entry = teamGoalsHistory.find((h) => h.teamId === team.id && h.month === month);
+  if (!entry) return team;
+  return {
+    ...team,
+    goalsParity: entry.goalsParity,
+    teamGoals: entry.teamGoals,
+    enabledGoals: entry.enabledGoals,
+    acceleratorConfig: entry.acceleratorConfig,
+    teamGoalsByLevel: entry.teamGoalsByLevel,
+    goalScopeConfig: entry.goalScopeConfig,
+  };
+}
+
+/**
+ * Overlays historical goals/level onto a TeamMember for a past month.
+ * Returns the member unchanged for the current month or if no snapshot exists.
+ */
+export function getHistoricalMember(
+  member: TeamMember,
+  referenceDate: Date | undefined,
+  memberGoalsHistory: MemberGoalsHistoryEntry[],
+): TeamMember {
+  if (!referenceDate) return member;
+  const now = new Date();
+  if (referenceDate.getFullYear() === now.getFullYear() && referenceDate.getMonth() === now.getMonth()) {
+    return member;
+  }
+  const month = toMonthKey(referenceDate);
+  const entry = memberGoalsHistory.find((h) => h.memberId === member.id && h.month === month);
+  if (!entry) return member;
+  return {
+    ...member,
+    goals: entry.goals,
+    level: entry.level,
+  };
+}
+
 /**
  * Returns the members who were on `teamId` during the month of `referenceDate`.
  * Falls back to the current active roster when referenceDate is undefined or the current month.
@@ -317,6 +397,8 @@ interface TeamsContextType {
   unassignedMembers: TeamMember[];
   setUnassignedMembers: React.Dispatch<React.SetStateAction<TeamMember[]>>;
   memberTeamHistory: MemberTeamHistoryEntry[];
+  teamGoalsHistory: TeamGoalsHistoryEntry[];
+  memberGoalsHistory: MemberGoalsHistoryEntry[];
   allMembersById: Map<string, TeamMember>;
   updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
   addTeam: (name: string, owner?: string, startDate?: string | null, endDate?: string | null) => void;
@@ -354,12 +436,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [unassignedMembers, setUnassignedMembers] = useState<TeamMember[]>([]);
   const [memberTeamHistory, setMemberTeamHistory] = useState<MemberTeamHistoryEntry[]>([]);
+  const [teamGoalsHistory, setTeamGoalsHistory] = useState<TeamGoalsHistoryEntry[]>([]);
+  const [memberGoalsHistory, setMemberGoalsHistory] = useState<MemberGoalsHistoryEntry[]>([]);
   const [allMembersById, setAllMembersById] = useState<Map<string, TeamMember>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // ── load all data & merge superhex into funnels ──
   const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, sRes, taRes, hRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, sRes, taRes, hRes, tghRes, mghRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*"),
       supabase.from("weekly_funnels").select("*"),
@@ -367,6 +451,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       supabase.from("superhex").select("*"),
       supabase.from("metrics_touched_accounts").select("*"),
       supabase.from("member_team_history").select("*"),
+      supabase.from("team_goals_history").select("*"),
+      supabase.from("member_goals_history").select("*"),
     ]);
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
@@ -476,10 +562,32 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       endedAt: h.ended_at,
     }));
 
+    const teamGoalsHistoryEntries: TeamGoalsHistoryEntry[] = ((tghRes.data ?? []) as DbTeamGoalsHistory[]).map((h) => ({
+      id: h.id,
+      teamId: h.team_id,
+      month: h.month,
+      goalsParity: h.goals_parity,
+      teamGoals: (h.team_goals as MemberGoals) ?? { ...DEFAULT_GOALS },
+      enabledGoals: (h.enabled_goals as EnabledGoals) ?? { ...DEFAULT_ENABLED_GOALS },
+      acceleratorConfig: (h.accelerator_config as AcceleratorConfig) ?? {},
+      teamGoalsByLevel: (h.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
+      goalScopeConfig: (h.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
+    }));
+
+    const memberGoalsHistoryEntries: MemberGoalsHistoryEntry[] = ((mghRes.data ?? []) as DbMemberGoalsHistory[]).map((h) => ({
+      id: h.id,
+      memberId: h.member_id,
+      month: h.month,
+      goals: (h.goals as MemberGoals) ?? { ...DEFAULT_GOALS },
+      level: (h.level as MemberLevel) ?? null,
+    }));
+
     setTeams(t);
     setUnassignedMembers(u);
     setAllMembersById(membersMap);
     setMemberTeamHistory(historyEntries);
+    setTeamGoalsHistory(teamGoalsHistoryEntries);
+    setMemberGoalsHistory(memberGoalsHistoryEntries);
     setLoading(false);
   }, []);
 
@@ -510,12 +618,52 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
   // ── mutations ──
 
+  const snapshotMemberGoals = useCallback((memberId: string, goals: MemberGoals, level: MemberLevel | null) => {
+    const month = currentMonthKey();
+    dbMutate(
+      supabase
+        .from("member_goals_history")
+        .upsert({
+          member_id: memberId,
+          month,
+          goals,
+          level,
+        }, { onConflict: "member_id,month" }),
+      "snapshot member goals history",
+    );
+    setMemberGoalsHistory((prev) => {
+      const idx = prev.findIndex((h) => h.memberId === memberId && h.month === month);
+      const entry: MemberGoalsHistoryEntry = {
+        id: idx >= 0 ? prev[idx].id : crypto.randomUUID(),
+        memberId,
+        month,
+        goals: { ...goals },
+        level,
+      };
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = entry;
+        return next;
+      }
+      return [...prev, entry];
+    });
+  }, []);
+
   const updateTeam = useCallback((teamId: string, updater: (team: Team) => Team) => {
     setTeams((prev) => {
       const next = prev.map((t) => (t.id === teamId ? updater(t) : t));
       const updated = next.find((t) => t.id === teamId);
       if (updated) {
         const old = prev.find((t) => t.id === teamId);
+        const goalsChanged = old && (
+          old.goalsParity !== updated.goalsParity ||
+          JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
+          JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
+          JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
+          JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
+          JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig)
+        );
+
         if (
           old &&
           (old.name !== updated.name ||
@@ -526,12 +674,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.endDate !== updated.endDate ||
             old.totalTam !== updated.totalTam ||
             old.tamSubmitted !== updated.tamSubmitted ||
-            old.goalsParity !== updated.goalsParity ||
-            JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
-            JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
-            JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
-            JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
-            JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig))
+            goalsChanged)
         ) {
           dbMutate(
             supabase
@@ -566,18 +709,62 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             "update team",
           );
         }
+
+        if (goalsChanged) {
+          const month = currentMonthKey();
+          dbMutate(
+            supabase
+              .from("team_goals_history")
+              .upsert({
+                team_id: teamId,
+                month,
+                goals_parity: updated.goalsParity,
+                team_goals: updated.teamGoals,
+                enabled_goals: updated.enabledGoals,
+                accelerator_config: updated.acceleratorConfig,
+                team_goals_by_level: updated.teamGoalsByLevel,
+                goal_scope_config: updated.goalScopeConfig,
+              }, { onConflict: "team_id,month" }),
+            "snapshot team goals history",
+          );
+          setTeamGoalsHistory((prev) => {
+            const idx = prev.findIndex((h) => h.teamId === teamId && h.month === month);
+            const entry: TeamGoalsHistoryEntry = {
+              id: idx >= 0 ? prev[idx].id : crypto.randomUUID(),
+              teamId,
+              month,
+              goalsParity: updated.goalsParity,
+              teamGoals: { ...updated.teamGoals },
+              enabledGoals: { ...updated.enabledGoals },
+              acceleratorConfig: { ...updated.acceleratorConfig },
+              teamGoalsByLevel: { ...updated.teamGoalsByLevel },
+              goalScopeConfig: { ...updated.goalScopeConfig },
+            };
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = entry;
+              return next;
+            }
+            return [...prev, entry];
+          });
+        }
         if (old) {
           for (const member of updated.members) {
             const oldMember = old.members.find((m) => m.id === member.id);
             if (oldMember) {
               const goalUpdates: Record<string, number> = {};
+              let memberGoalsChanged = false;
               for (const metric of GOAL_METRICS) {
                 if (oldMember.goals[metric] !== member.goals[metric]) {
                   goalUpdates[`goal_${metric}`] = member.goals[metric];
+                  memberGoalsChanged = true;
                 }
               }
               if (Object.keys(goalUpdates).length > 0) {
                 dbMutate(supabase.from("members").update(goalUpdates).eq("id", member.id), "update member goals");
+              }
+              if (memberGoalsChanged) {
+                snapshotMemberGoals(member.id, member.goals, member.level);
               }
               if (oldMember.ducksEarned !== member.ducksEarned) {
                 dbMutate(supabase.from("members").update({ ducks_earned: member.ducksEarned }).eq("id", member.id), "update ducks earned");
@@ -693,6 +880,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       ...(updates.goals && { goals: { ...m.goals, ...updates.goals } }),
     });
 
+    const needsGoalSnapshot = updates.goals !== undefined || updates.level !== undefined;
+    let snapshotDone = false;
+
     setUnassignedMembers((prev) =>
       prev.map((m) => (m.id === memberId ? applyUpdates(m) : m))
     );
@@ -703,10 +893,27 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }))
     );
 
+    if (needsGoalSnapshot && !snapshotDone) {
+      const findMember = (): TeamMember | undefined => {
+        for (const t of teams) {
+          const m = t.members.find((mm) => mm.id === memberId);
+          if (m) return applyUpdates(m);
+        }
+        const um = unassignedMembers.find((m) => m.id === memberId);
+        if (um) return applyUpdates(um);
+        return undefined;
+      };
+      const updated = findMember();
+      if (updated) {
+        snapshotMemberGoals(updated.id, updated.goals, updated.level);
+        snapshotDone = true;
+      }
+    }
+
     if (Object.keys(dbUpdates).length > 0) {
       dbMutate(supabase.from("members").update(dbUpdates).eq("id", memberId), "update member");
     }
-  }, []);
+  }, [snapshotMemberGoals, teams, unassignedMembers]);
 
   const assignMember = useCallback((memberId: string, targetTeamId: string) => {
     const fromUnassigned = unassignedMembers.find((m) => m.id === memberId);
@@ -787,6 +994,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         unassignedMembers,
         setUnassignedMembers,
         memberTeamHistory,
+        teamGoalsHistory,
+        memberGoalsHistory,
         allMembersById,
         updateTeam,
         addTeam,
