@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-02 (Persistent section collapse & Lifetime Stats relocation)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`)
+
+**Rationale:** When users collapsed sections (Test Signals, Player's Section, etc.) their preferences were lost on page refresh or when switching between pilots. Additionally, collapsing a section on one pilot did not carry over to other pilots, forcing repetitive clicks. The Lifetime Stats card was also nested inside the Test Signals section where it was less visible; managers wanted it positioned higher on the page alongside other top-level inputs.
+
+**Changes:**
+- Section collapse/expand state now persists to `localStorage` under a shared `collapsed-sections` key so preferences survive page refreshes and browser restarts.
+- Lifted `collapsedSections` state and `toggleSection` handler from the per-team `TeamTab` component up to the parent `Index` component and passed them as props. Collapsing a section on one pilot now collapses it across all pilots automatically.
+- Moved the Lifetime Stats card out of the Test Signals section (inside `TeamTab`) and into the Manager Inputs section of the `Index` component, positioned directly above the Total TAM row and below Mission & Purpose of Test.
+- Lifetime stats are now computed from `activeTeam.members` in the parent component, so they update correctly when switching between pilots.
+- Removed the now-unused lifetime computation variables from `TeamTab`.
+---
+
 ## 2026-03-02 (Historical goals & accelerators — month-accurate past views)
 
 ### Location – Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Pilots/Index (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Migration (`supabase/migrations/20250302300000_create_goals_history.sql`)
