@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight } from "lucide-react";
+import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -1031,6 +1031,68 @@ function TeamTab({
   const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
   const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
+  const [repOverrideWeek, setRepOverrideWeek] = useState(currentWeek);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogName, setEditDialogName] = useState("");
+  const [editDialogTarget, setEditDialogTarget] = useState<{ memberId: string; weekKey: string } | null>(null);
+
+  const confirmEditSubmission = () => {
+    if (!editDialogName.trim() || !editDialogTarget) return;
+    const { memberId, weekKey } = editDialogTarget;
+    updateTeam(team.id, (t) => ({
+      ...t,
+      members: t.members.map((mem) =>
+        mem.id === memberId
+          ? {
+              ...mem,
+              funnelByWeek: {
+                ...mem.funnelByWeek,
+                [weekKey]: {
+                  ...getMemberFunnel(mem, weekKey),
+                  submitted: false,
+                  submittedAt: undefined,
+                },
+              },
+            }
+          : mem
+      ),
+    }));
+    const funnelData = getMemberFunnel(
+      team.members.find((x) => x.id === memberId)!,
+      weekKey,
+    );
+    dbMutate(
+      supabase
+        .from("weekly_funnels")
+        .upsert(
+          {
+            member_id: memberId,
+            week_key: weekKey,
+            tam: funnelData.tam,
+            calls: funnelData.calls,
+            connects: funnelData.connects,
+            ops: funnelData.ops,
+            demos: funnelData.demos,
+            wins: funnelData.wins,
+            feedback: funnelData.feedback,
+            activity: funnelData.activity,
+            role: funnelData.role ?? null,
+            submitted: false,
+            submitted_at: null,
+          },
+          { onConflict: "member_id,week_key" }
+        ),
+      "unlock funnel",
+    );
+    dbMutate(
+      supabase
+        .from("funnel_edit_log")
+        .insert({ member_id: memberId, week_key: weekKey, edited_by: editDialogName.trim() }),
+      "log funnel edit",
+    );
+    setEditDialogOpen(false);
+    setEditDialogTarget(null);
+  };
 
   const weeklyScrollRef = useRef<HTMLDivElement>(null);
   const playerColRef = useRef<HTMLTableCellElement>(null);
@@ -1378,252 +1440,6 @@ function TeamTab({
         </div>}
       </div>
 
-      {/* ===== PLAYER'S SECTION ===== */}
-      <div id="players-section" className="scroll-mt-16">
-        <div
-          className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
-          onClick={() => toggleSection("players-section")}
-        >
-          <div className="flex items-center gap-2">
-            {collapsedSections["players-section"] ? (
-              <ChevronRight className="h-5 w-5 text-primary shrink-0" />
-            ) : (
-              <ChevronDown className="h-5 w-5 text-primary shrink-0" />
-            )}
-            <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-              🎮 Player's Section
-            </h2>
-          </div>
-        </div>
-        {!collapsedSections["players-section"] && <div className="space-y-6">
-
-          {activeMembers.length > 0 && (
-            <div className="rounded-lg border border-border bg-card p-5 glow-card">
-              <div className="mb-4 flex items-baseline justify-between">
-                <h3 className="font-display text-lg font-semibold text-foreground">Your Funnels</h3>
-                <span className="text-xs text-muted-foreground italic">Update weekly by Tuesday 12pm EST</span>
-              </div>
-              <div className="space-y-4">
-                {activeMembers.map((m) => {
-                  const f = getMemberFunnel(m, currentWeek);
-                  const role = (m.funnelByWeek?.[currentWeek] as WeeklyFunnel)?.role;
-                  const upsertFunnelField = (updates: Record<string, unknown>) => {
-                    const current = getMemberFunnel(m, currentWeek);
-                    dbMutate(
-                      supabase
-                        .from("weekly_funnels")
-                        .upsert(
-                          {
-                            member_id: m.id,
-                            week_key: currentWeek,
-                            tam: current.tam,
-                            calls: current.calls,
-                            connects: current.connects,
-                            ops: current.ops,
-                            demos: current.demos,
-                            wins: current.wins,
-                            feedback: current.feedback,
-                            activity: current.activity,
-                            role: current.role ?? null,
-                            submitted: current.submitted ?? false,
-                            submitted_at: current.submittedAt ?? null,
-                            ...updates,
-                          },
-                          { onConflict: "member_id,week_key" }
-                        ),
-                      "upsert funnel",
-                    );
-                  };
-                  const updateFunnel = (field: keyof FunnelData, value: string) => {
-                    const num = Math.max(0, parseInt(value) || 0);
-                    updateTeam(team.id, (t) => ({
-                      ...t,
-                      members: t.members.map((mem) =>
-                        mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [currentWeek]: { ...getMemberFunnel(mem, currentWeek), [field]: num } } } : mem
-                      ),
-                    }));
-                    upsertFunnelField({ [field]: num });
-                  };
-                  const updateRole = (val: string) => {
-                    updateTeam(team.id, (t) => ({
-                      ...t,
-                      members: t.members.map((mem) =>
-                        mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [currentWeek]: { ...getMemberFunnel(mem, currentWeek), role: val as WeeklyRole } } } : mem
-                      ),
-                    }));
-                    upsertFunnelField({ role: val });
-                  };
-                  return (
-                    <div key={m.id} className={`rounded-md p-3 ${f.submitted ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/20'}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-sm font-semibold text-foreground">{m.name}</p>
-                        {f.submitted && (
-                          <span className="text-xs font-medium text-primary flex items-center gap-1">
-                            ✅ Submitted {f.submittedAt ? `on ${f.submittedAt}` : ''}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mb-2 flex items-center gap-2">
-                        <Select value={role || ""} onValueChange={updateRole} disabled={f.submitted}>
-                          <SelectTrigger className="h-8 w-full sm:w-48 bg-background border-border/50 text-foreground text-xs">
-                            <SelectValue placeholder="Select role this week" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-card border-border z-50">
-                            {allRoles.map((r) => (
-                              <SelectItem key={r} value={r}>{r}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Dialog open={addRoleOpen} onOpenChange={setAddRoleOpen}>
-                          <DialogTrigger asChild>
-                            <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground">
-                              <Plus className="h-3 w-3 mr-1" /> Add Role
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="bg-card border-border">
-                            <DialogHeader>
-                              <DialogTitle className="font-display text-foreground">Add Custom Role</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-3 pt-2">
-                              <Input placeholder="Role name" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
-                              <Button onClick={addRole} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
-                          <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Connects</label>
-                          <Input type="number" min={0} value={f.connects || ""} onChange={(e) => updateFunnel("connects", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Ops</label>
-                          <Input type="number" min={0} value={f.ops || ""} onChange={(e) => updateFunnel("ops", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Demos</label>
-                          <Input type="number" min={0} value={f.demos || ""} onChange={(e) => updateFunnel("demos", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Wins</label>
-                          <Input type="number" min={0} value={f.wins || ""} onChange={(e) => updateFunnel("wins", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Feedback</label>
-                          <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-muted-foreground">Activity</label>
-                          <Input type="number" min={0} value={f.activity || ""} onChange={(e) => updateFunnel("activity", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
-                        </div>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Call→Connect: <strong className="text-primary">{f.calls > 0 ? ((f.connects / f.calls) * 100).toFixed(0) : 0}%</strong></span>
-                        <span>Connect→Demo: <strong className="text-accent">{f.connects > 0 ? ((f.demos / f.connects) * 100).toFixed(0) : 0}%</strong></span>
-                        <span>Demo→Win: <strong className="text-primary">{f.demos > 0 ? ((f.wins / f.demos) * 100).toFixed(0) : 0}%</strong></span>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between">
-                        {!f.submitted ? (
-                          <>
-                            <p className="text-[10px] text-muted-foreground italic">Any value entered in here will completely overwrite the value given by the report.</p>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                const now = new Date().toLocaleDateString();
-                                updateTeam(team.id, (t) => ({
-                                  ...t,
-                                  members: t.members.map((mem) =>
-                                    mem.id === m.id
-                                      ? {
-                                          ...mem,
-                                          funnelByWeek: {
-                                            ...mem.funnelByWeek,
-                                            [currentWeek]: {
-                                              ...getMemberFunnel(mem, currentWeek),
-                                              submitted: true,
-                                              submittedAt: now,
-                                            },
-                                          },
-                                        }
-                                      : mem
-                                  ),
-                                }));
-                                upsertFunnelField({ submitted: true, submitted_at: new Date().toISOString() });
-                              }}
-                              className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
-                            >
-                              Submit Week
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              updateTeam(team.id, (t) => ({
-                                ...t,
-                                members: t.members.map((mem) =>
-                                  mem.id === m.id
-                                    ? {
-                                        ...mem,
-                                        funnelByWeek: {
-                                          ...mem.funnelByWeek,
-                                          [currentWeek]: {
-                                            ...getMemberFunnel(mem, currentWeek),
-                                            submitted: false,
-                                            submittedAt: undefined,
-                                          },
-                                        },
-                                      }
-                                    : mem
-                                ),
-                              }));
-                              upsertFunnelField({ submitted: false, submitted_at: null });
-                            }}
-                            className="ml-auto text-xs h-7 border-border text-muted-foreground hover:text-foreground"
-                          >
-                            Edit Submission
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Stories */}
-          {allStories.length > 0 && (
-            <div className="rounded-lg border border-border bg-card p-5 glow-card">
-              <div className="mb-4 flex items-center gap-2">
-                <MessageCircle className="h-5 w-5 text-primary" />
-                <h3 className="font-display text-lg font-semibold text-foreground">Win Stories</h3>
-                <span className="ml-auto text-xs text-muted-foreground">Weirdest story of the week wins a prize 🏆</span>
-              </div>
-              <div className="space-y-3">
-                {allStories.map((s) => (
-                  <div key={s.id} className="rounded-md bg-secondary/20 px-4 py-3">
-                    <div className="mb-1 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-primary">{s.memberName}</span>
-                        <span className="text-xs text-accent">@ {s.restaurant}</span>
-                      </div>
-                      <span className="text-xs text-muted-foreground">{s.date}</span>
-                    </div>
-                    <p className="text-sm text-foreground/80">{s.story}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>}
-      </div>
-
       {/* ===== WEEKLY DATA GRID ===== */}
       {members.length > 0 && (
         <div id="weekly-data" className="scroll-mt-16">
@@ -1882,6 +1698,279 @@ function TeamTab({
           </div>}
         </div>
       )}
+
+      {/* ===== PLAYER'S SECTION ===== */}
+      <div id="players-section" className="scroll-mt-16">
+        <div
+          className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
+          onClick={() => toggleSection("players-section")}
+        >
+          <div className="flex items-center gap-2">
+            {collapsedSections["players-section"] ? (
+              <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+            )}
+            <h2 className="font-display text-2xl font-bold tracking-tight text-primary inline-flex items-center gap-2">
+              <Scale className="h-6 w-6 text-primary shrink-0" /> Rep Self-Overrides
+            </h2>
+          </div>
+        </div>
+        {!collapsedSections["players-section"] && <div className="space-y-6">
+
+          {activeMembers.length > 0 && (
+            <div className="rounded-lg border border-border bg-card p-5 glow-card">
+              <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+                <h3 className="font-display text-lg font-semibold text-foreground">Your Funnels</h3>
+                <div className="flex items-center gap-3">
+                  <Select value={repOverrideWeek} onValueChange={setRepOverrideWeek}>
+                    <SelectTrigger className="h-8 w-40 bg-background border-border/50 text-foreground text-xs">
+                      <SelectValue placeholder="Select week" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border z-50 max-h-60">
+                      {teamWeeks.map((w) => (
+                        <SelectItem key={w.key} value={w.key}>
+                          {w.label}{w.key === currentWeek ? " (current)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground italic">Update weekly by Tuesday 12pm EST</span>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {activeMembers.map((m) => {
+                  const f = getMemberFunnel(m, repOverrideWeek);
+                  const role = (m.funnelByWeek?.[repOverrideWeek] as WeeklyFunnel)?.role;
+                  const upsertFunnelField = (updates: Record<string, unknown>) => {
+                    const current = getMemberFunnel(m, repOverrideWeek);
+                    dbMutate(
+                      supabase
+                        .from("weekly_funnels")
+                        .upsert(
+                          {
+                            member_id: m.id,
+                            week_key: repOverrideWeek,
+                            tam: current.tam,
+                            calls: current.calls,
+                            connects: current.connects,
+                            ops: current.ops,
+                            demos: current.demos,
+                            wins: current.wins,
+                            feedback: current.feedback,
+                            activity: current.activity,
+                            role: current.role ?? null,
+                            submitted: current.submitted ?? false,
+                            submitted_at: current.submittedAt ?? null,
+                            ...updates,
+                          },
+                          { onConflict: "member_id,week_key" }
+                        ),
+                      "upsert funnel",
+                    );
+                  };
+                  const updateFunnel = (field: keyof FunnelData, value: string) => {
+                    const num = Math.max(0, parseInt(value) || 0);
+                    updateTeam(team.id, (t) => ({
+                      ...t,
+                      members: t.members.map((mem) =>
+                        mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [repOverrideWeek]: { ...getMemberFunnel(mem, repOverrideWeek), [field]: num } } } : mem
+                      ),
+                    }));
+                    upsertFunnelField({ [field]: num });
+                  };
+                  const updateRole = (val: string) => {
+                    updateTeam(team.id, (t) => ({
+                      ...t,
+                      members: t.members.map((mem) =>
+                        mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [repOverrideWeek]: { ...getMemberFunnel(mem, repOverrideWeek), role: val as WeeklyRole } } } : mem
+                      ),
+                    }));
+                    upsertFunnelField({ role: val });
+                  };
+                  return (
+                    <div key={m.id} className={`rounded-md p-3 ${f.submitted ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/20'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm font-semibold text-foreground">{m.name}</p>
+                        {f.submitted && (
+                          <span className="text-xs font-medium text-primary flex items-center gap-1">
+                            ✅ Submitted {f.submittedAt ? `on ${f.submittedAt}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <Select value={role || ""} onValueChange={updateRole} disabled={f.submitted}>
+                          <SelectTrigger className="h-8 w-full sm:w-48 bg-background border-border/50 text-foreground text-xs">
+                            <SelectValue placeholder="Select role this week" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-card border-border z-50">
+                            {allRoles.map((r) => (
+                              <SelectItem key={r} value={r}>{r}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Dialog open={addRoleOpen} onOpenChange={setAddRoleOpen}>
+                          <DialogTrigger asChild>
+                            <Button size="sm" variant="ghost" className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground">
+                              <Plus className="h-3 w-3 mr-1" /> Add Role
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="bg-card border-border">
+                            <DialogHeader>
+                              <DialogTitle className="font-display text-foreground">Add Custom Role</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-3 pt-2">
+                              <Input placeholder="Role name" value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground" />
+                              <Button onClick={addRole} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">Add</Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
+                          <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Connects</label>
+                          <Input type="number" min={0} value={f.connects || ""} onChange={(e) => updateFunnel("connects", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Ops</label>
+                          <Input type="number" min={0} value={f.ops || ""} onChange={(e) => updateFunnel("ops", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Demos</label>
+                          <Input type="number" min={0} value={f.demos || ""} onChange={(e) => updateFunnel("demos", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Wins</label>
+                          <Input type="number" min={0} value={f.wins || ""} onChange={(e) => updateFunnel("wins", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Feedback</label>
+                          <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Activity</label>
+                          <Input type="number" min={0} value={f.activity || ""} onChange={(e) => updateFunnel("activity", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>Call→Connect: <strong className="text-primary">{f.calls > 0 ? ((f.connects / f.calls) * 100).toFixed(0) : 0}%</strong></span>
+                        <span>Connect→Demo: <strong className="text-accent">{f.connects > 0 ? ((f.demos / f.connects) * 100).toFixed(0) : 0}%</strong></span>
+                        <span>Demo→Win: <strong className="text-primary">{f.demos > 0 ? ((f.wins / f.demos) * 100).toFixed(0) : 0}%</strong></span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        {!f.submitted ? (
+                          <>
+                            <p className="text-[10px] text-muted-foreground italic">Any value entered in here will completely overwrite the value given by the report.</p>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const now = new Date().toLocaleDateString();
+                                updateTeam(team.id, (t) => ({
+                                  ...t,
+                                  members: t.members.map((mem) =>
+                                    mem.id === m.id
+                                      ? {
+                                          ...mem,
+                                          funnelByWeek: {
+                                            ...mem.funnelByWeek,
+                                            [repOverrideWeek]: {
+                                              ...getMemberFunnel(mem, repOverrideWeek),
+                                              submitted: true,
+                                              submittedAt: now,
+                                            },
+                                          },
+                                        }
+                                      : mem
+                                  ),
+                                }));
+                                upsertFunnelField({ submitted: true, submitted_at: new Date().toISOString() });
+                              }}
+                              className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
+                            >
+                              Submit Week
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditDialogTarget({ memberId: m.id, weekKey: repOverrideWeek });
+                              setEditDialogName("");
+                              setEditDialogOpen(true);
+                            }}
+                            className="ml-auto text-xs h-7 border-border text-muted-foreground hover:text-foreground"
+                          >
+                            Edit Submission
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+            <DialogContent className="bg-card border-border">
+              <DialogHeader>
+                <DialogTitle className="font-display text-foreground">Edit Past Submission</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                This week was already submitted. Please enter your name to log this edit.
+              </p>
+              <div className="space-y-3 pt-2">
+                <Input
+                  placeholder="Your name"
+                  value={editDialogName}
+                  onChange={(e) => setEditDialogName(e.target.value)}
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") confirmEditSubmission();
+                  }}
+                />
+                <Button
+                  onClick={confirmEditSubmission}
+                  disabled={!editDialogName.trim()}
+                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Confirm Edit
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Stories */}
+          {allStories.length > 0 && (
+            <div className="rounded-lg border border-border bg-card p-5 glow-card">
+              <div className="mb-4 flex items-center gap-2">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                <h3 className="font-display text-lg font-semibold text-foreground">Win Stories</h3>
+                <span className="ml-auto text-xs text-muted-foreground">Weirdest story of the week wins a prize 🏆</span>
+              </div>
+              <div className="space-y-3">
+                {allStories.map((s) => (
+                  <div key={s.id} className="rounded-md bg-secondary/20 px-4 py-3">
+                    <div className="mb-1 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-primary">{s.memberName}</span>
+                        <span className="text-xs text-accent">@ {s.restaurant}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{s.date}</span>
+                    </div>
+                    <p className="text-sm text-foreground/80">{s.story}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>}
+      </div>
 
       {/* ===== ACTIVATION / ADOPTION (placeholder) ===== */}
       <div id="activation-adoption" className="scroll-mt-16" />

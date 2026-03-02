@@ -221,6 +221,14 @@ export interface DbMetricsFeedback {
   updated_at: string;
 }
 
+export interface DbFunnelEditLog {
+  id: string;
+  member_id: string;
+  week_key: string;
+  edited_by: string;
+  edited_at: string;
+}
+
 export interface DbAuditLog {
   id: string;
   table_name: string;
