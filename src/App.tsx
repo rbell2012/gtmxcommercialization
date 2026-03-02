@@ -3,11 +3,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
-import { Settings } from "lucide-react";
+import { HelpCircle, Settings } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
 import Data from "./pages/Data";
 import Quota from "./pages/Quota";
+import Help from "./pages/Help";
 import SettingsPage from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import { TeamsProvider, useTeams, pilotNameToSlug } from "./contexts/TeamsContext";
@@ -55,6 +56,15 @@ function Nav() {
         Quota
       </Link>
       <div className="ml-auto flex items-center gap-2">
+        <Link
+          to="/help"
+          className={`flex items-center gap-1 text-sm font-medium whitespace-nowrap transition-colors ${
+            location.pathname === "/help" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+          Help
+        </Link>
         <ThemeToggle />
         <Link
           to="/settings"
@@ -85,6 +95,7 @@ const App = () => (
               <Route path="/Pilots/:pilotId" element={<Index />} />
               <Route path="/data" element={<Data />} />
               <Route path="/quota" element={<Quota />} />
+              <Route path="/help" element={<Help />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

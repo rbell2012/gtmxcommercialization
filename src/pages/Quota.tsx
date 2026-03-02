@@ -2,8 +2,10 @@ import { useState, useMemo } from "react";
 import { Target, Calendar, LockOpen, Lock } from "lucide-react";
 import {
   useTeams,
+  getTeamMembersForMonth,
   type Team,
   type TeamMember,
+  type MemberTeamHistoryEntry,
   type GoalMetric,
   type AcceleratorRule,
   GOAL_METRICS,
@@ -45,7 +47,7 @@ function mergePhases(teams: Team[]): ComputedPhase[] {
 }
 
 const Quota = () => {
-  const { teams } = useTeams();
+  const { teams, memberTeamHistory, allMembersById } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const referenceDate = selectedMonth ?? undefined;
@@ -145,7 +147,7 @@ const Quota = () => {
         )}
 
         {activeTeams.map((team) => (
-          <TeamQuotaCard key={team.id} team={team} referenceDate={referenceDate} />
+          <TeamQuotaCard key={team.id} team={team} referenceDate={referenceDate} memberTeamHistory={memberTeamHistory} allMembersById={allMembersById} />
         ))}
       </div>
     </div>
@@ -155,11 +157,15 @@ const Quota = () => {
 function TeamQuotaCard({
   team,
   referenceDate,
+  memberTeamHistory,
+  allMembersById,
 }: {
   team: Team;
   referenceDate?: Date;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+  allMembersById: Map<string, TeamMember>;
 }) {
-  const activeMembers = team.members.filter((m) => m.isActive);
+  const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
   const daysLeft = getBusinessDaysRemaining(team.endDate, referenceDate);
   const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
 

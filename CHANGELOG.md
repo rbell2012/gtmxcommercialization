@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-03-02 (Member history tracking — preserve performance across project moves)
+
+### Location – Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Pilots/Index (`src/pages/Index.tsx`), Quota (`src/pages/Quota.tsx`), Migration (`supabase/migrations/20250302100000_create_member_team_history.sql`)
+
+**Rationale:** When a member was reassigned between projects (e.g. Shane Hughes moving from Mad Max to a new project), the old system created a brand new member row with a fresh UUID and set the old one to `is_active = false`. This severed the link to all historical performance data — funnel metrics, wins, and ducks were orphaned on the now-invisible old member ID. There was no way to know how someone performed on their previous project. Additionally, the TAM average and member count on project pages always used the current roster, so viewing a past month after someone left would show incorrect numbers.
+
+**Changes:**
+- Created `member_team_history` table in Supabase with `member_id`, `team_id`, `started_at`, and `ended_at` columns, plus indexes and RLS policies. Backfilled one row per active member using their current team and `created_at` date. Applied migration to live Supabase.
+- Added `DbMemberTeamHistory` interface to `database.types.ts`.
+- Rewrote `assignMember` (both unassigned-to-team and team-to-team paths) in `TeamsContext.tsx` to update `team_id` in place instead of soft-deleting and cloning. Closes the current history record (`ended_at = now()`) and opens a new one on every move.
+- Rewrote `unassignMember` to update `team_id` to null in place with the same history record pattern.
+- Updated `createMember` to insert an initial history record when a member is first created.
+- Updated `removeTeam` to close history records and open unassigned records for all members when a team is archived.
+- Updated `removeMember` to close the open history record when a member is soft-deleted.
+- Added `MemberTeamHistoryEntry` interface and `getTeamMembersForMonth()` exported helper that resolves the correct roster for any team/month combination by checking which history entries overlap with that month's date range.
+- `TeamsProvider` now loads `member_team_history` from Supabase on every data refresh and exposes `memberTeamHistory` and `allMembersById` (a map of all members across all teams) through the context.
+- Updated the TAM section, Goals section, and `TeamTab` component in `Index.tsx` to use `getTeamMembersForMonth()` so that viewing a past month shows the historical member count and correct TAM average (e.g. Guest Pro in February shows 2 members when Will Andrews was still there, not 1).
+- Updated `TeamQuotaCard` in `Quota.tsx` to use `getTeamMembersForMonth()` for the same historical accuracy on the Quota page.
+- Manually updated `member_team_history` rows in Supabase with correct start dates for all current members and recorded Will Andrews' move from Guest Pro to Sterno on March 1.
+---
+
+## 2026-03-02 (Help page — "How to Use GTMx Pilots")
+
+### Location – Help page (`src/pages/Help.tsx`), Navigation (`src/App.tsx`)
+
+**Rationale:** There was no in-app documentation explaining how to use the platform. New managers and reps had to learn features by exploration or word-of-mouth. Adding a dedicated Help page — accessible from the navigation bar — gives every user a comprehensive, task-oriented guide covering all sections of the app.
+
+**Changes:**
+- Created `src/pages/Help.tsx` with a full "How to Use GTMx Pilots" guide organized into 7 sections: Getting Started, Settings (Managing Teams & Members), Pilots Page (Manager Inputs, Test Signals, Player's Section, Weekly Data), Quota Page, Data & Findings Page, Real-Time Data, and Tips & Shortcuts.
+- Content derived from the complete CHANGELOG history (2026-02-24 through 2026-03-02), rewritten in plain language for end users rather than developers.
+- Page uses semantic design tokens (`text-foreground`, `bg-muted`, `border-border`, etc.) for full light/dark mode support.
+- Includes internal `<Link>` navigation to `/settings`, `/Pilots`, `/quota`, and `/data` so users can jump directly to referenced pages.
+- Each section has an `id` anchor and `scroll-mt-16` for deep-linking support.
+- Added `/help` route in `src/App.tsx` mapping to the new `Help` component.
+- Added a **Help** link with `HelpCircle` icon to the navigation bar, positioned to the left of the dark/light theme toggle and to the left of Settings.
+---
+
 ## 2026-03-02 (Goal scope — Self vs Team goals & accelerators)
 
 ### Location – Settings (`src/pages/Settings.tsx`), Quota (`src/pages/Quota.tsx`), Pilots/Index (`src/pages/Index.tsx`), Helpers (`src/lib/quota-helpers.ts`), Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Migration (`supabase/migrations/20250302000000_add_goal_scope_config.sql`)

@@ -179,6 +179,14 @@ export interface DbMetricsWins {
   updated_at: string;
 }
 
+export interface DbMemberTeamHistory {
+  id: string;
+  member_id: string;
+  team_id: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
 export interface DbMetricsFeedback {
   id: string;
   activity_week: string;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight } from "lucide-react";
-import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
+import { useTeams, getTeamMembersForMonth, type Team, type TeamMember, type MemberTeamHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -209,7 +209,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, allMembersById } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     missionPurpose,
@@ -650,7 +650,7 @@ const Index = () => {
 
         {/* Total TAM — metrics_touched_accounts data if available, else manual input */}
         {activeTeam && (() => {
-          const activeMembers = activeTeam.members.filter((m) => m.isActive);
+          const activeMembers = getTeamMembersForMonth(activeTeam, referenceDate, memberTeamHistory, allMembersById);
           const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
           if (hasMetricsTam) {
             const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
@@ -773,7 +773,7 @@ const Index = () => {
         {/* ===== GOALS ===== */}
         {teams.filter((t) => t.id === activeTab).map((team) => {
           const members = team.members;
-          const activeMembers = members.filter((m) => m.isActive);
+          const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
           const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
           return (
             <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
@@ -948,6 +948,8 @@ const Index = () => {
                 setNewRoleName={setNewRoleName}
                 addRole={addRole}
                 referenceDate={referenceDate}
+                memberTeamHistory={memberTeamHistory}
+                allMembersById={allMembersById}
               />
             </TabsContent>
           ))}
@@ -1010,6 +1012,8 @@ function TeamTab({
   setNewRoleName,
   addRole,
   referenceDate,
+  memberTeamHistory,
+  allMembersById,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -1030,6 +1034,8 @@ function TeamTab({
   setNewRoleName: (v: string) => void;
   addRole: () => void;
   referenceDate?: Date;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+  allMembersById: Map<string, TeamMember>;
 }) {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const toggleSection = (key: string) =>
@@ -1037,7 +1043,7 @@ function TeamTab({
 
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
-  const activeMembers = members.filter((m) => m.isActive);
+  const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
   const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts, DbMemberTeamHistory } from "@/lib/database.types";
 
 // ── Goal metrics system ──
 
@@ -152,6 +152,49 @@ export function pilotNameToSlug(name: string): string {
   return name.trim().replace(/\s+/g, "_");
 }
 
+export interface MemberTeamHistoryEntry {
+  id: string;
+  memberId: string;
+  teamId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+/**
+ * Returns the members who were on `teamId` during the month of `referenceDate`.
+ * Falls back to the current active roster when referenceDate is undefined or the current month.
+ */
+export function getTeamMembersForMonth(
+  team: Team,
+  referenceDate: Date | undefined,
+  history: MemberTeamHistoryEntry[],
+  allMembersById: Map<string, TeamMember>,
+): TeamMember[] {
+  if (!referenceDate) return team.members.filter((m) => m.isActive);
+
+  const now = new Date();
+  if (referenceDate.getFullYear() === now.getFullYear() && referenceDate.getMonth() === now.getMonth()) {
+    return team.members.filter((m) => m.isActive);
+  }
+
+  const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  const monthEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  const memberIds = new Set<string>();
+  for (const entry of history) {
+    if (entry.teamId !== team.id) continue;
+    const start = new Date(entry.startedAt);
+    const end = entry.endedAt ? new Date(entry.endedAt) : new Date("9999-12-31");
+    if (start <= monthEnd && end >= monthStart) {
+      memberIds.add(entry.memberId);
+    }
+  }
+
+  return Array.from(memberIds)
+    .map((id) => allMembersById.get(id))
+    .filter((m): m is TeamMember => m != null);
+}
+
 // ── helpers to convert between DB rows and app shapes ──
 
 function dbMemberToApp(
@@ -272,6 +315,8 @@ interface TeamsContextType {
   setTeams: React.Dispatch<React.SetStateAction<Team[]>>;
   unassignedMembers: TeamMember[];
   setUnassignedMembers: React.Dispatch<React.SetStateAction<TeamMember[]>>;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+  allMembersById: Map<string, TeamMember>;
   updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
   addTeam: (name: string, owner?: string, startDate?: string | null, endDate?: string | null) => void;
   removeTeam: (teamId: string) => void;
@@ -307,17 +352,20 @@ function memberGoalsToDbInsert(goals: MemberGoals) {
 export function TeamsProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [unassignedMembers, setUnassignedMembers] = useState<TeamMember[]>([]);
+  const [memberTeamHistory, setMemberTeamHistory] = useState<MemberTeamHistoryEntry[]>([]);
+  const [allMembersById, setAllMembersById] = useState<Map<string, TeamMember>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // ── load all data & merge superhex into funnels ──
   const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, sRes, taRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, sRes, taRes, hRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*"),
       supabase.from("weekly_funnels").select("*"),
       supabase.from("win_entries").select("*"),
       supabase.from("superhex").select("*"),
       supabase.from("metrics_touched_accounts").select("*"),
+      supabase.from("member_team_history").select("*"),
     ]);
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
@@ -413,8 +461,24 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    const membersMap = new Map<string, TeamMember>();
+    for (const team of t) {
+      for (const member of team.members) membersMap.set(member.id, member);
+    }
+    for (const member of u) membersMap.set(member.id, member);
+
+    const historyEntries: MemberTeamHistoryEntry[] = ((hRes.data ?? []) as DbMemberTeamHistory[]).map((h) => ({
+      id: h.id,
+      memberId: h.member_id,
+      teamId: h.team_id,
+      startedAt: h.started_at,
+      endedAt: h.ended_at,
+    }));
+
     setTeams(t);
     setUnassignedMembers(u);
+    setAllMembersById(membersMap);
+    setMemberTeamHistory(historyEntries);
     setLoading(false);
   }, []);
 
@@ -548,8 +612,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         if (activeMembers.length > 0) {
           setUnassignedMembers((um) => [...um, ...activeMembers]);
         }
+        const now = new Date().toISOString();
         for (const m of team.members) {
           supabase.from("members").update({ team_id: null }).eq("id", m.id).then();
+          supabase.from("member_team_history").update({ ended_at: now }).eq("member_id", m.id).is("ended_at", null).then();
+          supabase.from("member_team_history").insert({ member_id: m.id, team_id: null }).then();
         }
       }
       return prev.filter((t) => t.id !== teamId);
@@ -589,6 +656,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       .from("members")
       .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true })
       .then();
+    supabase.from("member_team_history").insert({ member_id: id, team_id: null }).then();
     return member;
   }, []);
 
@@ -634,6 +702,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         )
       );
       supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId).then();
+      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
+      supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }).then();
       return;
     }
 
@@ -645,32 +715,15 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       })?.id;
       if (!member || sourceTeamId === targetTeamId) return prev;
 
-      supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
-
-      const newId = crypto.randomUUID();
-      supabase
-        .from("members")
-        .insert({ id: newId, name: member.name, level: member.level, ...memberGoalsToDbInsert(member.goals), team_id: targetTeamId, ducks_earned: 0, is_active: true })
-        .then();
-
-      const freshMember: TeamMember = {
-        id: newId,
-        name: member.name,
-        level: member.level,
-        goals: { ...member.goals },
-        wins: [],
-        ducksEarned: 0,
-        funnelByWeek: {},
-        isActive: true,
-        touchedAccounts: 0,
-        touchedTam: 0,
-      };
+      supabase.from("members").update({ team_id: targetTeamId }).eq("id", memberId).then();
+      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
+      supabase.from("member_team_history").insert({ member_id: memberId, team_id: targetTeamId }).then();
 
       return prev.map((t) => {
         if (t.id === sourceTeamId)
-          return { ...t, members: t.members.map((m) => m.id === memberId ? { ...m, isActive: false } : m) };
+          return { ...t, members: t.members.filter((m) => m.id !== memberId) };
         if (t.id === targetTeamId)
-          return { ...t, members: [...t.members, freshMember] };
+          return { ...t, members: [...t.members, member!] };
         return t;
       });
     });
@@ -682,31 +735,15 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const member = team?.members.find((m) => m.id === memberId && m.isActive);
       if (!member) return prev;
 
-      supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
+      supabase.from("members").update({ team_id: null }).eq("id", memberId).then();
+      supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
+      supabase.from("member_team_history").insert({ member_id: memberId, team_id: null }).then();
 
-      const newId = crypto.randomUUID();
-      supabase
-        .from("members")
-        .insert({ id: newId, name: member.name, level: member.level, ...memberGoalsToDbInsert(member.goals), team_id: null, ducks_earned: 0, is_active: true })
-        .then();
-
-      const freshMember: TeamMember = {
-        id: newId,
-        name: member.name,
-        level: member.level,
-        goals: { ...member.goals },
-        wins: [],
-        ducksEarned: 0,
-        funnelByWeek: {},
-        isActive: true,
-        touchedAccounts: 0,
-        touchedTam: 0,
-      };
-      setUnassignedMembers((um) => [...um, freshMember]);
+      setUnassignedMembers((um) => [...um, member]);
 
       return prev.map((t) =>
         t.id === fromTeamId
-          ? { ...t, members: t.members.map((m) => m.id === memberId ? { ...m, isActive: false } : m) }
+          ? { ...t, members: t.members.filter((m) => m.id !== memberId) }
           : t
       );
     });
@@ -723,6 +760,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }))
     );
     supabase.from("members").update({ is_active: false }).eq("id", memberId).then();
+    supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null).then();
   }, []);
 
   return (
@@ -732,6 +770,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         setTeams,
         unassignedMembers,
         setUnassignedMembers,
+        memberTeamHistory,
+        allMembersById,
         updateTeam,
         addTeam,
         removeTeam,
