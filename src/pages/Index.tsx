@@ -1065,8 +1065,8 @@ function TeamTab({
                   return (
                     <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-primary">{team.totalTam > 0 ? ((totals.calls / team.totalTam) * 100).toFixed(0) : 0}%</p>
-                        <p className="text-[10px] text-secondary-foreground/50">TAM→Call</p>
+                        <p className="font-display text-lg font-bold text-primary">{(() => { const ta = members.reduce((s, m) => s + m.touchedAccounts, 0); const tt = members.reduce((s, m) => s + m.touchedTam, 0); return tt > 0 ? ((ta / tt) * 100).toFixed(0) : 0; })()}%</p>
+                        <p className="text-[10px] text-secondary-foreground/50">Touch Rate</p>
                       </div>
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
                         <p className="font-display text-lg font-bold text-secondary-foreground">{totals.calls > 0 ? ((totals.connects / totals.calls) * 100).toFixed(0) : 0}%</p>
@@ -1379,11 +1379,11 @@ function TeamTab({
                   );
                   const weeks = teamWeeks;
                   const weekKeyList = weeks.map((wk) => wk.key);
-                  const convRates = [
-                    { label: "TAM→Call %", numKey: "calls" as keyof FunnelData, denKey: "tam" as keyof FunnelData },
-                    { label: "Call→Con %", numKey: "connects" as keyof FunnelData, denKey: "calls" as keyof FunnelData },
-                    { label: "Con→Demo %", numKey: "demos" as keyof FunnelData, denKey: "connects" as keyof FunnelData },
-                    { label: "Demo→Win %", numKey: "wins" as keyof FunnelData, denKey: "demos" as keyof FunnelData },
+                  const convRates: { label: string; numKey?: keyof FunnelData; denKey?: keyof FunnelData; touchRate?: boolean }[] = [
+                    { label: "Touch Rate", touchRate: true },
+                    { label: "Call→Con %", numKey: "connects", denKey: "calls" },
+                    { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
+                    { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
                   ];
                   const allRows = [
                     ...metricRows.map((met, metIdx) => (
@@ -1397,7 +1397,7 @@ function TeamTab({
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
                         {weeks.map((w) => {
                           const val = met.key === "tam"
-                            ? getCarriedTam(m, w.key, weekKeyList)
+                            ? m.touchedTam
                             : getMemberFunnel(m, w.key)[met.key];
                           return (
                             <td key={w.key} className="text-center py-1 px-2 text-foreground tabular-nums">
@@ -1407,7 +1407,7 @@ function TeamTab({
                         })}
                         <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-primary tabular-nums">
                           {met.key === "tam"
-                            ? (getCarriedTam(m, weekKeyList[weekKeyList.length - 1] ?? "", weekKeyList) || "—")
+                            ? (m.touchedTam || "—")
                             : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[met.key], 0)}
                         </td>
                       </tr>
@@ -1415,12 +1415,18 @@ function TeamTab({
                     ...convRates.map((cr) => (
                       <tr key={`${m.id}-${cr.label}`} className="bg-muted/30">
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
-                        {weeks.map((w) => {
+                        {cr.touchRate ? (
+                          <>
+                            {weeks.map((w) => (
+                              <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                                <span className="text-muted-foreground/40">—</span>
+                              </td>
+                            ))}
+                          </>
+                        ) : weeks.map((w) => {
                           const f = getMemberFunnel(m, w.key);
-                          const den = cr.denKey === "tam"
-                            ? getCarriedTam(m, w.key, weekKeyList)
-                            : f[cr.denKey];
-                          const num = f[cr.numKey];
+                          const den = f[cr.denKey!];
+                          const num = f[cr.numKey!];
                           const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
                           return (
                             <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
@@ -1429,13 +1435,14 @@ function TeamTab({
                           );
                         })}
                         <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
-                          {(() => {
-                            const totalDen = cr.denKey === "tam"
-                              ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
-                              : weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey], 0);
-                            const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey], 0);
-                            return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
-                          })()}
+                          {cr.touchRate
+                            ? (m.touchedTam > 0 ? `${((m.touchedAccounts / m.touchedTam) * 100).toFixed(0)}%` : "—")
+                            : (() => {
+                                const totalDen = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.denKey!], 0);
+                                const totalNum = weeks.reduce((s, w) => s + getMemberFunnel(m, w.key)[cr.numKey!], 0);
+                                return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
+                              })()
+                          }
                         </td>
                       </tr>
                     )),
@@ -1464,11 +1471,11 @@ function TeamTab({
                   const metricRows = allMetricRows.filter(
                     (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
                   );
-                  const convRates = [
-                    { label: "TAM→Call %", numKey: "calls" as keyof FunnelData, denKey: "tam" as keyof FunnelData },
-                    { label: "Call→Con %", numKey: "connects" as keyof FunnelData, denKey: "calls" as keyof FunnelData },
-                    { label: "Con→Demo %", numKey: "demos" as keyof FunnelData, denKey: "connects" as keyof FunnelData },
-                    { label: "Demo→Win %", numKey: "wins" as keyof FunnelData, denKey: "demos" as keyof FunnelData },
+                  const convRates: { label: string; numKey?: keyof FunnelData; denKey?: keyof FunnelData; touchRate?: boolean }[] = [
+                    { label: "Touch Rate", touchRate: true },
+                    { label: "Call→Con %", numKey: "connects", denKey: "calls" },
+                    { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
+                    { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
                   ];
                   const getTeamMonthlyValue = (monthWeekKeys: string[], metKey: keyof FunnelData): number => {
                     if (metKey === "tam") {
@@ -1480,6 +1487,11 @@ function TeamTab({
                     return members.reduce((sum, m) =>
                       sum + monthWeekKeys.reduce((ws, wk) => ws + getMemberFunnel(m, wk)[metKey], 0), 0);
                   };
+                  const teamTouchRate = (() => {
+                    const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                    const tt = members.reduce((s, m) => s + m.touchedTam, 0);
+                    return tt > 0 ? `${((ta / tt) * 100).toFixed(0)}%` : "—";
+                  })();
                   return [
                     <tr key="team-month-header" className="border-t border-border bg-secondary">
                       <td className="sticky left-0 z-30 bg-secondary py-2 pl-5 pr-2 font-bold text-white align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
@@ -1514,9 +1526,17 @@ function TeamTab({
                     ...convRates.map((cr) => (
                       <tr key={`team-${cr.label}`} className="bg-muted/30">
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
-                        {teamMonths.map((mo) => {
-                          const num = getTeamMonthlyValue(mo.weekKeys, cr.numKey);
-                          const den = getTeamMonthlyValue(mo.weekKeys, cr.denKey);
+                        {cr.touchRate ? (
+                          <>
+                            {teamMonths.map((mo) => (
+                              <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                                <span className="text-muted-foreground/40">—</span>
+                              </td>
+                            ))}
+                          </>
+                        ) : teamMonths.map((mo) => {
+                          const num = getTeamMonthlyValue(mo.weekKeys, cr.numKey!);
+                          const den = getTeamMonthlyValue(mo.weekKeys, cr.denKey!);
                           const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
                           return (
                             <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
@@ -1525,11 +1545,14 @@ function TeamTab({
                           );
                         })}
                         <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
-                          {(() => {
-                            const totalNum = getTeamMonthlyValue(weekKeyList, cr.numKey);
-                            const totalDen = getTeamMonthlyValue(weekKeyList, cr.denKey);
-                            return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
-                          })()}
+                          {cr.touchRate
+                            ? teamTouchRate
+                            : (() => {
+                                const totalNum = getTeamMonthlyValue(weekKeyList, cr.numKey!);
+                                const totalDen = getTeamMonthlyValue(weekKeyList, cr.denKey!);
+                                return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
+                              })()
+                          }
                         </td>
                       </tr>
                     )),
@@ -1741,8 +1764,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
                   return tam > 0 || f.calls > 0 || f.connects > 0 || f.demos > 0 || f.wins > 0;
                 });
                 const n = validWeeks.length;
-                const avgTamToCall = n > 0
-                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); const tam = getCarriedTam(m, w.key, weekKeyList); return s + (tam > 0 ? (f.calls / tam) * 100 : 0); }, 0) / n : 0;
+                const memberTouchRate = m.touchedTam > 0 ? (m.touchedAccounts / m.touchedTam) * 100 : 0;
                 const avgCallToConnect = n > 0
                   ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.calls > 0 ? (f.connects / f.calls) * 100 : 0); }, 0) / n : 0;
                 const avgConnectToDemo = n > 0
@@ -1752,7 +1774,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
                 return (
                   <div key={m.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-semibold" style={{ color: PLAYER_COLORS[members.indexOf(m) % PLAYER_COLORS.length] }}>{m.name}:</span>
-                    <span>TAM→Call: <strong className="text-foreground">{avgTamToCall.toFixed(0)}%</strong></span>
+                    <span>Touch Rate: <strong className="text-foreground">{memberTouchRate.toFixed(0)}%</strong></span>
                     <span>Call→Connect: <strong className="text-foreground">{avgCallToConnect.toFixed(0)}%</strong></span>
                     <span>Connect→Demo: <strong className="text-foreground">{avgConnectToDemo.toFixed(0)}%</strong></span>
                     <span>Demo→Win: <strong className="text-foreground">{avgDemoToWin.toFixed(0)}%</strong></span>

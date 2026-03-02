@@ -9,8 +9,10 @@ create table if not exists public.superhex (
   total_activity_count  integer     not null default 0,
   calls_count           integer     not null default 0,
   connects_count        integer     not null default 0,
+  total_ops             integer     not null default 0,
   total_demos           integer     not null default 0,
   total_wins            integer     not null default 0,
+  total_feedback        integer     not null default 0,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()
 );

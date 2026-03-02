@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-01 (Add total_ops & total_feedback to Superhex, Merge into Funnels)
+
+### Location – Database (`supabase/migrations/`), Types (`src/lib/database.types.ts`), State Management (`src/contexts/TeamsContext.tsx`), Supabase
+
+**Rationale:** The superhex table was missing `total_ops` and `total_feedback` columns, which meant opportunity and feedback data from external sources could not flow through the superhex-to-funnel merge pipeline. Adding these columns allows superhex rows to fully populate all funnel metrics automatically.
+
+**Changes:**
+- Added `total_ops integer NOT NULL DEFAULT 0` column to the `superhex` table in Supabase (logically before `total_demos`).
+- Added `total_feedback integer NOT NULL DEFAULT 0` column to the `superhex` table in Supabase (logically after `total_wins`).
+- Created two new migration files: `20250301000000_add_total_ops_to_superhex.sql` and `20250301010000_add_total_feedback_to_superhex.sql`.
+- Updated the base migration `20250225240000_create_superhex.sql` to include both new columns for fresh installs.
+- Added `total_ops` and `total_feedback` to the `DbSuperhex` TypeScript interface in `database.types.ts`.
+- Updated the superhex merge logic in `TeamsContext.tsx` to map `row.total_ops` → `f.ops` and `row.total_feedback` → `f.feedback` for both existing manual rows (baseline merge) and synthetic funnel rows.
+---
+
 ## 2026-03-01 (Add External Metrics Tables to Supabase)
 
 ### Location – Database (`supabase/migrations/`), Types (`src/lib/database.types.ts`), Supabase

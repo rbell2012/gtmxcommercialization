@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts } from "@/lib/database.types";
 
 // ── Goal metrics system ──
 
@@ -92,6 +92,8 @@ export interface TeamMember {
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
   isActive: boolean;
+  touchedAccounts: number;
+  touchedTam: number;
 }
 
 export type EnabledGoals = Record<GoalMetric, boolean>;
@@ -167,6 +169,8 @@ function dbMemberToApp(
       date: w.date,
     })),
     funnelByWeek,
+    touchedAccounts: 0,
+    touchedTam: 0,
   };
 }
 
@@ -273,12 +277,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
   // ── load all data & merge superhex into funnels ──
   const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, sRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, sRes, taRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*"),
       supabase.from("weekly_funnels").select("*"),
       supabase.from("win_entries").select("*"),
       supabase.from("superhex").select("*"),
+      supabase.from("metrics_touched_accounts").select("*"),
     ]);
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
@@ -314,8 +319,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         const f = dbFunnels[existingIdx];
         f.calls = f.calls > 0 ? f.calls : row.calls_count;
         f.connects = f.connects > 0 ? f.connects : row.connects_count;
+        f.ops = f.ops > 0 ? f.ops : row.total_ops;
         f.demos = f.demos > 0 ? f.demos : row.total_demos;
         f.wins = f.wins > 0 ? f.wins : row.total_wins;
+        f.feedback = f.feedback > 0 ? f.feedback : row.total_feedback;
       } else {
         // No manual row — create synthetic funnel from superhex
         const synthetic: DbWeeklyFunnel = {
@@ -326,10 +333,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           tam: 0,
           calls: row.calls_count,
           connects: row.connects_count,
-          ops: 0,
+          ops: row.total_ops,
           demos: row.total_demos,
           wins: row.total_wins,
-          feedback: 0,
+          feedback: row.total_feedback,
           submitted: false,
           submitted_at: null,
         };
@@ -343,6 +350,33 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       dbFunnels,
       (wRes.data ?? []) as DbWinEntry[]
     );
+
+    const touchedRows = (taRes.data ?? []) as DbMetricsTouchedAccounts[];
+    const touchByName = new Map<string, { touchedAccounts: number; touchedTam: number }>();
+    for (const row of touchedRows) {
+      const key = row.rep_name.toLowerCase().trim();
+      const existing = touchByName.get(key) ?? { touchedAccounts: 0, touchedTam: 0 };
+      existing.touchedAccounts += row.touched_accounts;
+      existing.touchedTam += row.tam;
+      touchByName.set(key, existing);
+    }
+    for (const team of t) {
+      for (const member of team.members) {
+        const touch = touchByName.get(member.name.toLowerCase().trim());
+        if (touch) {
+          member.touchedAccounts = touch.touchedAccounts;
+          member.touchedTam = touch.touchedTam;
+        }
+      }
+    }
+    for (const member of u) {
+      const touch = touchByName.get(member.name.toLowerCase().trim());
+      if (touch) {
+        member.touchedAccounts = touch.touchedAccounts;
+        member.touchedTam = touch.touchedTam;
+      }
+    }
+
     setTeams(t);
     setUnassignedMembers(u);
     setLoading(false);
@@ -506,7 +540,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
     const id = crypto.randomUUID();
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
-    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true };
+    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true, touchedAccounts: 0, touchedTam: 0 };
     setUnassignedMembers((prev) => [...prev, member]);
     supabase
       .from("members")
@@ -585,6 +619,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         ducksEarned: 0,
         funnelByWeek: {},
         isActive: true,
+        touchedAccounts: 0,
+        touchedTam: 0,
       };
 
       return prev.map((t) => {
@@ -620,6 +656,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         ducksEarned: 0,
         funnelByWeek: {},
         isActive: true,
+        touchedAccounts: 0,
+        touchedTam: 0,
       };
       setUnassignedMembers((um) => [...um, freshMember]);
 

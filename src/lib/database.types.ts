@@ -111,8 +111,10 @@ export interface DbSuperhex {
   total_activity_count: number;
   calls_count: number;
   connects_count: number;
+  total_ops: number;
   total_demos: number;
   total_wins: number;
+  total_feedback: number;
   created_at: string;
   updated_at: string;
 }
