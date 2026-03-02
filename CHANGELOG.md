@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-01 (Update Ops and Demos stat card icons and colors)
+
+### Location – Dashboard (`src/pages/Index.tsx`)
+
+**Rationale:** The Ops and Demos stat cards on the dashboard used generic icons (Target and TrendingUp) that didn't clearly communicate what each metric represents. Updated to more descriptive icons and swapped colors to better visually distinguish the cards.
+
+**Changes:**
+- Changed the Ops stat card icon from `Target` to `Handshake` and updated its color from orange (`text-primary`) to blue (`text-accent`).
+- Changed the Demos stat card icon from `TrendingUp` to `Video` and updated its color from blue (`text-accent`) to orange (`text-primary`).
+- Updated lucide-react imports accordingly (added `Handshake`, `Video`; removed unused `Target`).
+---
+
 ## 2026-03-01 (Replace TAM→Call with Touch Rate from metrics_touched_accounts)
 
 ### Location – Projects / Pilots (`src/pages/Index.tsx`), State Management (`src/contexts/TeamsContext.tsx`)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Target, Users, TrendingUp, TrendingDown, MessageCircle, Calendar } from "lucide-react";
+import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity } from "lucide-react";
 import { useTeams, type Team, type TeamMember, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ function formatDateRange(startDate: string | null, endDate: string | null): stri
   return end ? `${start} – ${end}` : start;
 }
 
-const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0 };
+const emptyFunnel: WeeklyFunnel = { tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0, activity: 0 };
 
 function getWeekKeys(count = 8): { key: string; label: string }[] {
   const weeks: { key: string; label: string }[] = [];
@@ -434,7 +434,8 @@ const Index = () => {
       .insert({
         id: memberId, name: newName.trim(),
         goal_calls: goals.calls, goal_ops: goals.ops,
-        goal_demos: goals.demos, goal_feedback: goals.feedback,
+        goal_demos: goals.demos, goal_wins: goals.wins,
+        goal_feedback: goals.feedback, goal_activity: goals.activity,
         team_id: activeTab, ducks_earned: 0, is_active: true,
       })
       .then();
@@ -724,6 +725,7 @@ const Index = () => {
                             demos: existing.demos,
                             wins: existing.wins,
                             feedback: existing.feedback,
+                            activity: existing.activity,
                             role: existing.role ?? null,
                             submitted: existing.submitted ?? false,
                             submitted_at: existing.submittedAt ?? null,
@@ -1021,6 +1023,9 @@ function TeamTab({
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const winsUp = currWeekWins >= prevWeekWins;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
+  const teamTotalOps = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'ops'), 0);
+  const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos'), 0);
+  const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback'), 0);
 
   const chartData = members.map((m) => ({
     name: m.name,
@@ -1137,13 +1142,33 @@ function TeamTab({
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <StatCard
+              icon={<Handshake className="h-5 w-5 text-accent" />}
+              label="Ops"
+              value={teamTotalOps}
+            />
+            <StatCard
+              icon={<Video className="h-5 w-5 text-primary" />}
+              label="Demos"
+              value={teamTotalDemos}
+            />
             <StatCard
               icon={winsUp
                 ? <TrendingUp className="h-5 w-5 text-accent" />
                 : <TrendingDown className="h-5 w-5 text-destructive" />}
-              label="Total Wins"
+              label="Wins"
               value={teamTotal}
+            />
+            <StatCard
+              icon={<MessageCircle className="h-5 w-5 text-primary" />}
+              label="Feedback"
+              value={teamTotalFeedback}
+            />
+            <StatCard
+              icon={<Activity className="h-5 w-5 text-accent" />}
+              label="Activity"
+              value={teamTotalActivity}
             />
           </div>
 
@@ -1197,6 +1222,7 @@ function TeamTab({
                           demos: current.demos,
                           wins: current.wins,
                           feedback: current.feedback,
+                          activity: current.activity,
                           role: current.role ?? null,
                           submitted: current.submitted ?? false,
                           submitted_at: current.submittedAt ?? null,
@@ -1288,6 +1314,10 @@ function TeamTab({
                           <label className="text-xs font-medium text-muted-foreground">Feedback</label>
                           <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
+                        <div>
+                          <label className="text-xs font-medium text-muted-foreground">Activity</label>
+                          <Input type="number" min={0} value={f.activity || ""} onChange={(e) => updateFunnel("activity", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                        </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                         <span>Call→Connect: <strong className="text-primary">{f.calls > 0 ? ((f.connects / f.calls) * 100).toFixed(0) : 0}%</strong></span>
@@ -1297,7 +1327,7 @@ function TeamTab({
                       <div className="mt-3 flex items-center justify-between">
                         {!f.submitted ? (
                           <>
-                            <p className="text-[10px] text-muted-foreground italic">⏰ Totals due by team meeting</p>
+                            <p className="text-[10px] text-muted-foreground italic">Any value entered in here will completely overwrite the value given by the report.</p>
                             <Button
                               size="sm"
                               onClick={() => {
@@ -1426,6 +1456,7 @@ function TeamTab({
                       { label: "Demo", key: "demos" },
                       { label: "Win", key: "wins" },
                       { label: "Feedback", key: "feedback" },
+                      { label: "Activity", key: "activity" },
                     ];
                     const alwaysShow = new Set<string>(["tam", "connects"]);
                     const metricRows = allMetricRows.filter(
@@ -1531,6 +1562,7 @@ function TeamTab({
                     { label: "Demo", key: "demos" },
                     { label: "Win", key: "wins" },
                     { label: "Feedback", key: "feedback" },
+                    { label: "Activity", key: "activity" },
                   ];
                   const alwaysShow = new Set<string>(["tam", "connects"]);
                   const metricRows = allMetricRows.filter(
@@ -1664,6 +1696,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
     Demo: "hsl(280, 50%, 58%)",
     Win: "hsl(24, 85%, 55%)",
     Feedback: "hsl(190, 55%, 50%)",
+    Activity: "hsl(60, 60%, 45%)",
   };
   const metricKeys: { key: keyof FunnelData; label: string }[] = [
     { key: "tam", label: "TAM" },
@@ -1673,6 +1706,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
     { key: "demos", label: "Demo" },
     { key: "wins", label: "Win" },
     { key: "feedback", label: "Feedback" },
+    { key: "activity", label: "Activity" },
   ];
 
   const weekKeyList = weeks.map((w) => w.key);
