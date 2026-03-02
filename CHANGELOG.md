@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-01 (Replace TAM→Call with Touch Rate from metrics_touched_accounts)
+
+### Location – Projects / Pilots (`src/pages/Index.tsx`), State Management (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** New Supabase tables (`metrics_touched_accounts`) now hold externally sourced TAM and touched-account data per rep. The old TAM→Call metric (which relied on manually submitted Total TAM divided across members and stored in `weekly_funnels`) needed to be replaced with the new Touch Rate metric (`touched_accounts / tam`) sourced from this table, while preserving the manual TAM input as a fallback for projects that don't yet have metrics data.
+
+**Changes:**
+- Added `touchedAccounts` and `touchedTam` fields to the `TeamMember` interface. These are populated by matching `metrics_touched_accounts.rep_name` to member names (case-insensitive) during data load.
+- `TeamsContext.loadAll()` now fetches `metrics_touched_accounts` from Supabase and assigns aggregated values to each team member after team assembly.
+- **Total TAM card**: When metrics data exists, displays a read-only row with Total TAM, Touched Accounts, Avg TAM (per rep), and Touch Rate. Falls back to the original manual input + Submit flow when no metrics data is present.
+- **Header conversion rate card**: Shows "Touch Rate" (touched_accounts / tam) when metrics data exists; falls back to "TAM→Call" (calls / totalTam) otherwise.
+- **Weekly Data grid TAM row**: Uses `m.touchedTam` per member when metrics data exists; falls back to `getCarriedTam()` (carried-forward per-week TAM from `weekly_funnels`).
+- **Weekly Data grid conversion rates**: First row becomes "Touch Rate" (Total column only, per-week shows "—") when metrics data exists; falls back to "TAM→Call %" with per-week calculations.
+- **Team Monthly Aggregate**: Same fallback pattern for TAM values and the first conversion rate row.
+- **Funnel Overview chart**: TAM data line uses `m.touchedTam` when available, otherwise `getCarriedTam()`.
+- **Funnel Overview per-player stats**: Shows "Touch Rate" or "TAM→Call" with matching calculation depending on data availability.
+- All fallback logic keyed on `hasMetricsTam = members.some(m => m.touchedTam > 0)` — consistent across all sections.
+---
+
 ## 2026-03-01 (Add total_ops & total_feedback to Superhex, Merge into Funnels)
 
 ### Location – Database (`supabase/migrations/`), Types (`src/lib/database.types.ts`), State Management (`src/contexts/TeamsContext.tsx`), Supabase
