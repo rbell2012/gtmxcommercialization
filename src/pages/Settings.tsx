@@ -35,7 +35,6 @@ import {
   type AcceleratorRule,
   type TeamGoalsByLevel,
   type GoalScopeConfig,
-  type GoalScope,
   DEFAULT_GOAL_SCOPE_CONFIG,
 } from "@/contexts/TeamsContext";
 import { useToast } from "@/hooks/use-toast";
@@ -427,11 +426,11 @@ const Settings = () => {
           )}
 
           <Dialog open={!!editTeamId} onOpenChange={(open) => !open && setEditTeamId(null)}>
-            <DialogContent className="bg-card border-border max-h-[85vh] overflow-y-auto">
+            <DialogContent className="bg-card border-border max-h-[85vh] max-w-5xl w-full flex flex-col overflow-hidden">
               <DialogHeader>
                 <DialogTitle className="font-display text-foreground">Edit Team</DialogTitle>
               </DialogHeader>
-              <div className="space-y-3 pt-2">
+              <div className="space-y-3 pt-2 overflow-y-auto flex-1 min-h-0 pr-1">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">Team Name</label>
                   <Input
@@ -547,9 +546,9 @@ const Settings = () => {
                                   ? 'bg-primary/15 border-primary/40 text-primary'
                                   : 'bg-muted/50 border-border/50 text-muted-foreground'
                               }`}
-                              title={editGoalScopeConfig[metric] === 'team' ? 'Team goal — sum of all members' : 'Individual goal — per rep'}
+                              title={editGoalScopeConfig[metric] === 'team' ? 'Team goal — sum of all members' : 'Self goal — per rep'}
                             >
-                              {editGoalScopeConfig[metric] === 'team' ? 'Team' : 'Indiv'}
+                              {editGoalScopeConfig[metric] === 'team' ? 'TEAM' : 'SELF'}
                             </button>
                           ) : (
                             <span className="text-[9px] text-muted-foreground w-9">—</span>
@@ -612,6 +611,7 @@ const Settings = () => {
                     actionOperator: '+',
                     actionValue: 0,
                     actionUnit: '%',
+                    scope: 'individual',
                   });
 
                   const getRules = (metric: GoalMetric): AcceleratorRule[] =>
@@ -715,6 +715,22 @@ const Settings = () => {
                                   <span className="text-muted-foreground font-medium">to Quota</span>
                                   <button
                                     type="button"
+                                    onClick={() =>
+                                      updateRule(metric, idx, {
+                                        scope: (rule.scope ?? 'individual') === 'individual' ? 'team' : 'individual',
+                                      })
+                                    }
+                                    className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border transition-colors shrink-0 ${
+                                      (rule.scope ?? 'individual') === 'team'
+                                        ? 'bg-primary/15 border-primary/40 text-primary'
+                                        : 'bg-muted/50 border-border/50 text-muted-foreground'
+                                    }`}
+                                    title={(rule.scope ?? 'individual') === 'team' ? 'Evaluates against team total' : 'Evaluates against individual rep'}
+                                  >
+                                    {(rule.scope ?? 'individual') === 'team' ? 'TEAM' : 'SELF'}
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => removeRule(metric, idx)}
                                     className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
                                     title="Remove rule"
@@ -737,6 +753,8 @@ const Settings = () => {
                   );
                 })()}
 
+              </div>
+              <div className="shrink-0 border-t border-border pt-3">
                 <Button onClick={saveEditTeam} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                   Save Changes
                 </Button>

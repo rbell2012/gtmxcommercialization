@@ -26,6 +26,7 @@ export interface AcceleratorRule {
   actionOperator: '+' | '-' | '*';
   actionValue: number;
   actionUnit: '%' | '#';
+  scope?: GoalScope;
 }
 
 export type AcceleratorConfig = Partial<Record<GoalMetric, AcceleratorRule[]>>;

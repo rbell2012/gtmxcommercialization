@@ -805,11 +805,17 @@ const Index = () => {
                       <thead>
                         <tr className="border-b border-border">
                           <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                          {visibleMetrics.map((metric) => (
-                            <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
-                              {GOAL_METRIC_LABELS[metric]}
-                            </th>
-                          ))}
+                          {visibleMetrics.map((metric) => {
+                            const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
+                            return (
+                              <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
+                                {GOAL_METRIC_LABELS[metric]}
+                                {isTeamScope && (
+                                  <span className="block text-[8px] font-bold text-primary/60 normal-case tracking-normal">(team)</span>
+                                )}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody>
@@ -828,8 +834,9 @@ const Index = () => {
                               </div>
                             </td>
                             {visibleMetrics.map((metric, metricIdx) => {
-                              const actual = getMemberMetricTotal(m, metric, referenceDate);
+                              const actual = getScopedMetricTotal(team, m, metric, referenceDate);
                               const goal = getEffectiveGoal(team, m, metric);
+                              const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
                               const pct = goal > 0 ? (actual / goal) * 100 : 0;
                               const barPct = Math.min(pct, 100);
                               return (
@@ -838,6 +845,9 @@ const Index = () => {
                                     <span className="text-xs font-semibold text-foreground tabular-nums">
                                       {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
                                     </span>
+                                    {isTeamScope && (
+                                      <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+                                    )}
                                     <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                                       <div
                                         className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
@@ -868,7 +878,7 @@ const Index = () => {
                                   <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">{m.name}</span>
                                 </td>
                                 {visibleMetrics.map((metric, metricIdx) => {
-                                  const actual = getMemberMetricTotal(m, metric, referenceDate);
+                                  const actual = getScopedMetricTotal(team, m, metric, referenceDate);
                                   const goal = getEffectiveGoal(team, m, metric);
                                   const pct = goal > 0 ? (actual / goal) * 100 : 0;
                                   const barPct = Math.min(pct, 100);

@@ -95,6 +95,13 @@ export function getBusinessDaysRemaining(teamEndDate: string | null, referenceDa
   return count;
 }
 
+function getAccelMetricTotal(team: Team, member: TeamMember, metric: GoalMetric, rule: AcceleratorRule, referenceDate?: Date): number {
+  const scope = rule.scope ?? 'individual';
+  return scope === 'team'
+    ? getTeamMetricTotal(team, metric, referenceDate)
+    : getMemberMetricTotal(member, metric, referenceDate);
+}
+
 function evaluateCondition(rule: AcceleratorRule, current: number): boolean {
   switch (rule.conditionOperator) {
     case '>':
@@ -145,9 +152,9 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
   for (const metric of GOAL_METRICS) {
     const rules = team.acceleratorConfig[metric];
     if (!rules || rules.length === 0) continue;
-    const current = getScopedMetricTotal(team, member, metric, referenceDate);
     for (const rule of rules) {
       if (!rule.enabled) continue;
+      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         quota = applyAction(rule, quota);
       }
@@ -165,9 +172,9 @@ export function countTriggeredAccelerators(team: Team, member: TeamMember, refer
   for (const metric of GOAL_METRICS) {
     const rules = team.acceleratorConfig[metric];
     if (!rules || rules.length === 0) continue;
-    const current = getScopedMetricTotal(team, member, metric, referenceDate);
     for (const rule of rules) {
       if (!rule.enabled) continue;
+      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) count++;
     }
   }
@@ -214,9 +221,9 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
   for (const metric of GOAL_METRICS) {
     const rules = team.acceleratorConfig[metric];
     if (!rules || rules.length === 0) continue;
-    const current = getScopedMetricTotal(team, member, metric, referenceDate);
     for (const rule of rules) {
       if (!rule.enabled) continue;
+      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         const before = quota;
         quota = applyAction(rule, quota);
@@ -239,9 +246,9 @@ export function getTriggeredAcceleratorDetails(team: Team, member: TeamMember, r
   for (const metric of GOAL_METRICS) {
     const rules = team.acceleratorConfig[metric];
     if (!rules || rules.length === 0) continue;
-    const current = getScopedMetricTotal(team, member, metric, referenceDate);
     for (const rule of rules) {
       if (!rule.enabled) continue;
+      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         results.push({ metric, currentValue: current, rule });
       }

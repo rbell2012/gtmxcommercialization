@@ -9,7 +9,7 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getMemberMetricTotal, getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, computeQuotaBreakdown, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -215,9 +215,44 @@ function TeamQuotaCard({
   );
 }
 
+function formatCondition(rule: AcceleratorRule): string {
+  if (rule.conditionOperator === "between") {
+    return `between ${rule.conditionValue1} and ${rule.conditionValue2 ?? rule.conditionValue1}`;
+  }
+  return `${rule.conditionOperator} ${rule.conditionValue1}`;
+}
+
 function formatAction(rule: AcceleratorRule): string {
   const unit = rule.actionUnit === "%" ? "%" : "";
   return `${rule.actionOperator}${rule.actionValue}${unit} to quota`;
+}
+
+function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
+  const label = GOAL_METRIC_LABELS[detail.metric];
+  const scope = detail.rule.scope ?? 'individual';
+  return (
+    <div className="text-xs leading-relaxed">
+      <div className="flex items-center gap-1.5 mb-1">
+        <p className="font-semibold">{label} Accelerator</p>
+        <span
+          className={`text-[8px] font-bold uppercase tracking-wider rounded px-1 py-px border ${
+            scope === 'team'
+              ? 'bg-primary/15 border-primary/40 text-primary'
+              : 'bg-muted/50 border-border/50 text-muted-foreground'
+          }`}
+        >
+          {scope === 'team' ? 'TEAM' : 'SELF'}
+        </span>
+      </div>
+      <p className="text-muted-foreground">
+        {label} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+        {" "}({formatCondition(detail.rule)})
+      </p>
+      <p className="text-muted-foreground mt-0.5">
+        Effect: <span className="font-semibold text-foreground">{formatAction(detail.rule)}</span>
+      </p>
+    </div>
+  );
 }
 
 function QuotaBreakdownTooltip({ breakdown }: { breakdown: QuotaBreakdown }) {
@@ -245,16 +280,30 @@ function QuotaBreakdownTooltip({ breakdown }: { breakdown: QuotaBreakdown }) {
       </div>
       {breakdown.acceleratorSteps.length > 0 && (
         <>
-          {breakdown.acceleratorSteps.map((step, i) => (
-            <div key={i} className="flex justify-between gap-4 text-muted-foreground mt-0.5">
-              <span>{GOAL_METRIC_LABELS[step.metric]} accel</span>
-              <span>
-                <span className="font-semibold text-foreground">{formatAction(step.rule)}</span>
-                {" \u2192 "}
-                <span className="font-semibold text-foreground">{step.quotaAfter.toFixed(1)}%</span>
-              </span>
-            </div>
-          ))}
+          {breakdown.acceleratorSteps.map((step, i) => {
+            const ruleScope = step.rule.scope ?? 'individual';
+            return (
+              <div key={i} className="flex justify-between gap-4 text-muted-foreground mt-0.5">
+                <span className="flex items-center gap-1">
+                  {GOAL_METRIC_LABELS[step.metric]} accel
+                  <span
+                    className={`text-[7px] font-bold uppercase rounded px-0.5 border leading-tight ${
+                      ruleScope === 'team'
+                        ? 'bg-primary/15 border-primary/40 text-primary'
+                        : 'bg-muted/50 border-border/50 text-muted-foreground'
+                    }`}
+                  >
+                    {ruleScope === 'team' ? 'TM' : 'SF'}
+                  </span>
+                </span>
+                <span>
+                  <span className="font-semibold text-foreground">{formatAction(step.rule)}</span>
+                  {" \u2192 "}
+                  <span className="font-semibold text-foreground">{step.quotaAfter.toFixed(1)}%</span>
+                </span>
+              </div>
+            );
+          })}
         </>
       )}
       <div className="my-1.5 border-t border-border" />
@@ -282,6 +331,7 @@ function MemberQuotaRow({
   const quotaPct = computeQuota(team, member, referenceDate);
   const quotaBreakdown = computeQuotaBreakdown(team, member, referenceDate);
   const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
+  const triggeredDetails = getTriggeredAcceleratorDetails(team, member, referenceDate);
   const quotaColor = quotaPct > 100 ? '#006400' : undefined;
   const quotaColorClass = quotaPct > 100 ? '' : 'text-primary';
 
@@ -317,18 +367,27 @@ function MemberQuotaRow({
               {Array.from({ length: Math.min(triggeredCount, 3) }, (_, i) => {
                 const tier = i + 1;
                 const isMax = tier === 3;
+                const detail = triggeredDetails[i];
                 return (
-                  <span
-                    key={tier}
-                    className={`inline-flex items-center gap-px text-xs font-bold ${quotaColorClass}`}
-                    style={quotaColor ? { color: quotaColor } : undefined}
-                  >
-                    {isMax ? (
-                      <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
-                    ) : (
-                      <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                  <Tooltip key={tier}>
+                    <TooltipTrigger asChild>
+                      <span
+                        className={`inline-flex items-center gap-px text-xs font-bold cursor-help ${quotaColorClass}`}
+                        style={quotaColor ? { color: quotaColor } : undefined}
+                      >
+                        {isMax ? (
+                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                        ) : (
+                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                        )}
+                      </span>
+                    </TooltipTrigger>
+                    {detail && (
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <AcceleratorTooltip detail={detail} />
+                      </TooltipContent>
                     )}
-                  </span>
+                  </Tooltip>
                 );
               })}
             </div>

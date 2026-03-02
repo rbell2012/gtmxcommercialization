@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-03-02 (Goal scope — Self vs Team goals & accelerators)
+
+### Location – Settings (`src/pages/Settings.tsx`), Quota (`src/pages/Quota.tsx`), Pilots/Index (`src/pages/Index.tsx`), Helpers (`src/lib/quota-helpers.ts`), Context (`src/contexts/TeamsContext.tsx`), DB Types (`src/lib/database.types.ts`), Migration (`supabase/migrations/20250302000000_add_goal_scope_config.sql`)
+
+**Rationale:** Goals and accelerators previously had no way to distinguish between an individual rep target and a shared team target. Users needed the ability to configure each metric as either a "Self" goal (measured per rep) or a "Team" goal (summing all active members), and the same flexibility for each accelerator rule's evaluation.
+
+**Changes:**
+- Added `GoalScope` type (`'individual' | 'team'`), `GoalScopeConfig`, and `DEFAULT_GOAL_SCOPE_CONFIG` to `TeamsContext.tsx`. Added `goalScopeConfig` to the `Team` interface.
+- Added optional `scope?: GoalScope` field to `AcceleratorRule` interface so each accelerator rule can independently evaluate against individual or team totals.
+- Updated `database.types.ts` with `goal_scope_config` on `DbTeam`. Created and applied Supabase migration adding the `goal_scope_config` jsonb column to the `teams` table with all-individual defaults.
+- Updated `assembleTeams`, `updateTeam`, and `addTeam` in `TeamsContext.tsx` to read, persist, and initialize the new field.
+- Added `getTeamMetricTotal()`, `getScopedMetricTotal()`, and `getAccelMetricTotal()` helpers in `quota-helpers.ts`.
+- Updated `getEffectiveGoal()` so team-scoped metrics return the raw team/level goal without parity splitting.
+- Updated `computeQuota`, `computeQuotaBreakdown`, `countTriggeredAccelerators`, and `getTriggeredAcceleratorDetails` to use per-rule scope for accelerators and per-metric scope for goals.
+- Added a clickable **SELF / TEAM** toggle button per metric in the Monthly Goals section of the Edit Team dialog in Settings.
+- Added a **SELF / TEAM** toggle button per accelerator rule in the Accelerator section of the Edit Team dialog.
+- Quota page and Pilots/Index page column headers now show a "(team)" label for team-scoped metrics, and metric cells display a "Team" badge when showing summed values.
+- Restored hover tooltips on accelerator lock icons on the Quota page with full detail (metric, current value, condition, effect) plus a **SELF / TEAM** badge showing the rule's scope.
+- Added compact scope badges (**TM** / **SF**) to accelerator steps in the Quota Breakdown tooltip on the quota percentage.
+---
+
+## 2026-03-02 (Edit Team modal width and sticky Save button)
+
+### Location – Settings (`src/pages/Settings.tsx`)
+
+**Rationale:** The Edit Team modal was narrower than the rest of the Settings page content, making the dense goals and accelerator sections feel cramped. Additionally, when scrolling through a team with many settings, the "Save Changes" button disappeared off-screen, forcing users to scroll all the way down to save.
+
+**Changes:**
+- Widened the Edit Team `DialogContent` from the default `max-w-lg` (512px) to `max-w-5xl w-full` (1024px), matching the width of the Teams/Members section headers on the Settings page.
+- Restructured the modal layout to use `flex flex-col overflow-hidden` so the scrollable content and footer are separate regions.
+- Moved the scrollable `overflow-y-auto` from the `DialogContent` to the inner form content div with `flex-1 min-h-0` so only the form scrolls.
+- Pulled the "Save Changes" button into a `shrink-0` footer with a `border-t` separator, keeping it anchored and always visible at the bottom of the modal regardless of scroll position.
+---
+
 ## 2026-03-02 (Fix accelerators not applied to quota & remove icon hover tooltips)
 
 ### Location – Quota (`src/pages/Quota.tsx`), Helpers (`src/lib/quota-helpers.ts`)
