@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-02 (Scope team header conversion rates to selected month)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`)
+
+**Rationale:** The team header conversion rates (Call→Connect, Connect→Demo, Demo→Win) were summing calls, connects, and demos over a rolling 8-week window (`getWeekKeys(8)`) instead of the month selected in the test-phase dropdown. This meant the rates mixed data from two different months and didn't match the month-scoped wins, ops, demos, feedback, and activity stats shown directly below. For example, in March with only 2 wins and no calls/connects/demos, the rates still showed values carried over from February.
+
+**Changes:**
+- Replaced the `getWeekKeys(8)` rolling-window approach in the Monthly Conversion Rates block of `TeamTab` with a month-prefix filter that only includes weeks whose Monday falls in the selected month (`referenceDate`).
+- Calls, connects, and demos totals now use the same `YYYY-MM-` prefix filtering that `getMemberTotalWins` and `getMemberMetricTotal` already use, ensuring all four conversion rate boxes reflect the same month.
+---
+
 ## 2026-03-02 (Help page updated with latest features)
 
 ### Location – Help page (`src/pages/Help.tsx`)

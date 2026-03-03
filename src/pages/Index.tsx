@@ -1198,11 +1198,15 @@ function TeamTab({
               )}
               {/* Monthly Conversion Rates */}
               {(() => {
-                const allWeeks = getWeekKeys(8);
+                const now = referenceDate ?? new Date();
+                  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+                  const monthSum = (field: 'calls' | 'connects' | 'demos') =>
+                    members.reduce((s, m) => Object.entries(m.funnelByWeek || {}).reduce(
+                      (ws, [wk, f]) => wk.startsWith(monthPrefix) ? ws + (f[field] || 0) : ws, 0) + s, 0);
                   const totals = {
-                    calls: members.reduce((s, m) => allWeeks.reduce((ws, w) => ws + getMemberFunnel(m, w.key).calls, 0) + s, 0),
-                    connects: members.reduce((s, m) => allWeeks.reduce((ws, w) => ws + getMemberFunnel(m, w.key).connects, 0) + s, 0),
-                    demos: members.reduce((s, m) => allWeeks.reduce((ws, w) => ws + getMemberFunnel(m, w.key).demos, 0) + s, 0),
+                    calls: monthSum('calls'),
+                    connects: monthSum('connects'),
+                    demos: monthSum('demos'),
                     wins: teamTotal,
                   };
                   return (
