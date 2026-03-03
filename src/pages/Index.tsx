@@ -1032,6 +1032,8 @@ function TeamTab({
   const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
   const [repOverrideWeek, setRepOverrideWeek] = useState(currentWeek);
+  const isPastWeek = repOverrideWeek < currentWeek;
+  const [unlockedPastEdits, setUnlockedPastEdits] = useState<Set<string>>(new Set());
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogName, setEditDialogName] = useState("");
   const [editDialogTarget, setEditDialogTarget] = useState<{ memberId: string; weekKey: string } | null>(null);
@@ -1039,51 +1041,56 @@ function TeamTab({
   const confirmEditSubmission = () => {
     if (!editDialogName.trim() || !editDialogTarget) return;
     const { memberId, weekKey } = editDialogTarget;
-    updateTeam(team.id, (t) => ({
-      ...t,
-      members: t.members.map((mem) =>
-        mem.id === memberId
-          ? {
-              ...mem,
-              funnelByWeek: {
-                ...mem.funnelByWeek,
-                [weekKey]: {
-                  ...getMemberFunnel(mem, weekKey),
-                  submitted: false,
-                  submittedAt: undefined,
+    const member = team.members.find((x) => x.id === memberId)!;
+    const funnelData = getMemberFunnel(member, weekKey);
+    const wasSubmitted = funnelData.submitted;
+
+    if (wasSubmitted) {
+      updateTeam(team.id, (t) => ({
+        ...t,
+        members: t.members.map((mem) =>
+          mem.id === memberId
+            ? {
+                ...mem,
+                funnelByWeek: {
+                  ...mem.funnelByWeek,
+                  [weekKey]: {
+                    ...getMemberFunnel(mem, weekKey),
+                    submitted: false,
+                    submittedAt: undefined,
+                  },
                 },
-              },
-            }
-          : mem
-      ),
-    }));
-    const funnelData = getMemberFunnel(
-      team.members.find((x) => x.id === memberId)!,
-      weekKey,
-    );
-    dbMutate(
-      supabase
-        .from("weekly_funnels")
-        .upsert(
-          {
-            member_id: memberId,
-            week_key: weekKey,
-            tam: funnelData.tam,
-            calls: funnelData.calls,
-            connects: funnelData.connects,
-            ops: funnelData.ops,
-            demos: funnelData.demos,
-            wins: funnelData.wins,
-            feedback: funnelData.feedback,
-            activity: funnelData.activity,
-            role: funnelData.role ?? null,
-            submitted: false,
-            submitted_at: null,
-          },
-          { onConflict: "member_id,week_key" }
+              }
+            : mem
         ),
-      "unlock funnel",
-    );
+      }));
+      dbMutate(
+        supabase
+          .from("weekly_funnels")
+          .upsert(
+            {
+              member_id: memberId,
+              week_key: weekKey,
+              tam: funnelData.tam,
+              calls: funnelData.calls,
+              connects: funnelData.connects,
+              ops: funnelData.ops,
+              demos: funnelData.demos,
+              wins: funnelData.wins,
+              feedback: funnelData.feedback,
+              activity: funnelData.activity,
+              role: funnelData.role ?? null,
+              submitted: false,
+              submitted_at: null,
+            },
+            { onConflict: "member_id,week_key" }
+          ),
+        "unlock funnel",
+      );
+    }
+
+    setUnlockedPastEdits((prev) => new Set(prev).add(`${memberId}:${weekKey}`));
+
     dbMutate(
       supabase
         .from("funnel_edit_log")
@@ -1792,8 +1799,9 @@ function TeamTab({
                     }));
                     upsertFunnelField({ role: val });
                   };
+                  const isLocked = f.submitted || (isPastWeek && !unlockedPastEdits.has(`${m.id}:${repOverrideWeek}`));
                   return (
-                    <div key={m.id} className={`rounded-md p-3 ${f.submitted ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/20'}`}>
+                    <div key={m.id} className={`rounded-md p-3 ${isLocked ? 'bg-primary/10 border border-primary/30' : 'bg-secondary/20'}`}>
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-sm font-semibold text-foreground">{m.name}</p>
                         {f.submitted && (
@@ -1803,7 +1811,7 @@ function TeamTab({
                         )}
                       </div>
                       <div className="mb-2 flex items-center gap-2">
-                        <Select value={role || ""} onValueChange={updateRole} disabled={f.submitted}>
+                        <Select value={role || ""} onValueChange={updateRole} disabled={isLocked}>
                           <SelectTrigger className="h-8 w-full sm:w-48 bg-background border-border/50 text-foreground text-xs">
                             <SelectValue placeholder="Select role this week" />
                           </SelectTrigger>
@@ -1833,31 +1841,31 @@ function TeamTab({
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Cx Called</label>
-                          <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.calls || ""} onChange={(e) => updateFunnel("calls", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Connects</label>
-                          <Input type="number" min={0} value={f.connects || ""} onChange={(e) => updateFunnel("connects", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.connects || ""} onChange={(e) => updateFunnel("connects", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Ops</label>
-                          <Input type="number" min={0} value={f.ops || ""} onChange={(e) => updateFunnel("ops", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.ops || ""} onChange={(e) => updateFunnel("ops", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Demos</label>
-                          <Input type="number" min={0} value={f.demos || ""} onChange={(e) => updateFunnel("demos", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.demos || ""} onChange={(e) => updateFunnel("demos", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Wins</label>
-                          <Input type="number" min={0} value={f.wins || ""} onChange={(e) => updateFunnel("wins", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.wins || ""} onChange={(e) => updateFunnel("wins", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Feedback</label>
-                          <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.feedback || ""} onChange={(e) => updateFunnel("feedback", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                         <div>
                           <label className="text-xs font-medium text-muted-foreground">Activity</label>
-                          <Input type="number" min={0} value={f.activity || ""} onChange={(e) => updateFunnel("activity", e.target.value)} disabled={f.submitted} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
+                          <Input type="number" min={0} value={f.activity || ""} onChange={(e) => updateFunnel("activity", e.target.value)} disabled={isLocked} className="h-8 bg-background border-border/50 text-foreground text-sm disabled:opacity-60" />
                         </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -1866,7 +1874,7 @@ function TeamTab({
                         <span>Demo→Win: <strong className="text-primary">{f.demos > 0 ? ((f.wins / f.demos) * 100).toFixed(0) : 0}%</strong></span>
                       </div>
                       <div className="mt-3 flex items-center justify-between">
-                        {!f.submitted ? (
+                        {!isLocked ? (
                           <>
                             <p className="text-[10px] text-muted-foreground italic">Any value entered in here will completely overwrite the value given by the report.</p>
                             <Button

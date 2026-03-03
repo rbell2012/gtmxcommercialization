@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-02 (Lock all past-week rep overrides behind name-entry dialog)
+
+### Location – Pilots/Index (`src/pages/Index.tsx`)
+
+**Rationale:** The "Edit Submission" name-entry dialog only appeared when re-opening an already-submitted week. Past weeks that had never been submitted were still fully editable without any audit trail, creating an accountability gap — anyone could silently alter historical data.
+
+**Changes:**
+- Added `isPastWeek` derived flag (`repOverrideWeek < currentWeek`) and an `unlockedPastEdits` state set to track which member+week combos have been explicitly unlocked via the name dialog.
+- Computed a per-member `isLocked` flag: `f.submitted || (isPastWeek && !unlocked)`. All input fields, the role selector, card styling, and the Submit/Edit button now use `isLocked` instead of `f.submitted`.
+- Past weeks that were never submitted now appear locked with the "Edit Submission" button, identical to submitted weeks. Clicking it opens the same name-entry confirmation dialog and logs the edit to the `funnel_edit_log` table.
+- `confirmEditSubmission` now conditionally skips the `submitted: false` database write when the week was not previously submitted (no-op on the submitted flag), while still logging the audit entry and adding the member+week to the unlocked set.
+---
+
 ## 2026-03-02 (Scope team header conversion rates to selected month)
 
 ### Location – Pilots/Index (`src/pages/Index.tsx`)
