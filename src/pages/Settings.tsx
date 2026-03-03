@@ -516,8 +516,9 @@ const Settings = () => {
                   <div className="flex">
                     {/* Sticky left: toggles + metric names + scope */}
                     <div className="shrink-0 border-r border-border/50">
-                      <div className="h-7 flex items-center px-1 gap-4">
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Metric</span>
+                      <div className="h-7 flex items-center gap-1.5">
+                        <span className="w-11 shrink-0" />
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-14">Metric</span>
                         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scope</span>
                       </div>
                       {GOAL_METRICS.map((metric) => (

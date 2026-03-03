@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-03 (Quota Page Column Alignment)
+
+### Location – Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** Columns across different project cards on the Quota page were not horizontally aligned with each other. Teams with more columns had narrower columns, and teams with fewer columns had wider ones, making it impossible to visually compare metrics across projects at a glance.
+
+**Changes:**
+- Changed the team quota table from `w-full` (stretch to fill card) to `table-fixed` with an explicit computed width (`160px + n × 140px`) so the table is exactly as wide as its columns require and never stretches.
+- Set the **Member column** to a fixed `w-[160px]` on both `<th>` and `<td>` elements, ensuring the first metric column always starts at the same horizontal position across all project cards.
+- Set each **metric column** to a fixed `w-[140px]` on both `<th>` and `<td>` elements, ensuring uniform column spacing regardless of how many metrics a team has enabled.
+- The `overflow-x-auto` wrapper was retained so that teams with more than 5 columns scroll horizontally rather than compressing columns.
+
+---
+
 ## 2026-03-03 (Wins Icon Always Up)
 
 ### Location – Project Pages (`src/pages/Index.tsx`)
