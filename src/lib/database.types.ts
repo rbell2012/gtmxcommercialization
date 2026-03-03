@@ -175,6 +175,7 @@ export interface DbMetricsWins {
   name: string;
   gtmx_team: string;
   source: string;
+  salesforce_accountid: string;
   created_at: string;
   updated_at: string;
 }
@@ -217,6 +218,30 @@ export interface DbMetricsFeedback {
   source: string;
   feedback_completed: number;
   chorus_comments: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsMainDetailed {
+  id: string;
+  rep_name: string;
+  customer_name: string;
+  total_activities: number;
+  first_call_date: string | null;
+  first_connect_date: string | null;
+  first_demo_date: string | null;
+  first_activity_date: string | null;
+  latest_activity_date: string | null;
+  chorus_link: string;
+  win_date: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbRevxImpactValue {
+  id: string;
+  team_id: string;
+  value_per_win: number;
   created_at: string;
   updated_at: string;
 }
