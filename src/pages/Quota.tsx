@@ -197,10 +197,10 @@ function TeamQuotaCard({
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="table-fixed text-sm" style={{ width: `${160 + visibleMetrics.length * 140}px` }}>
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[160px]">
                   Member
                 </th>
                 {visibleMetrics.map((metric) => {
@@ -208,7 +208,7 @@ function TeamQuotaCard({
                   return (
                     <th
                       key={metric}
-                      className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[90px]"
+                      className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[140px]"
                     >
                       {GOAL_METRIC_LABELS[metric]}
                       {isTeamScope && (
@@ -353,7 +353,7 @@ function MemberQuotaRow({
 
   return (
     <tr className="border-b border-border/30">
-      <td className="py-3 pr-3">
+      <td className="py-3 pr-3 w-[160px]">
         <div className="flex flex-col items-start">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground whitespace-nowrap">{member.name}</span>
@@ -418,7 +418,7 @@ function MemberQuotaRow({
         const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
 
         return (
-          <td key={metric} className="py-3 px-2">
+          <td key={metric} className="py-3 px-2 w-[140px]">
             <div className="flex flex-col items-center gap-1">
               <span className="text-xs font-semibold text-foreground tabular-nums">
                 {current} <span className="text-muted-foreground font-normal">/</span> {goal}
