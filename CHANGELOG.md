@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-03 (Wins Icon Always Up)
+
+### Location – Project Pages (`src/pages/Index.tsx`)
+
+**Rationale:** The wins metric is a positive indicator and should always be represented with an upward-trending arrow, regardless of week-over-week comparison, to reinforce momentum and avoid confusion.
+
+**Changes:**
+- Updated the **Wins StatCard icon** in the member stats view to always render `TrendingUp` (green accent) instead of conditionally switching between `TrendingUp` and `TrendingDown` based on `lifetimeWinsUp`.
+- Updated the **Wins StatCard icon** in the team stats view to always render `TrendingUp` instead of conditionally switching based on `winsUp`.
+- Removed the now-unused `lifetimeWinsUp` and `winsUp` variables.
+- Removed the unused `TrendingDown` import from `lucide-react`.
+
+---
+
 ## 2026-03-03 (RevX Impact section on Data & Findings)
 
 ### Location – Data & Findings (`src/pages/Data.tsx`), Database (`src/lib/database.types.ts`, `supabase/migrations/20250303300000_create_revx_impact_values.sql`)

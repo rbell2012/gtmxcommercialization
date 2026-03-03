@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale } from "lucide-react";
+import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -681,7 +681,6 @@ const Index = () => {
           const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
           const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects'), 0);
           const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos'), 0);
-          const lifetimeWinsUp = lifetimeWins >= 0;
           return (
             <div className="mb-4 rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
               <div className="mb-3 flex items-center gap-2">
@@ -740,9 +739,7 @@ const Index = () => {
                   value={lifetimeDemos}
                 />
                 <StatCard
-                  icon={lifetimeWinsUp
-                    ? <TrendingUp className="h-5 w-5 text-accent" />
-                    : <TrendingDown className="h-5 w-5 text-destructive" />}
+                  icon={<TrendingUp className="h-5 w-5 text-accent" />}
                   label="Wins"
                   value={lifetimeWins}
                 />
@@ -1122,7 +1119,6 @@ function TeamTab({
   const currWeekKey = recentWeeks[1].key;
   const currWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, currWeekKey).wins, 0);
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
-  const winsUp = currWeekWins >= prevWeekWins;
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
   const teamTotalOps = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'ops', referenceDate), 0);
   const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos', referenceDate), 0);
@@ -1280,9 +1276,7 @@ function TeamTab({
                 value={teamTotalDemos}
               />
               <StatCard
-                icon={winsUp
-                  ? <TrendingUp className="h-5 w-5 text-accent" />
-                  : <TrendingDown className="h-5 w-5 text-destructive" />}
+                icon={<TrendingUp className="h-5 w-5 text-accent" />}
                 label="Wins"
                 value={teamTotal}
               />
