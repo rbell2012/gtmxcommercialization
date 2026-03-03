@@ -153,6 +153,39 @@ function getTeamMonthKeys(teamWeeks: { key: string; label: string }[]): { key: s
   return Array.from(monthMap.values()).map((m) => ({ ...m, colSpan: m.weekKeys.length }));
 }
 
+type TableCol =
+  | { type: "week"; key: string; label: string }
+  | { type: "month"; key: string; label: string; weekKeys: string[] };
+
+function buildInterleavedColumns(teamWeeks: { key: string; label: string }[]): TableCol[] {
+  const cols: TableCol[] = [];
+  let currentMonthKey = "";
+  let currentMonthWeeks: string[] = [];
+  let currentMonthLabel = "";
+
+  for (let i = 0; i < teamWeeks.length; i++) {
+    const w = teamWeeks[i];
+    const d = new Date(w.key + "T00:00:00");
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+    if (currentMonthKey && monthKey !== currentMonthKey) {
+      cols.push({ type: "month", key: currentMonthKey, label: currentMonthLabel, weekKeys: [...currentMonthWeeks] });
+      currentMonthWeeks = [];
+    }
+
+    currentMonthKey = monthKey;
+    currentMonthLabel = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+    cols.push({ type: "week", key: w.key, label: w.label });
+    currentMonthWeeks.push(w.key);
+  }
+
+  if (currentMonthWeeks.length > 0) {
+    cols.push({ type: "month", key: currentMonthKey, label: currentMonthLabel, weekKeys: [...currentMonthWeeks] });
+  }
+
+  return cols;
+}
+
 const Duck = ({ size = 24 }: { size?: number }) => (
   <span style={{ fontSize: size }} role="img" aria-label="duck">
     🦆
@@ -1028,6 +1061,7 @@ function TeamTab({
   const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
   const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
   const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
+  const interleavedCols = buildInterleavedColumns(teamWeeks);
   const [repOverrideWeek, setRepOverrideWeek] = useState(currentWeek);
   const isPastWeek = repOverrideWeek < currentWeek;
   const [unlockedPastEdits, setUnlockedPastEdits] = useState<Set<string>>(new Set());
@@ -1469,9 +1503,13 @@ function TeamTab({
                 <tr className="border-b border-border">
                   <th ref={playerColRef} className="sticky left-0 z-30 bg-card text-left py-2 pl-5 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Player</th>
                   <th className="sticky z-20 bg-card text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}>Metric</th>
-                  {teamWeeks.map((w) => (
-                    <th key={w.key} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{w.label}</th>
-                  ))}
+                  {interleavedCols.map((col) =>
+                    col.type === "week" ? (
+                      <th key={col.key} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{col.label}</th>
+                    ) : (
+                      <th key={`mo-${col.key}`} className="text-center py-2 px-2 text-xs font-bold text-foreground uppercase tracking-wider whitespace-nowrap bg-muted/60">{col.label}</th>
+                    )
+                  )}
                   <th className="sticky right-0 z-10 bg-card text-center py-2 pl-2 pr-5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</th>
                 </tr>
               </thead>
@@ -1518,13 +1556,23 @@ function TeamTab({
                             </td>
                           )}
                           <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
-                          {weeks.map((w) => {
-                            const val = met.key === "tam"
-                              ? (hasMetricsTam ? m.touchedTam : getCarriedTam(m, w.key, weekKeyList))
-                              : getMemberFunnel(m, w.key)[met.key];
+                          {interleavedCols.map((col) => {
+                            if (col.type === "week") {
+                              const val = met.key === "tam"
+                                ? (hasMetricsTam ? m.touchedTam : getCarriedTam(m, col.key, weekKeyList))
+                                : getMemberFunnel(m, col.key)[met.key];
+                              return (
+                                <td key={col.key} className="text-center py-1 px-2 text-foreground tabular-nums">
+                                  {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
+                                </td>
+                              );
+                            }
+                            const moVal = met.key === "tam"
+                              ? (hasMetricsTam ? m.touchedTam : getCarriedTam(m, col.weekKeys[col.weekKeys.length - 1], weekKeyList))
+                              : col.weekKeys.reduce((s, wk) => s + getMemberFunnel(m, wk)[met.key], 0);
                             return (
-                              <td key={w.key} className="text-center py-1 px-2 text-foreground tabular-nums">
-                                {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
+                              <td key={`mo-${col.key}`} className="text-center py-1 px-2 font-semibold text-foreground tabular-nums bg-muted/30">
+                                {moVal > 0 ? moVal : <span className="text-muted-foreground/40">—</span>}
                               </td>
                             );
                           })}
@@ -1540,22 +1588,34 @@ function TeamTab({
                           <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
                           {cr.touchRate ? (
                             <>
-                              {weeks.map((w) => (
-                                <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                              {interleavedCols.map((col) => (
+                                <td key={col.type === "week" ? col.key : `mo-${col.key}`} className={`text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold ${col.type === "month" ? "bg-muted/30" : ""}`}>
                                   <span className="text-muted-foreground/40">—</span>
                                 </td>
                               ))}
                             </>
-                          ) : weeks.map((w) => {
-                            const f = getMemberFunnel(m, w.key);
-                            const den = cr.denKey === "tam"
-                              ? getCarriedTam(m, w.key, weekKeyList)
-                              : f[cr.denKey!];
-                            const num = f[cr.numKey!];
-                            const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
+                          ) : interleavedCols.map((col) => {
+                            if (col.type === "week") {
+                              const f = getMemberFunnel(m, col.key);
+                              const den = cr.denKey === "tam"
+                                ? getCarriedTam(m, col.key, weekKeyList)
+                                : f[cr.denKey!];
+                              const num = f[cr.numKey!];
+                              const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
+                              return (
+                                <td key={col.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                                  {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
+                                </td>
+                              );
+                            }
+                            const moDen = cr.denKey === "tam"
+                              ? col.weekKeys.reduce((s, wk) => s + getCarriedTam(m, wk, weekKeyList), 0)
+                              : col.weekKeys.reduce((s, wk) => s + getMemberFunnel(m, wk)[cr.denKey!], 0);
+                            const moNum = col.weekKeys.reduce((s, wk) => s + getMemberFunnel(m, wk)[cr.numKey!], 0);
+                            const moPct = moDen > 0 ? ((moNum / moDen) * 100).toFixed(0) : "—";
                             return (
-                              <td key={w.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
-                                {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
+                              <td key={`mo-${col.key}`} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold bg-muted/30">
+                                {moPct === "—" ? <span className="text-muted-foreground/40">—</span> : `${moPct}%`}
                               </td>
                             );
                           })}
@@ -1579,7 +1639,7 @@ function TeamTab({
                 })()}
                 {/* ── Team Monthly Aggregate ── */}
                 <tr>
-                  <td colSpan={teamWeeks.length + 3} className="py-0">
+                  <td colSpan={interleavedCols.length + 3} className="py-0">
                     <div className="border-t-4 border-primary/40" />
                   </td>
                 </tr>

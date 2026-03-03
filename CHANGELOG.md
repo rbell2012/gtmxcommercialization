@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-03 (Weekly Data Monthly Summary Columns)
+
+### Location – Project Pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Weekly Data table showed individual week columns but lacked any monthly aggregation, making it difficult to quickly assess performance over a full month without mentally summing across many columns.
+
+**Changes:**
+- Added a `buildInterleavedColumns` helper function and `TableCol` type that takes the existing `teamWeeks` array and produces an interleaved column list where a month summary column is inserted after the last week of each calendar month.
+- Updated the **header row** to render month summary columns with abbreviated uppercase labels (JAN, FEB, MAR, etc.) styled with `bg-muted/60` and `font-bold` for visual distinction from weekly columns.
+- Updated **per-member metric rows** to render month summary cells: TAM shows the carried TAM from the last week of that month; all other metrics sum the weekly values across weeks in that month. Cells styled with `bg-muted/30` and `font-semibold`.
+- Updated **per-member conversion rate rows** to render month summary cells by summing numerator and denominator across the month's weeks before computing the percentage.
+- The **Total column remains unchanged** — it still reduces over only the original `teamWeeks` array, so month summary columns do not affect totals.
+- Updated the Team Monthly Aggregate separator `colSpan` to account for the additional month columns.
+
+---
+
+## 2026-03-03 (Settings Monthly Goals Header Alignment)
+
+### Location – Settings Page (`src/pages/Settings.tsx`)
+
+**Rationale:** The "SCOPE" column header in the Monthly Goals table was not visually aligned above the "SELF" / "TEAM" scope buttons in the data rows, making the table harder to read at a glance.
+
+**Changes:**
+- Replaced the header row's `px-1 gap-4` layout with `gap-1.5` to mirror the exact spacing used in each data row.
+- Added a `w-11 shrink-0` empty spacer in the header to account for the Switch toggle's layout width, pushing the labels into alignment.
+- Set the "Metric" header label to `w-14` to match the metric name span width in data rows.
+- "Scope" header label now sits directly above the SELF/TEAM scope button in every row.
+
+---
+
 ## 2026-03-03 (Quota Page Column Alignment)
 
 ### Location – Quota Page (`src/pages/Quota.tsx`)
