@@ -150,7 +150,7 @@ function getTeamMonthKeys(teamWeeks: { key: string; label: string }[]): { key: s
     }
     monthMap.get(monthKey)!.weekKeys.push(w.key);
   }
-  return Array.from(monthMap.values()).map((m) => ({ ...m, colSpan: m.weekKeys.length }));
+  return Array.from(monthMap.values()).map((m) => ({ ...m, colSpan: m.weekKeys.length + 1 }));
 }
 
 type TableCol =
@@ -1690,14 +1690,19 @@ function TeamTab({
                     const tt = members.reduce((s, m) => s + m.touchedTam, 0);
                     return tt > 0 ? `${((ta / tt) * 100).toFixed(0)}%` : "—";
                   })();
+                  const nMonths = teamMonths.length;
+                  const totalDataCols = interleavedCols.length;
+                  const equalMonthSpan = Math.max(1, Math.floor(totalDataCols / nMonths));
+                  const spacerSpan = totalDataCols - equalMonthSpan * nMonths;
                   return [
                     <tr key="team-month-header" className="border-t border-border bg-secondary">
                       <td className="sticky left-0 z-30 bg-secondary py-2 pl-5 pr-2 font-bold text-white align-top border-r border-border/50 whitespace-nowrap" rowSpan={metricRows.length + convRates.length + 1}>
                         Team
                       </td>
                       <td className="sticky z-20 bg-secondary py-2 px-2 text-xs font-semibold text-white uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}></td>
+                      {spacerSpan > 0 && <td colSpan={spacerSpan} className="bg-secondary" />}
                       {teamMonths.map((mo) => (
-                        <td key={mo.key} colSpan={mo.colSpan} className="text-center py-2 px-2 text-xs font-semibold text-white uppercase tracking-wider whitespace-nowrap bg-secondary">
+                        <td key={mo.key} colSpan={equalMonthSpan} className="text-center py-2 px-2 text-xs font-semibold text-white uppercase tracking-wider whitespace-nowrap bg-secondary">
                           {mo.label}
                         </td>
                       ))}
@@ -1706,10 +1711,11 @@ function TeamTab({
                     ...metricRows.map((met) => (
                       <tr key={`team-${met.key}`}>
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
+                        {spacerSpan > 0 && <td colSpan={spacerSpan} />}
                         {teamMonths.map((mo) => {
                           const val = getTeamMonthlyValue(mo.weekKeys, met.key);
                           return (
-                            <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-foreground tabular-nums font-medium">
+                            <td key={mo.key} colSpan={equalMonthSpan} className="text-center py-1 px-2 text-foreground tabular-nums font-medium">
                               {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
                             </td>
                           );
@@ -1726,10 +1732,11 @@ function TeamTab({
                     ...convRates.map((cr) => (
                       <tr key={`team-${cr.label}`} className="bg-muted/30">
                         <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
+                        {spacerSpan > 0 && <td colSpan={spacerSpan} />}
                         {cr.touchRate ? (
                           <>
                             {teamMonths.map((mo) => (
-                              <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                              <td key={mo.key} colSpan={equalMonthSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
                                 <span className="text-muted-foreground/40">—</span>
                               </td>
                             ))}
@@ -1739,7 +1746,7 @@ function TeamTab({
                           const den = getTeamMonthlyValue(mo.weekKeys, cr.denKey!);
                           const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
                           return (
-                            <td key={mo.key} colSpan={mo.colSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                            <td key={mo.key} colSpan={equalMonthSpan} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
                               {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
                             </td>
                           );

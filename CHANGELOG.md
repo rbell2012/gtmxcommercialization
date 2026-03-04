@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-04 (Weekly Data Team Section Alignment)
+
+### Location – Project Pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Team aggregate section at the bottom of the Weekly Data table had its Total column misaligned from the player rows above, and month columns had uneven widths (wider months with more weeks, narrower months with fewer), making the layout visually inconsistent.
+
+**Changes:**
+- Fixed `getTeamMonthKeys` to include the interleaved month summary column in each month's `colSpan` (`weekKeys.length + 1`), ensuring the Team section's total column count matches the player rows and the Total column stays right-anchored.
+- Replaced variable per-month `colSpan` with a uniform `equalMonthSpan` computed as `Math.floor(totalDataCols / numberOfMonths)`, giving every month column the same width.
+- Added a left-side spacer `<td>` (when remainder columns exist) to absorb extra columns, pushing month data rightward so spacing between months is normalized and consistent.
+
+---
+
 ## 2026-03-03 (Weekly Data Monthly Summary Columns)
 
 ### Location – Project Pages (`src/pages/Index.tsx`)
