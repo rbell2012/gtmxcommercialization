@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-05 (Metrics Schema Migration — Account-Level & Event-Level Data)
+
+### Location – All Pilot Pages (`src/pages/Index.tsx`), Data Page (`src/pages/Data.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Help (`src/pages/Help.tsx`), Database (Supabase migration `restructure_metrics_tables`)
+
+**Rationale:** The external metrics data pipeline was restructured from weekly-aggregate tables to account-level and individual-event tables. The old `superhex` table held one row per (rep, week) with pre-aggregated counts; it is now one row per (rep, account) with date milestones. New granular event tables (`metrics_activity`, `metrics_calls`, `metrics_connects`, `metrics_chorus`) were added, and existing tables (`metrics_demos`, `metrics_ops`, `metrics_wins`, `metrics_feedback`) had their schemas changed to individual event records. Two tables (`metrics_touched_accounts`, `metrics_main_detailed`) were removed — their data is now derived from `superhex` and `metrics_tam`.
+
+**Changes:**
+- Applied a Supabase migration that drops and recreates `superhex`, `metrics_demos`, `metrics_ops`, `metrics_wins`, `metrics_feedback` with new schemas; creates 4 new tables (`metrics_activity`, `metrics_calls`, `metrics_connects`, `metrics_chorus`); drops `metrics_touched_accounts` and `metrics_main_detailed`; adds RLS policies, indexes, `updated_at` triggers, and realtime publication on all event tables.
+- Updated `DbSuperhex` in `database.types.ts` to the new 22-field account-level schema. Updated `DbMetricsDemos`, `DbMetricsOps`, `DbMetricsWins`, `DbMetricsFeedback` to match new event-level schemas. Removed `DbMetricsTouchedAccounts` and `DbMetricsMainDetailed`. Added `DbMetricsActivity`, `DbMetricsCalls`, `DbMetricsConnects`, `DbMetricsChorus`.
+- Rewrote `loadAll` in `TeamsContext.tsx` to fetch from 7 event tables (with minimal columns for aggregation), aggregate counts by (rep_name, Monday week key) using a `dateToWeekKey` helper, and merge into `weekly_funnels` with the same "non-zero manual values override" behavior.
+- Replaced touched accounts derivation: now counts distinct `salesforce_accountid` per rep from `superhex` for `touchedAccounts`, and sums `tam` per rep from `metrics_tam` for `touchedTam`.
+- Expanded realtime subscriptions from 5 tables to 12 (added `metrics_activity`, `metrics_calls`, `metrics_connects`, `metrics_demos`, `metrics_ops`, `metrics_wins`, `metrics_feedback` alongside existing `superhex`, `teams`, `members`, `weekly_funnels`, `win_entries`).
+- Added `.limit(50000)` to all event-table and superhex queries to prevent Supabase's default 1,000-row cap from silently truncating large datasets (e.g. `metrics_activity` has 13,662 rows).
+- Updated `Data.tsx` to query `superhex` instead of `metrics_main_detailed`, replaced all `DbMetricsMainDetailed` references with `DbSuperhex`, and fixed the `latest_activity_date` → `last_activity_date` field mapping.
+- Updated help text in `Help.tsx` to describe the new event-based data model.
+- No changes required in `Index.tsx` (beyond a comment update), `Quota.tsx`, `Settings.tsx`, or `quota-helpers.ts` — the `WeeklyFunnel` and `TeamMember` interfaces remain stable.
+
+---
+
 ## 2026-03-05 (Per-Project Mission & Purpose)
 
 ### Location – All Pilot Pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Hook (`src/hooks/useManagerInputs.ts`), Types (`src/lib/database.types.ts`), Database (Supabase migration `add_mission_to_teams`)

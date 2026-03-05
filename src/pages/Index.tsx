@@ -726,7 +726,7 @@ const Index = () => {
               <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                 <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
                   {(() => {
-                    const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                    const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
                     const tt = members.reduce((s, m) => s + m.touchedTam, 0);
                     const hasMetrics = tt > 0;
                     if (hasMetrics) {
@@ -795,7 +795,7 @@ const Index = () => {
           const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
           if (hasMetricsTam) {
             const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
-            const teamTouched = activeMembers.reduce((s, m) => s + m.touchedAccounts, 0);
+            const teamTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
             const membersWithTam = activeMembers.filter((m) => m.touchedTam > 0);
             const avgTam = membersWithTam.length > 0 ? Math.round(teamTam / membersWithTam.length) : 0;
             return (
@@ -821,7 +821,7 @@ const Index = () => {
               </div>
             );
           }
-          const fbTouched = activeMembers.reduce((s, m) => s + m.touchedAccounts, 0);
+          const fbTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
           const fbAvg = activeMembers.length > 0 ? Math.round((activeTeam.totalTam || 0) / activeMembers.length) : 0;
           const fbRate = (activeTeam.totalTam || 0) > 0 ? ((fbTouched / activeTeam.totalTam) * 100).toFixed(0) : "0";
           return (
@@ -1248,7 +1248,7 @@ function TeamTab({
                     <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                       <div className="rounded-md bg-secondary-foreground/5 py-2">
                         {(() => {
-                          const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                          const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
                           const tt = members.reduce((s, m) => s + m.touchedTam, 0);
                           const hasMetrics = tt > 0;
                           if (hasMetrics) {
@@ -1619,7 +1619,7 @@ function TeamTab({
                           })}
                           <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
                             {cr.touchRate
-                              ? (m.touchedTam > 0 ? `${((m.touchedAccounts / m.touchedTam) * 100).toFixed(0)}%` : "—")
+                              ? (m.touchedTam > 0 ? `${(((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100).toFixed(0)}%` : "—")
                               : (() => {
                                   const totalDen = cr.denKey === "tam"
                                     ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
@@ -1684,7 +1684,7 @@ function TeamTab({
                       sum + monthWeekKeys.reduce((ws, wk) => ws + getMemberFunnel(m, wk)[metKey], 0), 0);
                   };
                   const teamTouchRate = (() => {
-                    const ta = members.reduce((s, m) => s + m.touchedAccounts, 0);
+                    const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
                     const tt = members.reduce((s, m) => s + m.touchedTam, 0);
                     return tt > 0 ? `${((ta / tt) * 100).toFixed(0)}%` : "—";
                   })();
@@ -2249,7 +2249,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
                 });
                 const n = validWeeks.length;
                 const firstConvRate = hasMetricsTam
-                  ? (m.touchedTam > 0 ? (m.touchedAccounts / m.touchedTam) * 100 : 0)
+                  ? (m.touchedTam > 0 ? ((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100 : 0)
                   : (n > 0
                       ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); const tam = getCarriedTam(m, w.key, weekKeyList); return s + (tam > 0 ? (f.calls / tam) * 100 : 0); }, 0) / n
                       : 0);

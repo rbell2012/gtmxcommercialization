@@ -177,7 +177,7 @@ export default function Data() {
   useEffect(() => {
     async function load() {
       const [metricsRes, membersRes, historyRes, teamsRes, revxRes] = await Promise.all([
-        supabase.from("superhex").select("*"),
+        supabase.from("superhex").select("*").limit(50000),
         supabase.from("members").select("id, name"),
         supabase.from("member_team_history").select("*"),
         supabase.from("teams").select("id, name, start_date, end_date").is("archived_at", null).order("sort_order"),
