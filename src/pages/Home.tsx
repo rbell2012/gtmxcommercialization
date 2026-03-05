@@ -109,18 +109,18 @@ function ProjectCard({ team, index }: { team: Team; index: number }) {
     >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors shrink-0">
-              {team.name}
-            </CardTitle>
+          <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors shrink-0">
+            {team.name}
+          </CardTitle>
+          <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
             </span>
             <span className="text-sm text-muted-foreground">
               Lead Rep: <span className="text-foreground font-medium">{team.leadRep || "—"}</span>
             </span>
+            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </div>
-          <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
