@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-05 (Home Page — Active Project Tiles, Lifetime Stats, Page Overviews)
+
+### Location – Home Page (`src/pages/Home.tsx`), App Router & Nav (`src/App.tsx`)
+
+**Rationale:** The app had no central landing page — the root `/` redirected straight to the first project. Users needed a high-level overview showing all active projects at a glance with their key details (owner, lead rep, members, date range, lifetime stats) and quick navigation to any section of the app.
+
+**Changes:**
+- Created a new **Home page** (`src/pages/Home.tsx`) as the app's landing page with a "Home" header.
+- Added **Active Projects** section with one clickable card per active team displaying: team name, owner, lead rep, member count, date range, a time-elapsed progress bar with business days remaining, and lifetime stat tiles (Ops, Demos, Wins, Feedback, Activity) — all view-only, matching the data shown on each project's dashboard.
+- Added **Explore** section with overview cards describing what to expect on each page: a non-clickable "Project Pages" tile summarizing all project dashboards, plus clickable tiles for "Data & Findings" and "Quota" with bullet-point descriptions.
+- Updated **App.tsx** routing: added `/home` route, changed the default `/` redirect from `/Pilots` to `/home`.
+- Added a **Home link** with icon as the first item in the top nav bar, separated from project links by a vertical divider.
+
+---
+
 ## 2026-03-05 (Fix Page Crashes — Data Page Null Guard, Quota Defensive Safety, Error Boundary)
 
 ### Location – Data & Findings Page (`src/pages/Data.tsx`), Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Vite Config (`vite.config.ts`)

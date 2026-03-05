@@ -3,8 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
-import { HelpCircle, Settings } from "lucide-react";
+import { HelpCircle, Settings, Home as HomeIcon } from "lucide-react";
 import { ThemeProvider } from "next-themes";
+import Home from "./pages/Home";
 import Index from "./pages/Index";
 import Data from "./pages/Data";
 import Quota from "./pages/Quota";
@@ -22,6 +23,16 @@ function Nav() {
   const visibleTeams = teams.filter((t) => t.isActive);
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-card px-4 py-2 flex items-center gap-4 overflow-x-auto">
+      <Link
+        to="/home"
+        className={`flex items-center gap-1 text-sm font-medium whitespace-nowrap transition-colors ${
+          location.pathname === "/home" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        <HomeIcon className="h-3.5 w-3.5" />
+        Home
+      </Link>
+      <span className="h-4 w-px bg-border shrink-0" />
       {visibleTeams.map((team, i) => {
         const slug = pilotNameToSlug(team.name);
         const isCurrent =
@@ -90,7 +101,8 @@ const App = () => (
           <BrowserRouter>
             <Nav />
             <Routes>
-              <Route path="/" element={<Navigate to="/Pilots" replace />} />
+              <Route path="/" element={<Navigate to="/home" replace />} />
+              <Route path="/home" element={<Home />} />
               <Route path="/Pilots" element={<Index />} />
               <Route path="/Pilots/:pilotId" element={<Index />} />
               <Route path="/data" element={<Data />} />
