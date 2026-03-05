@@ -18,21 +18,10 @@ export default function Help() {
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page gives you one-click access to each active team, Data &amp; Findings, Quota, Settings, and Help.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page gives you one-click access to each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
-          <li>The <strong>Help</strong> link (question-mark icon) and <strong>Settings</strong> link (gear icon) are on the far right, next to the theme toggle.</li>
+          <li>The <Link to="/help" className="text-primary underline"><strong>Help</strong></Link> link (question-mark icon) and <Link to="/settings" className="text-primary underline"><strong>Settings</strong></Link> link (gear icon) are on the far right, next to the theme toggle.</li>
         </ul>
-
-        <H3>Deep Linking</H3>
-        <p>
-          Every pilot page supports URL-based navigation. You can share a link
-          like <code className="text-sm bg-muted px-1 rounded">/Pilots/Mad_Max#weekly-data</code> to
-          point someone directly to the Weekly Data section of a specific pilot.
-          Available anchors: <code className="text-sm bg-muted px-1 rounded">#manager-inputs</code> (Summary),{" "}
-          <code className="text-sm bg-muted px-1 rounded">#test-signals</code> (Monthly Data),{" "}
-          <code className="text-sm bg-muted px-1 rounded">#weekly-data</code>,{" "}
-          <code className="text-sm bg-muted px-1 rounded">#players-section</code> (Rep Self-Overrides).
-        </p>
 
         <H3>Dark Mode</H3>
         <p>
@@ -49,14 +38,14 @@ export default function Help() {
             Settings
           </Link>{" "}
           page is where you configure teams and members. All changes here
-          propagate automatically to the Pilots, Quota, and Data pages.
+          propagate automatically to the <Link to="/Pilots" className="text-primary underline">Pilots</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, and <Link to="/data" className="text-primary underline">Data</Link> pages.
         </p>
 
         <H3>Creating a Team</H3>
         <ul className="list-disc pl-5 space-y-1">
           <li>Click <strong>"New Team"</strong> and enter a name and owner.</li>
           <li>Pick a <strong>Start Date</strong> — the End Date auto-fills to 9 months later but can be adjusted.</li>
-          <li>The team will appear in the nav bar and on the Pilots page once created.</li>
+          <li>The team will appear in the nav bar and on the <Link to="/Pilots" className="text-primary underline">Pilots</Link> page once created.</li>
         </ul>
 
         <H3>Reordering Teams</H3>
@@ -69,7 +58,7 @@ export default function Help() {
         <H3>Activating / Deactivating a Team</H3>
         <p>
           Use the <strong>toggle switch</strong> on a team card to make it
-          inactive. Inactive teams are hidden from the nav bar and Pilots page
+          inactive. Inactive teams are hidden from the nav bar and <Link to="/Pilots" className="text-primary underline">Pilots</Link> page
           but retain all data. Toggle it back on at any time.
         </p>
 
@@ -138,7 +127,7 @@ export default function Help() {
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
           <li>Click the <strong>phase label</strong> to edit its description.</li>
           <li>Click <strong>"Extend the Test"</strong> to add one month to the team's end date.</li>
-          <li>If no dates are set, you'll see a link to Settings to configure them.</li>
+          <li>If no dates are set, you'll see a link to <Link to="/settings" className="text-primary underline">Settings</Link> to configure them.</li>
         </ul>
 
         <H4>Month Look-Back</H4>
@@ -165,7 +154,12 @@ export default function Help() {
         </ul>
 
         <H4>Mission &amp; Purpose</H4>
-        <p>A free-text field where managers describe the team's mission. Saved automatically.</p>
+        <p>
+          A free-text field where managers describe the project's mission and
+          purpose. Each project has its own independent mission statement —
+          editing one pilot's mission does not affect any other. Saved
+          automatically.
+        </p>
 
         <H4>Lifetime Stats</H4>
         <p>
@@ -199,7 +193,12 @@ export default function Help() {
         <H4>Monthly Stats</H4>
         <ul className="list-disc pl-5 space-y-1">
           <li>A blue-bordered card showing current-month totals for Ops, Demos, Wins, Feedback, and Activity, with a badge indicating the selected month (e.g. "Mar 2026").</li>
-          <li>The <strong>Total Wins</strong> card includes a trend arrow — up (green) if wins are higher than last week, down (red) if lower.</li>
+          <li>The <strong>Total Wins</strong> card always displays an upward-trending green arrow to reinforce positive momentum.</li>
+          <li>
+            <strong>Monthly Conversion Rates</strong> (Call→Connect, Connect→Demo,
+            Demo→Win) are scoped to the selected month, matching all other stats
+            on the page — they no longer mix data across month boundaries.
+          </li>
         </ul>
 
         <H4>Monthly Goals</H4>
@@ -208,7 +207,7 @@ export default function Help() {
           <li>Percentages are uncapped — values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
-          <li>Goals are configured in Settings, not on this page.</li>
+          <li>Goals are configured in <Link to="/settings" className="text-primary underline">Settings</Link>, not on this page.</li>
         </ul>
 
         <H4>Funnel Overview &amp; Player Selection</H4>
@@ -230,12 +229,21 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li>A comprehensive grid showing every metric per member per week, starting from the team's start date through the current week.</li>
           <li>Columns are <strong>Monday-aligned</strong>. The most recent weeks are visible first — scroll left to see older weeks.</li>
-          <li><strong>Player</strong> and <strong>Metric</strong> columns are frozen on the left; <strong>Total</strong> is frozen on the right.</li>
+          <li>
+            <strong>Monthly summary columns</strong> are interleaved after the
+            last week of each calendar month. TAM shows the carried value from
+            the last week; all other metrics show the sum across that month's
+            weeks. Monthly columns are visually distinguished with a muted
+            background and bold header (JAN, FEB, MAR, etc.).
+          </li>
+          <li><strong>Player</strong> and <strong>Metric</strong> columns are frozen on the left; <strong>Total</strong> is frozen on the right. The Total column sums only the weekly values (monthly summary columns are not double-counted).</li>
+          <li>The <strong>Activity</strong> row is always visible directly below TAM, regardless of whether the activity goal is enabled in team settings.</li>
           <li>TAM values <strong>carry forward</strong> — once set, TAM persists in future weeks until a new value is submitted.</li>
           <li>Conversion rate rows (Touch Rate, Call-to-Connect, Connect-to-Demo, Demo-to-Win) are included below the metric rows.</li>
           <li>
             Below a thick separator line, the <strong>Team Monthly Aggregate</strong>{" "}
-            section shows summed team totals grouped by calendar month.
+            section shows summed team totals grouped by calendar month, with
+            uniform column widths for consistent alignment across all months.
           </li>
         </ul>
 
@@ -256,10 +264,12 @@ export default function Help() {
           </li>
           <li>
             <strong>Submit &amp; Edit Submission:</strong> Once funnels are
-            submitted for a week, they are locked. To re-open a submitted week,
-            click <strong>Edit Submission</strong> — a confirmation dialog will
-            ask for your name. This is logged to an audit trail so managers can
-            see who unlocked the week and when.
+            submitted for a week, they are locked. Past weeks that were never
+            submitted are also locked by default to prevent silent changes to
+            historical data. To re-open any locked week, click{" "}
+            <strong>Edit Submission</strong> — a confirmation dialog will ask
+            for your name. This is logged to an audit trail so managers can see
+            who unlocked the week and when.
           </li>
           <li>
             <strong>Win Stories:</strong> Record wins with a restaurant name,
@@ -326,17 +336,81 @@ export default function Help() {
           <Link to="/data" className="text-primary underline">
             Data &amp; Findings
           </Link>{" "}
-          page provides two things:
+          page provides deal-cycle analytics, revenue impact tracking, and a
+          filterable metrics explorer — all derived from the underlying metrics
+          event data.
         </p>
+
+        <H4>Deal Averages</H4>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Hex Dashboard:</strong> An interactive embed pulling data
-            from Snowflake, Sheets, and Chorus. Use it to explore raw activity
-            data, call metrics, and feedback.
+            A collapsible section displaying 6 stat cards: <strong>Deal
+            Cycle Avg</strong> (first call → win), <strong>Avg
+            Call→Connect</strong>, <strong>Avg Connect→Demo</strong>,{" "}
+            <strong>Avg Demo→Win</strong>, <strong>Avg
+            Activities/Demo</strong>, and <strong>Avg
+            Activities/Win</strong>. Each card shows the computed average and
+            sample size.
           </li>
           <li>
-            <strong>Findings:</strong> Write and save notes or observations.
-            Recent findings are listed below the input form.
+            A <strong>project filter</strong> dropdown scopes the stats to All
+            Projects or a single team.
+          </li>
+          <li>
+            Reps are mapped to projects using the member team history date
+            windows, so the averages reflect the correct team for each data
+            point.
+          </li>
+        </ul>
+
+        <H4>RevX Impact</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A collapsible section that quantifies total revenue impact across
+            all projects. One card per project (where wins &gt; 0) shows the
+            project name, a wins badge, and an inline editable{" "}
+            <strong>"$ / win"</strong> input.
+          </li>
+          <li>
+            Once a value is entered, a <strong>Total Impact</strong> chip
+            appears on the card (wins × value per win), and a{" "}
+            <strong>Total RevX Impact</strong> summary bar appears at the
+            bottom summing all projects.
+          </li>
+          <li>
+            Values are saved optimistically to localStorage and durably
+            persisted to Supabase on blur or Enter.
+          </li>
+        </ul>
+
+        <H4>Test Data Selections</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A collapsible section with a filterable metrics explorer for
+            exploring raw event data (Activity, Calls, Connects, Demos, Wins,
+            Ops, Feedback).
+          </li>
+          <li>
+            <strong>Time</strong> filter: choose a specific month or week
+            derived from team start/end dates.
+          </li>
+          <li>
+            <strong>Data</strong> filter: multi-select which metric types to
+            include.
+          </li>
+          <li>
+            <strong>Detail</strong> toggle: switch between a{" "}
+            <strong>Summary</strong> view (one row per rep with count columns)
+            and a <strong>Detailed</strong> view (individual event rows with
+            Account Name, Date, Type, Rep, and Details).
+          </li>
+          <li>
+            <strong>Team Only</strong> toggle: filter results to only include
+            rows where the rep is a known team member.
+          </li>
+          <li>
+            A <strong>CSV download</strong> icon in the section header exports
+            the current table view.
           </li>
         </ul>
       </Section>
@@ -363,17 +437,12 @@ export default function Help() {
       <Section id="tips" title="7. Tips &amp; Shortcuts">
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Hover over the quota %</strong> on the Quota page for a
+            <strong>Hover over the quota %</strong> on the <Link to="/quota" className="text-primary underline">Quota</Link> page for a
             complete calculation breakdown.
           </li>
           <li>
             <strong>Hover over accelerator lock icons</strong> to see exactly
             which rule triggered and its effect.
-          </li>
-          <li>
-            <strong>Share deep links</strong> — use URLs
-            like <code className="text-sm bg-muted px-1 rounded">/Pilots/Mad_Max#weekly-data</code> to
-            point someone to a specific section.
           </li>
           <li>
             <strong>Former members</strong> remain visible in read-only mode
@@ -382,7 +451,7 @@ export default function Help() {
           </li>
           <li>
             <strong>Collapse sections</strong> you aren't using to reduce
-            scrolling on the Pilots page. Your preference is saved automatically
+            scrolling on the <Link to="/Pilots" className="text-primary underline">Pilots</Link> page. Your preference is saved automatically
             and shared across all pilots.
           </li>
           <li>

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-05 (Help Page — Updated for Recent Features, Removed Deep Linking, Added Page Links)
+
+### Location – Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated since 2026-03-02 and was missing documentation for several features added between 2026-03-03 and 2026-03-05 (monthly summary columns, always-visible Activity row, per-project Mission & Purpose, Deal Averages, RevX Impact, Test Data Selections, past-week locking, wins icon change, month-scoped conversion rates). It also contained an outdated Data & Findings section still referencing the removed Hex embed and Findings write box. Additionally, the Deep Linking subsection was no longer needed, and page names mentioned in prose were plain text instead of navigable links.
+
+**Changes:**
+- Updated **Mission & Purpose** (section 3a) to reflect per-project independence — each pilot now has its own mission statement.
+- Updated **Monthly Stats** (section 3b) to note the wins card always shows an upward green arrow, and added a bullet documenting monthly conversion rates scoped to the selected month.
+- Updated **Weekly Data** (section 3c) to document interleaved monthly summary columns (JAN, FEB, MAR headers after each month's last week), the always-visible Activity row below TAM, a note that Totals exclude monthly columns, and uniform column widths in the Team Monthly Aggregate.
+- Updated **Rep Self-Overrides** (section 3d) locking description to clarify that past unsubmitted weeks are also locked by default, not just submitted weeks.
+- Rewrote **Data & Findings** (section 5) entirely — replaced the outdated Hex Dashboard and Findings description with three new subsections: Deal Averages (6 stat cards with project filter), RevX Impact (per-project value-per-win with total impact summary), and Test Data Selections (filterable metrics explorer with time/data/detail/team-only filters and CSV export).
+- Removed the **Deep Linking** subsection from Getting Started and the corresponding "Share deep links" tip from Tips & Shortcuts.
+- Added `<Link>` navigation to 9 locations where page names (Pilots, Quota, Settings, Data & Findings, Help) were referenced as plain text — in Navigating the App, Settings intro, Creating a Team, Activating/Deactivating, Test Phases, Monthly Goals, and Tips.
+
+---
+
 ## 2026-03-05 (Fix Metrics Data Truncation — Paginated Fetch for All Metrics Tables)
 
 ### Location – Teams Context (`src/contexts/TeamsContext.tsx`)
