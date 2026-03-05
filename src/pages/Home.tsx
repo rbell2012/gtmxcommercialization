@@ -109,21 +109,23 @@ function ProjectCard({ team, index }: { team: Team; index: number }) {
     >
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors">
-            {team.name}
-          </CardTitle>
-          <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center gap-3 min-w-0">
+            <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors shrink-0">
+              {team.name}
+            </CardTitle>
+            <span className="text-sm text-muted-foreground">
+              Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
+            </span>
+            <span className="text-sm text-muted-foreground">
+              Lead Rep: <span className="text-foreground font-medium">{team.leadRep || "—"}</span>
+            </span>
+          </div>
+          <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-1.5 text-sm">
-          <p className="text-muted-foreground">
-            Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
-          </p>
-          <p className="text-muted-foreground">
-            Lead Rep: <span className="text-foreground font-medium">{team.leadRep || "—"}</span>
-          </p>
-          <div className="flex items-center gap-4 pt-1">
+        <div className="text-sm">
+          <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5 text-primary" />
               <span className="text-sm font-medium text-primary">{members.length} members</span>
