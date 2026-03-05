@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import { Target, Calendar, LockOpen, Lock } from "lucide-react";
 import {
   useTeams,
@@ -448,4 +448,38 @@ function MemberQuotaRow({
   );
 }
 
-export default Quota;
+class QuotaErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[QuotaErrorBoundary]", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-background px-4 py-8 md:px-8">
+          <div className="mx-auto max-w-3xl">
+            <h1 className="font-display text-2xl font-bold text-destructive mb-4">Quota page crashed</h1>
+            <pre className="whitespace-pre-wrap text-sm text-foreground bg-muted rounded-lg p-4 border border-border overflow-x-auto">
+              {this.state.error.message}{"\n\n"}{this.state.error.stack}
+            </pre>
+            <button className="mt-4 text-sm text-primary underline" onClick={() => this.setState({ error: null })}>
+              Try again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function QuotaWithBoundary() {
+  return (
+    <QuotaErrorBoundary>
+      <Quota />
+    </QuotaErrorBoundary>
+  );
+}
+
+export default QuotaWithBoundary;

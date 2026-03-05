@@ -99,6 +99,7 @@ function mapRowToTeam(
   membersByName: Map<string, MemberBasic>,
   historyByMember: Map<string, DbMemberTeamHistory[]>,
 ): string | null {
+  if (!row.rep_name) return null;
   const member = membersByName.get(row.rep_name.toLowerCase().trim());
   if (!member) return null;
 
@@ -125,7 +126,7 @@ function mapWinToTeam(
   membersByName: Map<string, MemberBasic>,
   historyByMember: Map<string, DbMemberTeamHistory[]>,
 ): string | null {
-  if (!row.win_date) return null;
+  if (!row.win_date || !row.rep_name) return null;
 
   const member = membersByName.get(row.rep_name.toLowerCase().trim());
   if (!member) return null;

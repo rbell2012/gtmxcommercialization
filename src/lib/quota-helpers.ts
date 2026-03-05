@@ -21,7 +21,7 @@ export function getMemberLifetimeMetricTotal(m: TeamMember, metric: GoalMetric):
 }
 
 export function getTeamMetricTotal(team: Team, metric: GoalMetric, referenceDate?: Date): number {
-  return team.members
+  return (team.members ?? [])
     .filter((m) => m.isActive)
     .reduce((sum, m) => sum + getMemberMetricTotal(m, metric, referenceDate), 0);
 }
@@ -44,22 +44,22 @@ export function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMet
     if (member.level && team.teamGoalsByLevel?.[metric]?.[member.level] != null) {
       return team.teamGoalsByLevel[metric][member.level]!;
     }
-    return team.teamGoals[metric] || 0;
+    return team.teamGoals?.[metric] || 0;
   }
 
   if (member.level && team.teamGoalsByLevel?.[metric]?.[member.level] != null) {
     const levelGoal = team.teamGoalsByLevel[metric][member.level]!;
     if (team.goalsParity) {
-      const sameLevel = team.members.filter((mm) => mm.isActive && mm.level === member.level).length;
+      const sameLevel = (team.members ?? []).filter((mm) => mm.isActive && mm.level === member.level).length;
       return sameLevel > 0 ? Math.round(levelGoal / sameLevel) : 0;
     }
     return levelGoal;
   }
   if (team.goalsParity) {
-    const activeCount = team.members.filter((mm) => mm.isActive).length;
-    return activeCount > 0 ? Math.round((team.teamGoals[metric] || 0) / activeCount) : 0;
+    const activeCount = (team.members ?? []).filter((mm) => mm.isActive).length;
+    return activeCount > 0 ? Math.round((team.teamGoals?.[metric] || 0) / activeCount) : 0;
   }
-  return member.goals[metric];
+  return member.goals?.[metric] ?? 0;
 }
 
 /**
@@ -144,7 +144,7 @@ function applyAction(rule: AcceleratorRule, quota: number): number {
  * then apply any active accelerator rules.
  */
 export function computeQuota(team: Team, member: TeamMember, referenceDate?: Date): number {
-  const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
+  const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals?.[m]);
   if (enabledMetrics.length === 0) return 0;
 
   const ratios = enabledMetrics.map((metric) => {
@@ -155,11 +155,12 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
 
   let quota = ratios.reduce((sum, r) => sum + r, 0) / ratios.length;
 
+  const accelConfig = team.acceleratorConfig ?? {};
   for (const metric of GOAL_METRICS) {
-    const rules = team.acceleratorConfig[metric];
-    if (!rules || rules.length === 0) continue;
+    const rules = accelConfig[metric];
+    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
     for (const rule of rules) {
-      if (!rule.enabled) continue;
+      if (!rule?.enabled) continue;
       const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         quota = applyAction(rule, quota);
@@ -175,11 +176,12 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
  */
 export function countTriggeredAccelerators(team: Team, member: TeamMember, referenceDate?: Date): number {
   let count = 0;
+  const accelConfig = team.acceleratorConfig ?? {};
   for (const metric of GOAL_METRICS) {
-    const rules = team.acceleratorConfig[metric];
-    if (!rules || rules.length === 0) continue;
+    const rules = accelConfig[metric];
+    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
     for (const rule of rules) {
-      if (!rule.enabled) continue;
+      if (!rule?.enabled) continue;
       const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) count++;
     }
@@ -209,7 +211,7 @@ export interface QuotaBreakdown {
 }
 
 export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceDate?: Date): QuotaBreakdown {
-  const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
+  const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals?.[m]);
   if (enabledMetrics.length === 0) {
     return { metricRatios: [], baseQuota: 0, acceleratorSteps: [], finalQuota: 0 };
   }
@@ -224,11 +226,12 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
   let quota = baseQuota;
   const acceleratorSteps: QuotaAcceleratorStep[] = [];
 
+  const accelConfig = team.acceleratorConfig ?? {};
   for (const metric of GOAL_METRICS) {
-    const rules = team.acceleratorConfig[metric];
-    if (!rules || rules.length === 0) continue;
+    const rules = accelConfig[metric];
+    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
     for (const rule of rules) {
-      if (!rule.enabled) continue;
+      if (!rule?.enabled) continue;
       const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         const before = quota;
@@ -249,11 +252,12 @@ export interface TriggeredAccelerator {
 
 export function getTriggeredAcceleratorDetails(team: Team, member: TeamMember, referenceDate?: Date): TriggeredAccelerator[] {
   const results: TriggeredAccelerator[] = [];
+  const accelConfig = team.acceleratorConfig ?? {};
   for (const metric of GOAL_METRICS) {
-    const rules = team.acceleratorConfig[metric];
-    if (!rules || rules.length === 0) continue;
+    const rules = accelConfig[metric];
+    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
     for (const rule of rules) {
-      if (!rule.enabled) continue;
+      if (!rule?.enabled) continue;
       const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
       if (evaluateCondition(rule, current)) {
         results.push({ metric, currentValue: current, rule });
