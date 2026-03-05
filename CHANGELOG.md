@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-05 (Fix Page Crashes — Data Page Null Guard, Quota Defensive Safety, Error Boundary)
+
+### Location – Data & Findings Page (`src/pages/Data.tsx`), Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Vite Config (`vite.config.ts`)
+
+**Rationale:** The Data & Findings page was crashing to a blank screen immediately on load because some rows in the `superhex` table have `null` for `rep_name`, and `mapRowToTeam()` called `.toLowerCase()` on it without a null check. The Quota page was also vulnerable to blank-screen crashes if any team/member data fields were undefined. Both pages had no React error boundary, and the Vite HMR error overlay was disabled, so users saw only a blank white page with no error message.
+
+**Changes:**
+- Fixed the **Data page crash** by adding null guards to `mapRowToTeam()` and `mapWinToTeam()` — both now return `null` early if `row.rep_name` is missing, safely skipping rows with null rep names instead of throwing.
+- Added a **React error boundary** (`QuotaErrorBoundary`) wrapping the Quota page so that any future render errors display the actual error message and stack trace with a "Try again" button, instead of a blank page.
+- Added **defensive null safety** across all quota helper functions (`computeQuota`, `computeQuotaBreakdown`, `countTriggeredAccelerators`, `getTriggeredAcceleratorDetails`, `getEffectiveGoal`, `getTeamMetricTotal`): optional chaining on `enabledGoals`, `teamGoals`, `members`, and `goals`; nullish coalescing on `acceleratorConfig`; `Array.isArray()` checks on accelerator rule arrays; null-safe rule access.
+- Re-enabled the **Vite HMR error overlay** (`overlay: true` in `vite.config.ts`) so that HMR compilation errors are shown to the developer instead of silently breaking the page.
+
+---
+
 ## 2026-03-05 (Help Page — Updated for Recent Features, Removed Deep Linking, Added Page Links)
 
 ### Location – Help Page (`src/pages/Help.tsx`)
