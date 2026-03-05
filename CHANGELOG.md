@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-05 (Test Data Selections — Filterable Metrics Explorer)
+
+### Location – Data & Findings Page (`src/pages/Data.tsx`)
+
+**Rationale:** There was no way to explore the raw metrics event data (activity, calls, connects, demos, wins, ops, feedback) on the Data & Findings page. Managers needed the ability to slice data by time period, pick which metric types to view, toggle between rep-level summaries and account-level detail, filter to team members only, and export the results.
+
+**Changes:**
+- Added a new collapsible "Test Data Selections" section to `Data.tsx` with four filter controls: Time (month/week), Data (multi-select of 7 metric types), Detail (summary/detailed), and a Team Only toggle.
+- Time filter derives available months and weeks from team start/end dates. Month mode shows one month per option; week mode shows Monday–Sunday ranges. Auto-selects the current month or week on load.
+- Data multi-select uses a Popover with Checkboxes for the 7 metric types (Activity, Calls, Connects, Demos, Wins, Ops, Feedback). Each selected type queries its corresponding `metrics_*` Supabase table filtered by the chosen date range.
+- Summary view groups data by `rep_name`, showing one row per rep with count columns for each selected data type. Detailed view shows individual event rows with Account Name, Date, Type badge, Rep, and concatenated detail fields, sorted by date descending.
+- Team Only toggle filters results to only include rows where `rep_name` matches a known member from the `members` table.
+- Added a CSV download icon (right-aligned in the section header) that exports the current table output — summary exports Rep Name + metric counts, detailed exports Account Name, Date, Type, Rep, Details.
+- Added imports for `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell`, `Popover`, `PopoverTrigger`, `PopoverContent`, `Checkbox`, `Button`, `Switch`, and `Download` icon.
+- Added helper types (`DataTypeKey`, `TimeOption`, `NormalizedRow`), configuration constant (`DATA_TYPE_CONFIG`), row normalizer (`normalizeRow`), and CSV exporter (`downloadCsv`) outside the component.
+
+---
+
 ## 2026-03-05 (Metrics Schema Migration — Account-Level & Event-Level Data)
 
 ### Location – All Pilot Pages (`src/pages/Index.tsx`), Data Page (`src/pages/Data.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Help (`src/pages/Help.tsx`), Database (Supabase migration `restructure_metrics_tables`)

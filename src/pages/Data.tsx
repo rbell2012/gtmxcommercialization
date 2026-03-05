@@ -1,8 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign, ChevronsUpDown, Download } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import type { DbSuperhex, DbMemberTeamHistory, DbRevxImpactValue } from "@/lib/database.types";
 
 interface TeamBasic {
@@ -143,6 +148,85 @@ function fmtStat(v: number | null, suffix = ""): string {
   return v % 1 === 0 ? `${v.toLocaleString()}${suffix}` : `${v.toFixed(1)}${suffix}`;
 }
 
+type DataTypeKey = "activity" | "calls" | "connects" | "demos" | "wins" | "ops" | "feedback";
+
+const DATA_TYPE_CONFIG: Record<DataTypeKey, { table: string; dateCol: string; label: string }> = {
+  activity: { table: "metrics_activity", dateCol: "activity_date", label: "Activity" },
+  calls: { table: "metrics_calls", dateCol: "call_date", label: "Calls" },
+  connects: { table: "metrics_connects", dateCol: "connect_date", label: "Connects" },
+  demos: { table: "metrics_demos", dateCol: "demo_date", label: "Demos" },
+  wins: { table: "metrics_wins", dateCol: "win_date", label: "Wins" },
+  ops: { table: "metrics_ops", dateCol: "op_date", label: "Ops" },
+  feedback: { table: "metrics_feedback", dateCol: "feedback_date", label: "Feedback" },
+};
+
+const ALL_DATA_TYPES: DataTypeKey[] = ["activity", "calls", "connects", "demos", "wins", "ops", "feedback"];
+
+interface TimeOption {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+}
+
+interface NormalizedRow {
+  salesforce_accountid: string | null;
+  account_name: string | null;
+  date: string | null;
+  type: DataTypeKey;
+  rep_name: string;
+  detail: string;
+}
+
+function normalizeRow(row: any, type: DataTypeKey): NormalizedRow {
+  const dateCol = DATA_TYPE_CONFIG[type].dateCol;
+  let detail = "";
+  switch (type) {
+    case "activity":
+      detail = [row.activity_type, row.subject, row.activity_outcome].filter(Boolean).join(" · ");
+      break;
+    case "calls":
+      detail = [row.call_type, row.subject, row.call_outcome].filter(Boolean).join(" · ");
+      break;
+    case "connects":
+      detail = [row.connect_type, row.subject, row.connect_outcome].filter(Boolean).join(" · ");
+      break;
+    case "demos":
+      detail = [row.demo_source, row.subject].filter(Boolean).join(" · ");
+      break;
+    case "wins":
+      detail = [row.opportunity_name, row.opportunity_stage].filter(Boolean).join(" · ");
+      break;
+    case "ops":
+      detail = [row.opportunity_name, row.opportunity_stage, row.opportunity_type].filter(Boolean).join(" · ");
+      break;
+    case "feedback":
+      detail = [row.source, row.feedback].filter(Boolean).join(" · ");
+      break;
+  }
+  return {
+    salesforce_accountid: row.salesforce_accountid ?? null,
+    account_name: row.account_name ?? null,
+    date: row[dateCol] ?? null,
+    type,
+    rep_name: row.rep_name,
+    detail,
+  };
+}
+
+function downloadCsv(headers: string[], rows: string[][], filename: string) {
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const lines = [headers.map(escape).join(",")];
+  for (const row of rows) lines.push(row.map(escape).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Data() {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
     try {
@@ -166,6 +250,14 @@ export default function Data() {
   const [teams, setTeams] = useState<TeamBasic[]>([]);
   const [selectedTeam, setSelectedTeam] = useState("all");
   const [loading, setLoading] = useState(true);
+
+  const [testTimeMode, setTestTimeMode] = useState<"month" | "week">("month");
+  const [testTimeValue, setTestTimeValue] = useState<string>("");
+  const [testDataTypes, setTestDataTypes] = useState<Set<DataTypeKey>>(new Set(ALL_DATA_TYPES));
+  const [testDetailMode, setTestDetailMode] = useState<"summary" | "detailed">("summary");
+  const [testTeamOnly, setTestTeamOnly] = useState(false);
+  const [testData, setTestData] = useState<Record<string, any[]>>({});
+  const [testDataLoading, setTestDataLoading] = useState(false);
 
   const toggleSection = (key: string) =>
     setCollapsedSections((prev) => {
@@ -206,6 +298,212 @@ export default function Data() {
     }
     load();
   }, []);
+
+  const availableMonths = useMemo((): TimeOption[] => {
+    if (teams.length === 0) return [];
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+    for (const t of teams) {
+      if (t.start_date) {
+        const d = new Date(t.start_date + "T00:00:00");
+        if (!minDate || d < minDate) minDate = d;
+      }
+      if (t.end_date) {
+        const d = new Date(t.end_date + "T00:00:00");
+        if (!maxDate || d > maxDate) maxDate = d;
+      }
+    }
+    if (!minDate || !maxDate) return [];
+    const months: TimeOption[] = [];
+    const cursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+    const endMonth = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+    while (cursor <= endMonth) {
+      const y = cursor.getFullYear();
+      const m = cursor.getMonth();
+      const key = `${y}-${String(m + 1).padStart(2, "0")}`;
+      const label = cursor.toLocaleString("en-US", { month: "long", year: "numeric" });
+      const lastDay = new Date(y, m + 1, 0).getDate();
+      const start = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+      const end = `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      months.push({ key, label, start, end });
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return months;
+  }, [teams]);
+
+  const availableWeeks = useMemo((): TimeOption[] => {
+    if (teams.length === 0) return [];
+    let minDate: Date | null = null;
+    let maxDate: Date | null = null;
+    for (const t of teams) {
+      if (t.start_date) {
+        const d = new Date(t.start_date + "T00:00:00");
+        if (!minDate || d < minDate) minDate = d;
+      }
+      if (t.end_date) {
+        const d = new Date(t.end_date + "T00:00:00");
+        if (!maxDate || d > maxDate) maxDate = d;
+      }
+    }
+    if (!minDate || !maxDate) return [];
+    const fmtISO = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const fmtShort = (d: Date) =>
+      d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const start = new Date(minDate);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    const weeks: TimeOption[] = [];
+    const cursor = new Date(start);
+    while (cursor <= maxDate) {
+      const weekStart = new Date(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weeks.push({
+        key: fmtISO(weekStart),
+        label: `${fmtShort(weekStart)} – ${fmtShort(weekEnd)}`,
+        start: fmtISO(weekStart),
+        end: fmtISO(weekEnd),
+      });
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return weeks;
+  }, [teams]);
+
+  useEffect(() => {
+    if (testTimeValue) return;
+    const now = new Date();
+    if (testTimeMode === "month" && availableMonths.length > 0) {
+      const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const match = availableMonths.find((m) => m.key === key);
+      setTestTimeValue(match ? match.key : availableMonths[availableMonths.length - 1].key);
+    } else if (testTimeMode === "week" && availableWeeks.length > 0) {
+      const fmtISO = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const todayStr = fmtISO(now);
+      const match = availableWeeks.find((w) => w.start <= todayStr && w.end >= todayStr);
+      setTestTimeValue(match ? match.key : availableWeeks[availableWeeks.length - 1].key);
+    }
+  }, [testTimeMode, availableMonths, availableWeeks, testTimeValue]);
+
+  const activeTimeOption = useMemo(() => {
+    const options = testTimeMode === "month" ? availableMonths : availableWeeks;
+    return options.find((o) => o.key === testTimeValue) ?? null;
+  }, [testTimeMode, testTimeValue, availableMonths, availableWeeks]);
+
+  const testDataTypesKey = useMemo(
+    () => Array.from(testDataTypes).sort().join(","),
+    [testDataTypes],
+  );
+
+  useEffect(() => {
+    const types = testDataTypesKey.split(",").filter(Boolean) as DataTypeKey[];
+    if (!activeTimeOption || types.length === 0) {
+      setTestData({});
+      return;
+    }
+    let cancelled = false;
+    async function fetchTestData() {
+      setTestDataLoading(true);
+      const queries = types.map(async (type) => {
+        const cfg = DATA_TYPE_CONFIG[type];
+        const { data } = await supabase
+          .from(cfg.table)
+          .select("*")
+          .gte(cfg.dateCol, activeTimeOption!.start)
+          .lte(cfg.dateCol, activeTimeOption!.end)
+          .limit(50000);
+        return [type, data ?? []] as [string, any[]];
+      });
+      const results = await Promise.all(queries);
+      if (!cancelled) {
+        const newData: Record<string, any[]> = {};
+        for (const [type, rows] of results) {
+          newData[type] = rows;
+        }
+        setTestData(newData);
+        setTestDataLoading(false);
+      }
+    }
+    fetchTestData();
+    return () => { cancelled = true; };
+  }, [activeTimeOption, testDataTypesKey]);
+
+  const activeTypes = useMemo(
+    () => ALL_DATA_TYPES.filter((t) => testDataTypes.has(t)),
+    [testDataTypes],
+  );
+
+  const memberNameSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const m of members) s.add(m.name.toLowerCase().trim());
+    return s;
+  }, [members]);
+
+  const filteredTestData = useMemo(() => {
+    if (!testTeamOnly) return testData;
+    const out: Record<string, any[]> = {};
+    for (const [type, rows] of Object.entries(testData)) {
+      out[type] = rows.filter((r) => memberNameSet.has((r.rep_name as string ?? "").toLowerCase().trim()));
+    }
+    return out;
+  }, [testData, testTeamOnly, memberNameSet]);
+
+  const testSummaryRows = useMemo(() => {
+    if (activeTypes.length === 0) return [];
+    const repMap = new Map<string, { counts: Record<DataTypeKey, number> }>();
+    for (const type of activeTypes) {
+      const rows = filteredTestData[type] ?? [];
+      for (const row of rows) {
+        const rep = (row.rep_name as string) ?? "Unknown";
+        if (!repMap.has(rep)) {
+          repMap.set(rep, {
+            counts: Object.fromEntries(ALL_DATA_TYPES.map((t) => [t, 0])) as Record<DataTypeKey, number>,
+          });
+        }
+        repMap.get(rep)!.counts[type]++;
+      }
+    }
+    return Array.from(repMap.entries())
+      .map(([rep, { counts }]) => ({ id: rep, name: rep, counts }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredTestData, activeTypes]);
+
+  const testDetailedRows = useMemo(() => {
+    if (activeTypes.length === 0) return [];
+    const rows: NormalizedRow[] = [];
+    for (const type of activeTypes) {
+      for (const row of (filteredTestData[type] ?? [])) {
+        rows.push(normalizeRow(row, type));
+      }
+    }
+    return rows.sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return b.date.localeCompare(a.date);
+    });
+  }, [filteredTestData, activeTypes]);
+
+  const handleTestDataDownload = () => {
+    if (testDetailMode === "summary") {
+      const headers = ["Rep Name", ...activeTypes.map((t) => DATA_TYPE_CONFIG[t].label)];
+      const rows = testSummaryRows.map((r) => [
+        r.name,
+        ...activeTypes.map((t) => String(r.counts[t])),
+      ]);
+      downloadCsv(headers, rows, "test-data-summary.csv");
+    } else {
+      const headers = ["Account Name", "Date", "Type", "Rep", "Details"];
+      const rows = testDetailedRows.map((r) => [
+        r.account_name ?? r.salesforce_accountid ?? "",
+        r.date ?? "",
+        DATA_TYPE_CONFIG[r.type].label,
+        r.rep_name,
+        r.detail,
+      ]);
+      downloadCsv(headers, rows, "test-data-detailed.csv");
+    }
+  };
 
   const membersByName = new Map<string, MemberBasic>();
   for (const m of members) {
@@ -471,6 +769,221 @@ export default function Data() {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ===== TEST DATA SELECTIONS ===== */}
+        <div id="test-data" className="scroll-mt-16">
+          <div
+            className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
+            onClick={() => toggleSection("test-data")}
+          >
+            <div className="flex items-center gap-2">
+              {collapsedSections["test-data"] ? (
+                <ChevronRight className="h-5 w-5 text-primary shrink-0" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-primary shrink-0" />
+              )}
+              <h2 className="font-display text-2xl font-bold tracking-tight text-primary flex-1">
+                📊 Test Data Selections
+              </h2>
+              {!collapsedSections["test-data"] && (
+                <button
+                  title="Download CSV"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTestDataDownload();
+                  }}
+                  className="p-1.5 rounded-md hover:bg-primary/10 transition-colors"
+                >
+                  <Download className="h-5 w-5 text-primary" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!collapsedSections["test-data"] && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Time selection */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Time:</span>
+                  <Select
+                    value={testTimeMode}
+                    onValueChange={(v) => {
+                      setTestTimeMode(v as "month" | "week");
+                      setTestTimeValue("");
+                    }}
+                  >
+                    <SelectTrigger className="w-28 h-9 bg-card border-border text-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="month">Month</SelectItem>
+                      <SelectItem value="week">Week</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={testTimeValue} onValueChange={setTestTimeValue}>
+                    <SelectTrigger className="w-60 h-9 bg-card border-border text-foreground">
+                      <SelectValue placeholder={testTimeMode === "month" ? "Select month…" : "Select week…"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(testTimeMode === "month" ? availableMonths : availableWeeks).map((o) => (
+                        <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Data selection (multi-select) */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Data:</span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-60 h-9 justify-between bg-card border-border text-foreground font-normal"
+                      >
+                        <span className="truncate">
+                          {testDataTypes.size === ALL_DATA_TYPES.length
+                            ? "All"
+                            : testDataTypes.size === 0
+                            ? "None selected"
+                            : activeTypes.map((t) => DATA_TYPE_CONFIG[t].label).join(", ")}
+                        </span>
+                        <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-2" align="start">
+                      {ALL_DATA_TYPES.map((type) => (
+                        <label
+                          key={type}
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                        >
+                          <Checkbox
+                            checked={testDataTypes.has(type)}
+                            onCheckedChange={(checked) => {
+                              setTestDataTypes((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(type);
+                                else next.delete(type);
+                                return next;
+                              });
+                            }}
+                          />
+                          {DATA_TYPE_CONFIG[type].label}
+                        </label>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Detail mode */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Detail:</span>
+                  <Select
+                    value={testDetailMode}
+                    onValueChange={(v) => setTestDetailMode(v as "summary" | "detailed")}
+                  >
+                    <SelectTrigger className="w-32 h-9 bg-card border-border text-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="summary">Summary</SelectItem>
+                      <SelectItem value="detailed">Detailed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Team only toggle */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Team Only:</span>
+                  <Switch checked={testTeamOnly} onCheckedChange={setTestTeamOnly} />
+                </div>
+              </div>
+
+              {testDataLoading ? (
+                <p className="text-muted-foreground py-4">Loading test data…</p>
+              ) : testDataTypes.size === 0 ? (
+                <p className="text-muted-foreground py-4">Select at least one data type to view results.</p>
+              ) : testDetailMode === "summary" ? (
+                testSummaryRows.length === 0 ? (
+                  <p className="text-muted-foreground py-4">No data found for the selected time range.</p>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">Rep Name</TableHead>
+                          {activeTypes.map((type) => (
+                            <TableHead key={type} className="font-semibold text-center">
+                              {DATA_TYPE_CONFIG[type].label}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {testSummaryRows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="font-medium">{row.name}</TableCell>
+                            {activeTypes.map((type) => (
+                              <TableCell key={type} className="text-center">
+                                {row.counts[type]}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )
+              ) : (
+                testDetailedRows.length === 0 ? (
+                  <p className="text-muted-foreground py-4">No data found for the selected time range.</p>
+                ) : (
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="font-semibold">Account Name</TableHead>
+                          <TableHead className="font-semibold">Date</TableHead>
+                          <TableHead className="font-semibold">Type</TableHead>
+                          <TableHead className="font-semibold">Rep</TableHead>
+                          <TableHead className="font-semibold">Details</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {testDetailedRows.map((row, i) => (
+                          <TableRow key={i}>
+                            <TableCell className="font-medium">
+                              {row.account_name ?? row.salesforce_accountid ?? "—"}
+                            </TableCell>
+                            <TableCell>{row.date ?? "—"}</TableCell>
+                            <TableCell>
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                {DATA_TYPE_CONFIG[row.type].label}
+                              </span>
+                            </TableCell>
+                            <TableCell>{row.rep_name}</TableCell>
+                            <TableCell className="max-w-xs truncate text-muted-foreground">
+                              {row.detail || "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )
+              )}
+
+              {!testDataLoading && testDataTypes.size > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {testDetailMode === "summary"
+                    ? `${testSummaryRows.length.toLocaleString()} reps`
+                    : `${testDetailedRows.length.toLocaleString()} records`}
+                </span>
               )}
             </div>
           )}
