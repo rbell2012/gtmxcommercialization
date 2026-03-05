@@ -1519,15 +1519,15 @@ function TeamTab({
                   return members.map((m, mIdx) => {
                     const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                       { label: "TAM", key: "tam" },
+                      { label: "Activity", key: "activity" },
                       { label: "Call", key: "calls" },
                       { label: "Connect", key: "connects" },
                       { label: "Ops", key: "ops" },
                       { label: "Demo", key: "demos" },
                       { label: "Win", key: "wins" },
                       { label: "Feedback", key: "feedback" },
-                      { label: "Activity", key: "activity" },
                     ];
-                    const alwaysShow = new Set<string>(["tam", "connects", "wins"]);
+                    const alwaysShow = new Set<string>(["tam", "connects", "wins", "activity"]);
                     const metricRows = allMetricRows.filter(
                       (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
                     );
@@ -1647,15 +1647,15 @@ function TeamTab({
                   const weekKeyList = teamWeeks.map((wk) => wk.key);
                   const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                     { label: "TAM", key: "tam" },
+                    { label: "Activity", key: "activity" },
                     { label: "Call", key: "calls" },
                     { label: "Connect", key: "connects" },
                     { label: "Ops", key: "ops" },
                     { label: "Demo", key: "demos" },
                     { label: "Win", key: "wins" },
                     { label: "Feedback", key: "feedback" },
-                    { label: "Activity", key: "activity" },
                   ];
-                  const alwaysShow = new Set<string>(["tam", "connects", "wins"]);
+                  const alwaysShow = new Set<string>(["tam", "connects", "wins", "activity"]);
                   const metricRows = allMetricRows.filter(
                     (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals]
                   );

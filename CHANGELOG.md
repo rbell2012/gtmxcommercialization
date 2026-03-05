@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-03-05 (Fix Metrics Data Truncation — Paginated Fetch for All Metrics Tables)
+
+### Location – Teams Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Activity counts (and potentially calls) stopped populating in the Weekly Data table beyond the week of 2/23, with all earlier weeks showing dashes. The root cause was Supabase's PostgREST API enforcing a server-side `max_rows` limit (default 1000) that silently capped query results, regardless of the `.limit(50000)` specified in client code. With 38,105 rows in `metrics_activity` and 20,640 in `metrics_calls`, only ~1000 rows were actually returned per table, so the weekly aggregation only covered a small recent window of data.
+
+**Changes:**
+- Added a `fetchAllRows(table, columns, pageSize)` helper that uses `.range()` pagination to fetch rows in batches of 1000, accumulating all results until the table is fully read.
+- Replaced all `.limit(50000)` calls for the 9 metrics/reference tables (`metrics_activity`, `metrics_calls`, `metrics_connects`, `metrics_demos`, `metrics_ops`, `metrics_wins`, `metrics_feedback`, `superhex`, `metrics_tam`) with `fetchAllRows`, ensuring every row is included regardless of the PostgREST `max_rows` setting.
+- Updated downstream variable names from `actRes.data`/`callRes.data`/etc. to the direct array results returned by the paginated helper.
+
+---
+
+## 2026-03-05 (Activity Row Always Visible in Weekly Data Table)
+
+### Location – All Pilot Pages (`src/pages/Index.tsx`)
+
+**Rationale:** The Activity metric was hidden in the Weekly Data table unless the activity goal was explicitly enabled in team settings. Managers needed activity counts to always be visible alongside TAM, Connects, and Wins for a complete picture of rep effort each week, and wanted it positioned directly below TAM to reflect its role as a top-of-funnel volume metric.
+
+**Changes:**
+- Added `"activity"` to the `alwaysShow` set in both the per-member and team-aggregate weekly data table sections, so the Activity row renders regardless of whether the activity goal toggle is enabled.
+- Moved the Activity row from the bottom of the metric rows list to the second position (directly below TAM) in both the per-member and team-aggregate `allMetricRows` arrays.
+
+---
+
 ## 2026-03-05 (Test Data Selections — Filterable Metrics Explorer)
 
 ### Location – Data & Findings Page (`src/pages/Data.tsx`)

@@ -440,6 +440,22 @@ function memberGoalsToDbInsert(goals: MemberGoals) {
   };
 }
 
+async function fetchAllRows(table: string, columns: string, pageSize = 1000): Promise<Record<string, unknown>[]> {
+  const all: Record<string, unknown>[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .range(from, from + pageSize - 1);
+    if (error || !data || data.length === 0) break;
+    all.push(...(data as Record<string, unknown>[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 export function TeamsProvider({ children }: { children: ReactNode }) {
   const [teams, setTeams] = useState<Team[]>([]);
   const [unassignedMembers, setUnassignedMembers] = useState<TeamMember[]>([]);
@@ -451,20 +467,20 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
   // ── load all data & merge event-table metrics into funnels ──
   const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, actRes, callRes, conRes, demoRes, opsRes, winsRes, fbRes, shRes, tamRes, hRes, tghRes, mghRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows_raw, hRes, tghRes, mghRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*"),
       supabase.from("weekly_funnels").select("*"),
       supabase.from("win_entries").select("*"),
-      supabase.from("metrics_activity").select("rep_name, activity_date").limit(50000),
-      supabase.from("metrics_calls").select("rep_name, call_date").limit(50000),
-      supabase.from("metrics_connects").select("rep_name, connect_date").limit(50000),
-      supabase.from("metrics_demos").select("rep_name, demo_date").limit(50000),
-      supabase.from("metrics_ops").select("rep_name, op_date").limit(50000),
-      supabase.from("metrics_wins").select("rep_name, win_date").limit(50000),
-      supabase.from("metrics_feedback").select("rep_name, feedback_date").limit(50000),
-      supabase.from("superhex").select("rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date").limit(50000),
-      supabase.from("metrics_tam").select("rep_name, tam").limit(50000),
+      fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid"),
+      fetchAllRows("metrics_calls", "rep_name, call_date"),
+      fetchAllRows("metrics_connects", "rep_name, connect_date"),
+      fetchAllRows("metrics_demos", "rep_name, demo_date"),
+      fetchAllRows("metrics_ops", "rep_name, op_date"),
+      fetchAllRows("metrics_wins", "rep_name, win_date"),
+      fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
+      fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
+      fetchAllRows("metrics_tam", "rep_name, tam"),
       supabase.from("member_team_history").select("*"),
       supabase.from("team_goals_history").select("*"),
       supabase.from("member_goals_history").select("*"),
@@ -501,13 +517,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       return result;
     };
 
-    const activityByWeek = aggregateByWeek(actRes.data ?? [], "activity_date");
-    const callsByWeek = aggregateByWeek(callRes.data ?? [], "call_date");
-    const connectsByWeek = aggregateByWeek(conRes.data ?? [], "connect_date");
-    const demosByWeek = aggregateByWeek(demoRes.data ?? [], "demo_date");
-    const opsByWeek = aggregateByWeek(opsRes.data ?? [], "op_date");
-    const winsByWeek = aggregateByWeek(winsRes.data ?? [], "win_date");
-    const feedbackByWeek = aggregateByWeek(fbRes.data ?? [], "feedback_date");
+    const activityByWeek = aggregateByWeek(actRows, "activity_date");
+    const callsByWeek = aggregateByWeek(callRows, "call_date");
+    const connectsByWeek = aggregateByWeek(conRows, "connect_date");
+    const demosByWeek = aggregateByWeek(demoRows, "demo_date");
+    const opsByWeek = aggregateByWeek(opsRows, "op_date");
+    const winsByWeek = aggregateByWeek(winsRows, "win_date");
+    const feedbackByWeek = aggregateByWeek(fbRows, "feedback_date");
 
     // Collect all (rep, weekKey) pairs across all event tables
     const allRepWeeks = new Map<string, Set<string>>();
@@ -579,11 +595,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       (wRes.data ?? []) as DbWinEntry[]
     );
 
-    // Derive touched accounts (distinct accounts per rep per team from superhex)
-    // Only count rows where total_activities > 0, attributed to teams via activity date + member_team_history
-    const superhexRows = (shRes.data ?? []) as DbSuperhex[];
-    const tamRows = (tamRes.data ?? []) as DbMetricsTam[];
+    // Derive touched accounts per rep per team from two sources:
+    // 1. superhex rows where total_activities > 0 (attributed via first activity date)
+    // 2. metrics_activity rows with a salesforce_accountid (attributed via activity_date)
+    const superhexRows = shRows as unknown as DbSuperhex[];
+    const tamRows = tamRows_raw as unknown as DbMetricsTam[];
     const historyRows = (hRes.data ?? []) as DbMemberTeamHistory[];
+    const activityRows = actRows as { rep_name: string; activity_date: string | null; salesforce_accountid: string | null }[];
 
     const historyByMemberId = new Map<string, DbMemberTeamHistory[]>();
     for (const h of historyRows) {
@@ -592,8 +610,27 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       historyByMemberId.set(h.member_id, arr);
     }
 
-    // memberKey_teamId -> Set<salesforce_accountid>
+    const findTeamForDate = (memberId: string, dateStr: string): string | null => {
+      const ts = new Date(dateStr).getTime();
+      const history = historyByMemberId.get(memberId) ?? [];
+      for (const h of history) {
+        const start = new Date(h.started_at).getTime();
+        const end = h.ended_at ? new Date(h.ended_at).getTime() : Date.now();
+        if (ts >= start && ts <= end) return h.team_id;
+      }
+      return null;
+    };
+
+    // memberId::teamId -> Set<salesforce_accountid>
     const accountsByMemberTeam = new Map<string, Set<string>>();
+
+    const addTouchedAccount = (memberId: string, teamId: string, accountId: string) => {
+      const key = `${memberId}::${teamId}`;
+      if (!accountsByMemberTeam.has(key)) accountsByMemberTeam.set(key, new Set());
+      accountsByMemberTeam.get(key)!.add(accountId);
+    };
+
+    // Source 1: superhex accounts with total_activities > 0
     for (const row of superhexRows) {
       if (!row.salesforce_accountid || row.total_activities <= 0) continue;
       const repKey = row.rep_name.toLowerCase().trim();
@@ -603,22 +640,23 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const firstDate = getFirstActivityDate(row);
       if (!firstDate) continue;
 
-      const activityTime = new Date(firstDate).getTime();
-      const history = historyByMemberId.get(memberId) ?? [];
-      let teamId: string | null = null;
-      for (const h of history) {
-        const start = new Date(h.started_at).getTime();
-        const end = h.ended_at ? new Date(h.ended_at).getTime() : Date.now();
-        if (activityTime >= start && activityTime <= end) {
-          teamId = h.team_id;
-          break;
-        }
-      }
+      const teamId = findTeamForDate(memberId, firstDate);
       if (!teamId) continue;
 
-      const compositeKey = `${memberId}::${teamId}`;
-      if (!accountsByMemberTeam.has(compositeKey)) accountsByMemberTeam.set(compositeKey, new Set());
-      accountsByMemberTeam.get(compositeKey)!.add(row.salesforce_accountid);
+      addTouchedAccount(memberId, teamId, row.salesforce_accountid);
+    }
+
+    // Source 2: metrics_activity rows with a salesforce_accountid
+    for (const row of activityRows) {
+      if (!row.salesforce_accountid || !row.activity_date) continue;
+      const repKey = row.rep_name.toLowerCase().trim();
+      const memberId = memberIdByName.get(repKey);
+      if (!memberId) continue;
+
+      const teamId = findTeamForDate(memberId, row.activity_date);
+      if (!teamId) continue;
+
+      addTouchedAccount(memberId, teamId, row.salesforce_accountid);
     }
 
     const tamByRep = new Map<string, number>();
