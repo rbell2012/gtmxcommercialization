@@ -252,10 +252,6 @@ const Index = () => {
   const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
-    missionPurpose,
-    updateMission,
-    missionSubmitted,
-    updateMissionSubmitted,
     customRoles,
     addCustomRole,
   } = useManagerInputs();
@@ -677,31 +673,33 @@ const Index = () => {
         </div>
 
         {/* Mission & Purpose */}
-        <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${missionSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+        {activeTeam && (
+        <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.missionSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
           <div className="flex items-center justify-between mb-2">
             <label className="font-display text-lg font-semibold text-foreground">Mission & Purpose of Test</label>
-            {missionSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+            {activeTeam.missionSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
           </div>
           <Textarea
-            value={missionPurpose}
-            onChange={(e) => updateMission(e.target.value)}
+            value={activeTeam.missionPurpose}
+            onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, missionPurpose: e.target.value }))}
             placeholder="Describe the mission and purpose of this test..."
             className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
             rows={3}
-            disabled={missionSubmitted}
+            disabled={activeTeam.missionSubmitted}
           />
           <div className="mt-3 flex justify-end">
-            {!missionSubmitted ? (
-              <Button size="sm" onClick={() => updateMissionSubmitted(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+            {!activeTeam.missionSubmitted ? (
+              <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                 Submit
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => updateMissionSubmitted(false)} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
+              <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
                 Edit
               </Button>
             )}
           </div>
         </div>
+        )}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
         {activeTeam && (() => {
@@ -791,7 +789,7 @@ const Index = () => {
           );
         })()}
 
-        {/* Total TAM — metrics_touched_accounts data if available, else manual input */}
+        {/* Total TAM — external metrics data if available, else manual input */}
         {activeTeam && (() => {
           const activeMembers = getTeamMembersForMonth(activeTeam, referenceDate, memberTeamHistory, allMembersById);
           const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);

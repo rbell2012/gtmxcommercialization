@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTouchedAccounts, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
 
 // ── Goal metrics system ──
 
@@ -140,6 +140,8 @@ export interface Team {
   endDate: string | null;
   totalTam: number;
   tamSubmitted: boolean;
+  missionPurpose: string;
+  missionSubmitted: boolean;
   goalsParity: boolean;
   teamGoals: MemberGoals;
   enabledGoals: EnabledGoals;
@@ -361,6 +363,8 @@ function assembleTeams(
       endDate: t.end_date,
       totalTam: t.total_tam ?? 0,
       tamSubmitted: t.tam_submitted ?? false,
+      missionPurpose: t.mission_purpose ?? "",
+      missionSubmitted: t.mission_submitted ?? false,
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
         calls: t.team_goal_calls ?? 0,
@@ -441,15 +445,22 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [allMembersById, setAllMembersById] = useState<Map<string, TeamMember>>(new Map());
   const [loading, setLoading] = useState(true);
 
-  // ── load all data & merge superhex into funnels ──
+  // ── load all data & merge event-table metrics into funnels ──
   const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, sRes, taRes, hRes, tghRes, mghRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, actRes, callRes, conRes, demoRes, opsRes, winsRes, fbRes, shRes, tamRes, hRes, tghRes, mghRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*"),
       supabase.from("weekly_funnels").select("*"),
       supabase.from("win_entries").select("*"),
-      supabase.from("superhex").select("*"),
-      supabase.from("metrics_touched_accounts").select("*"),
+      supabase.from("metrics_activity").select("rep_name, activity_date"),
+      supabase.from("metrics_calls").select("rep_name, call_date"),
+      supabase.from("metrics_connects").select("rep_name, connect_date"),
+      supabase.from("metrics_demos").select("rep_name, demo_date"),
+      supabase.from("metrics_ops").select("rep_name, op_date"),
+      supabase.from("metrics_wins").select("rep_name, win_date"),
+      supabase.from("metrics_feedback").select("rep_name, feedback_date"),
+      supabase.from("superhex").select("rep_name, salesforce_accountid"),
+      supabase.from("metrics_tam").select("rep_name, tam"),
       supabase.from("member_team_history").select("*"),
       supabase.from("team_goals_history").select("*"),
       supabase.from("member_goals_history").select("*"),
@@ -457,61 +468,103 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
     const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
-    const superhexRows = (sRes.data ?? []) as DbSuperhex[];
 
-    // Build name -> member_id lookup (case-insensitive, trimmed)
     const memberIdByName = new Map<string, string>();
     for (const m of dbMembers) {
       memberIdByName.set(m.name.toLowerCase().trim(), m.id);
     }
 
-    // Merge superhex data into funnels
-    const funnelKey = (memberId: string, weekKey: string) =>
-      `${memberId}::${weekKey}`;
+    // Convert a date string (YYYY-MM-DD) to the Monday week key used by weekly_funnels
+    const dateToWeekKey = (dateStr: string): string => {
+      const d = new Date(dateStr + "T00:00:00");
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+
+    // Aggregate event rows into weekly counts keyed by (rep_name_lower, weekKey)
+    type WeeklyCounts = Map<string, Map<string, number>>;
+    const aggregateByWeek = (rows: Record<string, unknown>[], dateField: string): WeeklyCounts => {
+      const result: WeeklyCounts = new Map();
+      for (const row of rows) {
+        const dateVal = row[dateField] as string | null;
+        if (!dateVal) continue;
+        const repKey = (row.rep_name as string).toLowerCase().trim();
+        const weekKey = dateToWeekKey(dateVal);
+        if (!result.has(repKey)) result.set(repKey, new Map());
+        const repMap = result.get(repKey)!;
+        repMap.set(weekKey, (repMap.get(weekKey) ?? 0) + 1);
+      }
+      return result;
+    };
+
+    const activityByWeek = aggregateByWeek(actRes.data ?? [], "activity_date");
+    const callsByWeek = aggregateByWeek(callRes.data ?? [], "call_date");
+    const connectsByWeek = aggregateByWeek(conRes.data ?? [], "connect_date");
+    const demosByWeek = aggregateByWeek(demoRes.data ?? [], "demo_date");
+    const opsByWeek = aggregateByWeek(opsRes.data ?? [], "op_date");
+    const winsByWeek = aggregateByWeek(winsRes.data ?? [], "win_date");
+    const feedbackByWeek = aggregateByWeek(fbRes.data ?? [], "feedback_date");
+
+    // Collect all (rep, weekKey) pairs across all event tables
+    const allRepWeeks = new Map<string, Set<string>>();
+    for (const source of [activityByWeek, callsByWeek, connectsByWeek, demosByWeek, opsByWeek, winsByWeek, feedbackByWeek]) {
+      for (const [rep, weeks] of source) {
+        if (!allRepWeeks.has(rep)) allRepWeeks.set(rep, new Set());
+        for (const wk of weeks.keys()) allRepWeeks.get(rep)!.add(wk);
+      }
+    }
+
+    // Merge aggregated event data into funnels (non-zero manual values win)
+    const funnelKey = (memberId: string, weekKey: string) => `${memberId}::${weekKey}`;
     const funnelIndex = new Map<string, number>();
     for (let i = 0; i < dbFunnels.length; i++) {
       funnelIndex.set(funnelKey(dbFunnels[i].member_id, dbFunnels[i].week_key), i);
     }
 
-    for (const row of superhexRows) {
-      const memberId = memberIdByName.get(row.rep_name.toLowerCase().trim());
-      if (!memberId) {
-        console.warn(`[superhex] No member match for rep_name="${row.rep_name}"`);
-        continue;
-      }
-      const weekKey = row.activity_week;
-      const key = funnelKey(memberId, weekKey);
-      const existingIdx = funnelIndex.get(key);
+    for (const [repKey, weekKeys] of allRepWeeks) {
+      const memberId = memberIdByName.get(repKey);
+      if (!memberId) continue;
 
-      if (existingIdx !== undefined) {
-        // Existing manual row — superhex is baseline, non-zero manual values win
-        const f = dbFunnels[existingIdx];
-        f.calls = f.calls > 0 ? f.calls : row.calls_count;
-        f.connects = f.connects > 0 ? f.connects : row.connects_count;
-        f.ops = f.ops > 0 ? f.ops : row.total_ops;
-        f.demos = f.demos > 0 ? f.demos : row.total_demos;
-        f.wins = f.wins > 0 ? f.wins : row.total_wins;
-        f.feedback = f.feedback > 0 ? f.feedback : row.total_feedback;
-        f.activity = f.activity > 0 ? f.activity : row.total_activity_count;
-      } else {
-        // No manual row — create synthetic funnel from superhex
-        const synthetic: DbWeeklyFunnel = {
-          id: `superhex-${row.id}`,
-          member_id: memberId,
-          week_key: weekKey,
-          role: null,
-          tam: 0,
-          calls: row.calls_count,
-          connects: row.connects_count,
-          ops: row.total_ops,
-          demos: row.total_demos,
-          wins: row.total_wins,
-          feedback: row.total_feedback,
-          activity: row.total_activity_count,
-          submitted: false,
-          submitted_at: null,
-        };
-        dbFunnels.push(synthetic);
+      for (const weekKey of weekKeys) {
+        const activity = activityByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const calls = callsByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const connects = connectsByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const demos = demosByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const ops = opsByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const wins = winsByWeek.get(repKey)?.get(weekKey) ?? 0;
+        const feedback = feedbackByWeek.get(repKey)?.get(weekKey) ?? 0;
+
+        const key = funnelKey(memberId, weekKey);
+        const existingIdx = funnelIndex.get(key);
+
+        if (existingIdx !== undefined) {
+          const f = dbFunnels[existingIdx];
+          f.calls = f.calls > 0 ? f.calls : calls;
+          f.connects = f.connects > 0 ? f.connects : connects;
+          f.ops = f.ops > 0 ? f.ops : ops;
+          f.demos = f.demos > 0 ? f.demos : demos;
+          f.wins = f.wins > 0 ? f.wins : wins;
+          f.feedback = f.feedback > 0 ? f.feedback : feedback;
+          f.activity = f.activity > 0 ? f.activity : activity;
+        } else {
+          const synthetic: DbWeeklyFunnel = {
+            id: `metrics-${memberId}-${weekKey}`,
+            member_id: memberId,
+            week_key: weekKey,
+            role: null,
+            tam: 0,
+            calls,
+            connects,
+            ops,
+            demos,
+            wins,
+            feedback,
+            activity,
+            submitted: false,
+            submitted_at: null,
+          };
+          dbFunnels.push(synthetic);
+        }
       }
     }
 
@@ -522,15 +575,34 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       (wRes.data ?? []) as DbWinEntry[]
     );
 
-    const touchedRows = (taRes.data ?? []) as DbMetricsTouchedAccounts[];
-    const touchByName = new Map<string, { touchedAccounts: number; touchedTam: number }>();
-    for (const row of touchedRows) {
+    // Derive touched accounts (distinct accounts per rep from superhex)
+    // and TAM totals (from metrics_tam)
+    const superhexRows = (shRes.data ?? []) as { rep_name: string; salesforce_accountid: string | null }[];
+    const tamRows = (tamRes.data ?? []) as DbMetricsTam[];
+
+    const accountsByRep = new Map<string, Set<string>>();
+    for (const row of superhexRows) {
+      if (!row.salesforce_accountid) continue;
       const key = row.rep_name.toLowerCase().trim();
-      const existing = touchByName.get(key) ?? { touchedAccounts: 0, touchedTam: 0 };
-      existing.touchedAccounts += row.touched_accounts;
-      existing.touchedTam += row.tam;
-      touchByName.set(key, existing);
+      if (!accountsByRep.has(key)) accountsByRep.set(key, new Set());
+      accountsByRep.get(key)!.add(row.salesforce_accountid);
     }
+
+    const tamByRep = new Map<string, number>();
+    for (const row of tamRows) {
+      const key = row.rep_name.toLowerCase().trim();
+      tamByRep.set(key, (tamByRep.get(key) ?? 0) + row.tam);
+    }
+
+    const touchByName = new Map<string, { touchedAccounts: number; touchedTam: number }>();
+    const allTouchReps = new Set([...accountsByRep.keys(), ...tamByRep.keys()]);
+    for (const key of allTouchReps) {
+      touchByName.set(key, {
+        touchedAccounts: accountsByRep.get(key)?.size ?? 0,
+        touchedTam: tamByRep.get(key) ?? 0,
+      });
+    }
+
     for (const team of t) {
       for (const member of team.members) {
         const touch = touchByName.get(member.name.toLowerCase().trim());
@@ -603,11 +675,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     const channel = supabase
       .channel("gtmx-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_calls" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_connects" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_demos" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_ops" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_wins" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, debouncedLoadAll)
       .subscribe();
 
     return () => {
@@ -674,6 +753,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.endDate !== updated.endDate ||
             old.totalTam !== updated.totalTam ||
             old.tamSubmitted !== updated.tamSubmitted ||
+            old.missionPurpose !== updated.missionPurpose ||
+            old.missionSubmitted !== updated.missionSubmitted ||
             goalsChanged)
         ) {
           dbMutate(
@@ -688,6 +769,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 end_date: updated.endDate,
                 total_tam: updated.totalTam,
                 tam_submitted: updated.tamSubmitted,
+                mission_purpose: updated.missionPurpose,
+                mission_submitted: updated.missionSubmitted,
                 goals_parity: updated.goalsParity,
                 team_goal_calls: updated.teamGoals.calls,
                 team_goal_ops: updated.teamGoals.ops,
@@ -786,6 +869,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           id: tempId, name, owner, leadRep: "",
           sortOrder: nextOrder, isActive: true,
           startDate, endDate, totalTam: 0, tamSubmitted: false,
+          missionPurpose: "", missionSubmitted: false,
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },
           acceleratorConfig: {},

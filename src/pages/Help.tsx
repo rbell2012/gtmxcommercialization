@@ -345,14 +345,16 @@ export default function Help() {
       <Section id="realtime" title="6. Real-Time Data">
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            Activity data from the external reporting system (superhex) syncs
-            in <strong>real time</strong>. When new data is inserted or updated,
+            Activity data from external metrics tables (calls, connects,
+            demos, ops, wins, feedback, activity) syncs in{" "}
+            <strong>real time</strong>. When new data is inserted or updated,
             the app refreshes automatically — no manual page reload needed.
           </li>
           <li>
-            External data provides the <strong>baseline</strong>. Any non-zero
-            value entered manually in Rep Self-Overrides will override the
-            external value for that metric and week.
+            External event data is aggregated into weekly totals and provides
+            the <strong>baseline</strong>. Any non-zero value entered manually
+            in Rep Self-Overrides will override the external value for that
+            metric and week.
           </li>
         </ul>
       </Section>

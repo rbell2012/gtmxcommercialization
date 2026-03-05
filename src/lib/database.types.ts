@@ -25,6 +25,8 @@ export interface DbTeam {
   accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   goal_scope_config: Record<string, unknown> | null;
+  mission_purpose: string;
+  mission_submitted: boolean;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -114,15 +116,28 @@ export interface DbTeamPhaseLabel {
 
 export interface DbSuperhex {
   id: string;
+  salesforce_accountid: string | null;
+  account_name: string | null;
   rep_name: string;
-  activity_week: string;
-  total_activity_count: number;
-  calls_count: number;
-  connects_count: number;
-  total_ops: number;
+  total_activities: number;
+  first_activity_date: string | null;
+  last_activity_date: string | null;
+  total_calls: number;
+  first_call_date: string | null;
+  last_call_date: string | null;
+  total_connects: number;
+  first_connect_date: string | null;
+  chorus_link: string | null;
+  chorus_date: string | null;
   total_demos: number;
-  total_wins: number;
-  total_feedback: number;
+  first_demo_date: string | null;
+  op_name: string | null;
+  op_date: string | null;
+  op_stage: string | null;
+  is_won: boolean;
+  win_date: string | null;
+  feedback: string | null;
+  feedback_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -136,46 +151,43 @@ export interface DbMetricsTam {
   updated_at: string;
 }
 
-export interface DbMetricsTouchedAccounts {
-  id: string;
-  source: string;
-  rep_name: string;
-  touched_accounts: number;
-  tam: number;
-  touch_rate: number;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface DbMetricsDemos {
   id: string;
-  activity_week: string;
+  demo_date: string | null;
+  demo_source: string | null;
+  salesforce_accountid: string | null;
   rep_name: string;
-  demos: number;
+  account_name: string | null;
+  subject: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface DbMetricsOps {
   id: string;
-  opportunity_close_week: string;
-  opportunity_name: string;
-  full_name: string;
-  gtmx_team: string;
-  opportunity_iswon: boolean;
+  op_date: string | null;
+  opportunity_name: string | null;
+  opportunity_stage: string | null;
+  salesforce_accountid: string | null;
+  rep_name: string;
+  gtmx_team: string | null;
+  account_prospecting_notes: string | null;
+  opportunity_type: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface DbMetricsWins {
   id: string;
-  activity_week: string;
-  date_added: string;
+  win_date: string | null;
+  account_name: string | null;
+  salesforce_accountid: string | null;
   rep_name: string;
-  name: string;
-  gtmx_team: string;
-  source: string;
-  salesforce_accountid: string;
+  opportunity_name: string | null;
+  opportunity_stage: string | null;
+  gtmx_team: string | null;
+  account_prospecting_notes: string | null;
+  opportunity_type: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -212,28 +224,66 @@ export interface DbMemberGoalsHistory {
 
 export interface DbMetricsFeedback {
   id: string;
-  activity_week: string;
-  date_added: string;
+  feedback_date: string | null;
   rep_name: string;
-  source: string;
-  feedback_completed: number;
-  chorus_comments: string;
+  account_name: string | null;
+  source: string | null;
+  feedback: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface DbMetricsMainDetailed {
+export interface DbMetricsActivity {
   id: string;
+  activity_date: string | null;
+  salesforce_accountid: string | null;
   rep_name: string;
-  customer_name: string;
-  total_activities: number;
-  first_call_date: string | null;
-  first_connect_date: string | null;
-  first_demo_date: string | null;
-  first_activity_date: string | null;
-  latest_activity_date: string | null;
-  chorus_link: string;
-  win_date: string | null;
+  activity_type: string | null;
+  subject: string | null;
+  status: string | null;
+  activity_outcome: string | null;
+  activity_source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsCalls {
+  id: string;
+  call_date: string | null;
+  salesforce_accountid: string | null;
+  rep_name: string;
+  call_type: string | null;
+  subject: string | null;
+  status: string | null;
+  call_outcome: string | null;
+  call_source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsConnects {
+  id: string;
+  connect_date: string | null;
+  salesforce_accountid: string | null;
+  rep_name: string;
+  connect_type: string | null;
+  subject: string | null;
+  status: string | null;
+  connect_outcome: string | null;
+  connect_source: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsChorus {
+  id: string;
+  account_name: string | null;
+  salesforce_accountid: string | null;
+  comments: string | null;
+  chorus_link: string | null;
+  rep_name: string;
+  chorus_date: string | null;
+  rn: number | null;
   created_at: string;
   updated_at: string;
 }

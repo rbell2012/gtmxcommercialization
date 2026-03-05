@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-05 (Per-Project Mission & Purpose)
+
+### Location – All Pilot Pages (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Hook (`src/hooks/useManagerInputs.ts`), Types (`src/lib/database.types.ts`), Database (Supabase migration `add_mission_to_teams`)
+
+**Rationale:** Mission & Purpose of Test was stored in a single-row global `mission` table, so every project/team shared the same value. When a manager entered or submitted a mission on one pilot, it appeared on all pilots. Each project has a different purpose and needs its own independent mission statement.
+
+**Changes:**
+- Applied a Supabase migration adding `mission_purpose` (text) and `mission_submitted` (boolean) columns to the `teams` table. Migrated the existing Guest Pro mission content to that team's row.
+- Updated `DbTeam` in `database.types.ts` to include the new `mission_purpose` and `mission_submitted` fields.
+- Added `missionPurpose` and `missionSubmitted` to the `Team` interface in `TeamsContext.tsx`, mapped them in `assembleTeams`, and included them in the `updateTeam` diff-and-persist logic so changes auto-save to Supabase.
+- Updated `addTeam` to initialize new teams with `missionPurpose: ""` and `missionSubmitted: false`.
+- Removed all global mission state (`missionPurpose`, `missionSubmitted`, `missionRowId`), the `mission` table query, and the `updateMission`/`updateMissionSubmitted` callbacks from `useManagerInputs.ts`.
+- Updated the Mission & Purpose input in `Index.tsx` to read from `activeTeam.missionPurpose` and write via `updateTeam()`, so each project tab has its own independent mission value and submit state.
+- All pilot/project pages remain identical in appearance and operation — each now simply maintains its own mission.
+
+---
+
 ## 2026-03-04 (Weekly Data Team Section Alignment)
 
 ### Location – Project Pages (`src/pages/Index.tsx`)

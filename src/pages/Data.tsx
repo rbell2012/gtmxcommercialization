@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import type { DbMetricsMainDetailed, DbMemberTeamHistory, DbRevxImpactValue } from "@/lib/database.types";
+import type { DbSuperhex, DbMemberTeamHistory, DbRevxImpactValue } from "@/lib/database.types";
 
 interface TeamBasic {
   id: string;
@@ -40,7 +40,7 @@ function avg(arr: number[]): number | null {
   return arr.length > 0 ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
 }
 
-function computeDealCycleStats(rows: DbMetricsMainDetailed[]): DealCycleStats {
+function computeDealCycleStats(rows: DbSuperhex[]): DealCycleStats {
   const dealCycleDays: number[] = [];
   const callToConnectDays: number[] = [];
   const connectToDemoDays: number[] = [];
@@ -62,10 +62,10 @@ function computeDealCycleStats(rows: DbMetricsMainDetailed[]): DealCycleStats {
       demoToWinDays.push(daysBetween(row.first_demo_date, row.win_date));
     }
     if (row.first_demo_date) {
-      activitiesForDemo.push(row.total_activities);
+      activitiesForDemo.push(row.total_activities ?? 0);
     }
     if (row.win_date) {
-      activitiesForWin.push(row.total_activities);
+      activitiesForWin.push(row.total_activities ?? 0);
     }
   }
 
@@ -85,12 +85,12 @@ function computeDealCycleStats(rows: DbMetricsMainDetailed[]): DealCycleStats {
   };
 }
 
-function getFirstActivityDate(row: DbMetricsMainDetailed): string | null {
-  return row.first_activity_date || row.first_call_date || row.first_connect_date || row.first_demo_date || row.latest_activity_date;
+function getFirstActivityDate(row: DbSuperhex): string | null {
+  return row.first_activity_date || row.first_call_date || row.first_connect_date || row.first_demo_date || row.last_activity_date;
 }
 
 function mapRowToTeam(
-  row: DbMetricsMainDetailed,
+  row: DbSuperhex,
   membersByName: Map<string, MemberBasic>,
   historyByMember: Map<string, DbMemberTeamHistory[]>,
 ): string | null {
@@ -116,7 +116,7 @@ function mapRowToTeam(
 // For win attribution, use win_date (not first activity date) to find which
 // team the rep was on when the win actually occurred.
 function mapWinToTeam(
-  row: DbMetricsMainDetailed,
+  row: DbSuperhex,
   membersByName: Map<string, MemberBasic>,
   historyByMember: Map<string, DbMemberTeamHistory[]>,
 ): string | null {
@@ -160,7 +160,7 @@ export default function Data() {
   const [editingRevxTeam, setEditingRevxTeam] = useState<string | null>(null);
   const [revxSaving, setRevxSaving] = useState<Set<string>>(new Set());
 
-  const [metricsData, setMetricsData] = useState<DbMetricsMainDetailed[]>([]);
+  const [metricsData, setMetricsData] = useState<DbSuperhex[]>([]);
   const [members, setMembers] = useState<MemberBasic[]>([]);
   const [teamHistory, setTeamHistory] = useState<DbMemberTeamHistory[]>([]);
   const [teams, setTeams] = useState<TeamBasic[]>([]);
@@ -177,13 +177,13 @@ export default function Data() {
   useEffect(() => {
     async function load() {
       const [metricsRes, membersRes, historyRes, teamsRes, revxRes] = await Promise.all([
-        supabase.from("metrics_main_detailed").select("*"),
+        supabase.from("superhex").select("*"),
         supabase.from("members").select("id, name"),
         supabase.from("member_team_history").select("*"),
         supabase.from("teams").select("id, name, start_date, end_date").is("archived_at", null).order("sort_order"),
         supabase.from("revx_impact_values").select("*"),
       ]);
-      setMetricsData((metricsRes.data ?? []) as DbMetricsMainDetailed[]);
+      setMetricsData((metricsRes.data ?? []) as DbSuperhex[]);
       setMembers((membersRes.data ?? []) as MemberBasic[]);
       setTeamHistory((historyRes.data ?? []) as DbMemberTeamHistory[]);
       setTeams((teamsRes.data ?? []) as TeamBasic[]);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTestPhase, DbMission, DbCustomRole } from "@/lib/database.types";
+import type { DbTestPhase, DbCustomRole } from "@/lib/database.types";
 
 export interface TestPhase {
   id: string;
@@ -18,9 +18,6 @@ const INITIAL_PHASES: TestPhase[] = [
 
 export function useManagerInputs() {
   const [phases, setPhases] = useState<TestPhase[]>(INITIAL_PHASES);
-  const [missionPurpose, setMissionPurpose] = useState("");
-  const [missionSubmitted, setMissionSubmitted] = useState(false);
-  const [missionRowId, setMissionRowId] = useState<string | null>(null);
   const [customRoles, setCustomRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,9 +25,8 @@ export function useManagerInputs() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [pRes, misRes, rolesRes] = await Promise.all([
+      const [pRes, rolesRes] = await Promise.all([
         supabase.from("test_phases").select("*").order("sort_order"),
-        supabase.from("mission").select("*").limit(1).single(),
         supabase.from("custom_roles").select("*").order("created_at"),
       ]);
       if (cancelled) return;
@@ -44,13 +40,6 @@ export function useManagerInputs() {
             progress: p.progress,
           }))
         );
-      }
-
-      if (misRes.data) {
-        const m = misRes.data as DbMission;
-        setMissionRowId(m.id);
-        setMissionPurpose(m.content);
-        setMissionSubmitted(m.submitted);
       }
 
       if (rolesRes.data) {
@@ -99,21 +88,6 @@ export function useManagerInputs() {
     });
   }, []);
 
-  // ── mission persistence ──
-  const updateMission = useCallback((content: string) => {
-    setMissionPurpose(content);
-    if (missionRowId) {
-      dbMutate(supabase.from("mission").update({ content }).eq("id", missionRowId), "update mission");
-    }
-  }, [missionRowId]);
-
-  const updateMissionSubmitted = useCallback((submitted: boolean) => {
-    setMissionSubmitted(submitted);
-    if (missionRowId) {
-      dbMutate(supabase.from("mission").update({ submitted }).eq("id", missionRowId), "update mission submitted");
-    }
-  }, [missionRowId]);
-
   // ── custom roles persistence ──
   const addCustomRole = useCallback((name: string) => {
     setCustomRoles((prev) => [...prev, name]);
@@ -124,10 +98,6 @@ export function useManagerInputs() {
     phases,
     updatePhases,
     addPhase,
-    missionPurpose,
-    updateMission,
-    missionSubmitted,
-    updateMissionSubmitted,
     customRoles,
     addCustomRole,
     loading,
