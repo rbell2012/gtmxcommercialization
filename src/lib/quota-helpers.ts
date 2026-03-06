@@ -1,13 +1,19 @@
 import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule } from "@/contexts/TeamsContext";
 
 /**
- * Sum a single metric across only the weeks whose Monday falls in the
- * given calendar month (week_key format: "YYYY-MM-DD").
- * When referenceDate is omitted the current month is used.
+ * Sum a single metric for a calendar month using monthlyMetrics (which
+ * attributes events to their actual calendar month rather than the
+ * Monday-based week key). Falls back to week-derived totals if
+ * monthlyMetrics is not populated. When referenceDate is omitted the
+ * current month is used.
  */
 export function getMemberMetricTotal(m: TeamMember, metric: GoalMetric, referenceDate?: Date): number {
   const now = referenceDate ?? new Date();
-  const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  if (m.monthlyMetrics && m.monthlyMetrics[monthKey]) {
+    return (m.monthlyMetrics[monthKey] as any)[metric] || 0;
+  }
+  const prefix = monthKey + "-";
   return Object.entries(m.funnelByWeek || {}).reduce(
     (s, [weekKey, f]) => (weekKey.startsWith(prefix) ? s + ((f as any)[metric] || 0) : s),
     0
@@ -15,6 +21,11 @@ export function getMemberMetricTotal(m: TeamMember, metric: GoalMetric, referenc
 }
 
 export function getMemberLifetimeMetricTotal(m: TeamMember, metric: GoalMetric): number {
+  if (m.monthlyMetrics && Object.keys(m.monthlyMetrics).length > 0) {
+    return Object.values(m.monthlyMetrics).reduce(
+      (s, f) => s + ((f as any)[metric] || 0), 0
+    );
+  }
   return Object.values(m.funnelByWeek || {}).reduce(
     (s, f) => s + ((f as any)[metric] || 0), 0
   );

@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-05 (Ops Counting — Use op_created_date & Calendar-Month Attribution)
+
+### Location – Project Pages (`src/pages/Index.tsx`), Data Page (`src/pages/Data.tsx`), Context (`src/contexts/TeamsContext.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Types (`src/lib/database.types.ts`), Migration
+
+**Rationale:** Ops were being counted by `op_date` (close date) rather than when the opportunity was created. Additionally, monthly totals were derived from Monday-based week keys, which could misattribute events near month boundaries (e.g., an op created on a Sunday at the start of a month would be bucketed into the previous month). Monthly goals now use actual calendar-month attribution so any event with a date falling in a given month counts toward that month's total.
+
+**Changes:**
+- Renamed the `created_date` column to `op_created_date` across the codebase (migration, `DbMetricsOps` type, TeamsContext fetch, Data page config).
+- Switched ops weekly bucketing and Data page filtering from `op_date` to `op_created_date` so ops report under the week/month they were created, not closed.
+- Added `monthlyMetrics: Record<string, FunnelData>` to the `TeamMember` interface for calendar-month metric totals.
+- Added `aggregateByMonth` helper in `TeamsContext.tsx` that buckets raw metric events by their actual `YYYY-MM` calendar month (parallel to the existing `aggregateByWeek`).
+- After assembling teams, computes `monthlyMetrics` per member: starts from week-derived monthly totals (preserving manual weekly overrides), then applies a correction that re-attributes metrics-derived events to their actual calendar month.
+- Updated `getMemberMetricTotal` and `getMemberLifetimeMetricTotal` in `quota-helpers.ts` to use `monthlyMetrics` when available, with fallback to the old week-derived approach.
+- Added missing `monthlyMetrics`, `level`, `touchedAccountsByTeam`, and `touchedTam` fields to inline `TeamMember` creation in `Index.tsx`.
+
+---
+
 ## 2026-03-05 (Database — Add created_date to metrics_ops)
 
 ### Location – Database (`metrics_ops` table), Types (`src/lib/database.types.ts`), Context (`src/contexts/TeamsContext.tsx`)

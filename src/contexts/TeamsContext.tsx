@@ -113,6 +113,7 @@ export interface TeamMember {
   wins: WinEntry[];
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
+  monthlyMetrics: Record<string, FunnelData>;
   isActive: boolean;
   touchedAccountsByTeam: Record<string, number>;
   touchedTam: number;
@@ -326,6 +327,7 @@ function dbMemberToApp(
       date: w.date,
     })),
     funnelByWeek,
+    monthlyMetrics: {},
     touchedAccountsByTeam: {},
     touchedTam: 0,
   };
@@ -476,7 +478,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
       fetchAllRows("metrics_demos", "rep_name, demo_date"),
-      fetchAllRows("metrics_ops", "rep_name, op_date, created_date"),
+      fetchAllRows("metrics_ops", "rep_name, op_date, op_created_date"),
       fetchAllRows("metrics_wins", "rep_name, win_date"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
@@ -501,29 +503,47 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     };
 
-    // Aggregate event rows into weekly counts keyed by (rep_name_lower, weekKey)
-    type WeeklyCounts = Map<string, Map<string, number>>;
-    const aggregateByWeek = (rows: Record<string, unknown>[], dateField: string): WeeklyCounts => {
-      const result: WeeklyCounts = new Map();
+    const dateToMonthKey = (dateStr: string): string => {
+      const d = new Date(dateStr + "T00:00:00");
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    };
+
+    const weekKeyToMonthKey = (weekKey: string): string => weekKey.substring(0, 7);
+
+    // Aggregate event rows into counts keyed by (rep_name_lower, timeKey)
+    type AggCounts = Map<string, Map<string, number>>;
+    const aggregateBy = (rows: Record<string, unknown>[], dateField: string, keyFn: (d: string) => string): AggCounts => {
+      const result: AggCounts = new Map();
       for (const row of rows) {
         const dateVal = row[dateField] as string | null;
         if (!dateVal) continue;
         const repKey = (row.rep_name as string).toLowerCase().trim();
-        const weekKey = dateToWeekKey(dateVal);
+        const key = keyFn(dateVal);
         if (!result.has(repKey)) result.set(repKey, new Map());
         const repMap = result.get(repKey)!;
-        repMap.set(weekKey, (repMap.get(weekKey) ?? 0) + 1);
+        repMap.set(key, (repMap.get(key) ?? 0) + 1);
       }
       return result;
     };
+
+    const aggregateByWeek = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToWeekKey);
+    const aggregateByMonth = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToMonthKey);
 
     const activityByWeek = aggregateByWeek(actRows, "activity_date");
     const callsByWeek = aggregateByWeek(callRows, "call_date");
     const connectsByWeek = aggregateByWeek(conRows, "connect_date");
     const demosByWeek = aggregateByWeek(demoRows, "demo_date");
-    const opsByWeek = aggregateByWeek(opsRows, "op_date");
+    const opsByWeek = aggregateByWeek(opsRows, "op_created_date");
     const winsByWeek = aggregateByWeek(winsRows, "win_date");
     const feedbackByWeek = aggregateByWeek(fbRows, "feedback_date");
+
+    const activityByMonth = aggregateByMonth(actRows, "activity_date");
+    const callsByMonth = aggregateByMonth(callRows, "call_date");
+    const connectsByMonth = aggregateByMonth(conRows, "connect_date");
+    const demosByMonth = aggregateByMonth(demoRows, "demo_date");
+    const opsByMonth = aggregateByMonth(opsRows, "op_created_date");
+    const winsByMonth = aggregateByMonth(winsRows, "win_date");
+    const feedbackByMonth = aggregateByMonth(fbRows, "feedback_date");
 
     // Collect all (rep, weekKey) pairs across all event tables
     const allRepWeeks = new Map<string, Set<string>>();
@@ -594,6 +614,66 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       dbFunnels,
       (wRes.data ?? []) as DbWinEntry[]
     );
+
+    // Build monthlyMetrics for each member using actual calendar-month attribution.
+    // Start from funnelByWeek (which includes manual overrides) attributed by Monday's
+    // month, then apply a correction so metrics-derived events are attributed to their
+    // actual calendar month instead.
+    const metricSources: { key: keyof FunnelData; monthly: AggCounts; weekly: AggCounts }[] = [
+      { key: "activity", monthly: activityByMonth, weekly: activityByWeek },
+      { key: "calls", monthly: callsByMonth, weekly: callsByWeek },
+      { key: "connects", monthly: connectsByMonth, weekly: connectsByWeek },
+      { key: "demos", monthly: demosByMonth, weekly: demosByWeek },
+      { key: "ops", monthly: opsByMonth, weekly: opsByWeek },
+      { key: "wins", monthly: winsByMonth, weekly: winsByWeek },
+      { key: "feedback", monthly: feedbackByMonth, weekly: feedbackByWeek },
+    ];
+
+    const emptyFunnel = (): FunnelData => ({ tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0, activity: 0 });
+
+    const allMembers = [...u];
+    for (const team of t) allMembers.push(...(team.members ?? []));
+
+    for (const member of allMembers) {
+      const monthly: Record<string, FunnelData> = {};
+
+      for (const [weekKey, funnel] of Object.entries(member.funnelByWeek)) {
+        const mk = weekKeyToMonthKey(weekKey);
+        if (!monthly[mk]) monthly[mk] = emptyFunnel();
+        monthly[mk].tam += funnel.tam;
+        monthly[mk].calls += funnel.calls;
+        monthly[mk].connects += funnel.connects;
+        monthly[mk].ops += funnel.ops;
+        monthly[mk].demos += funnel.demos;
+        monthly[mk].wins += funnel.wins;
+        monthly[mk].feedback += funnel.feedback;
+        monthly[mk].activity += funnel.activity;
+      }
+
+      const repKey = member.name.toLowerCase().trim();
+      for (const { key, monthly: monthlyAgg, weekly: weeklyAgg } of metricSources) {
+        const byActualMonth = monthlyAgg.get(repKey) ?? new Map<string, number>();
+        const byWeek = weeklyAgg.get(repKey) ?? new Map<string, number>();
+        const byWeekDerivedMonth = new Map<string, number>();
+        for (const [wk, count] of byWeek) {
+          const mk = weekKeyToMonthKey(wk);
+          byWeekDerivedMonth.set(mk, (byWeekDerivedMonth.get(mk) ?? 0) + count);
+        }
+
+        const allMonths = new Set([...byActualMonth.keys(), ...byWeekDerivedMonth.keys()]);
+        for (const mk of allMonths) {
+          const actual = byActualMonth.get(mk) ?? 0;
+          const weekDerived = byWeekDerivedMonth.get(mk) ?? 0;
+          const correction = actual - weekDerived;
+          if (correction !== 0) {
+            if (!monthly[mk]) monthly[mk] = emptyFunnel();
+            monthly[mk][key] += correction;
+          }
+        }
+      }
+
+      member.monthlyMetrics = monthly;
+    }
 
     // Derive touched accounts per rep per team from two sources:
     // 1. superhex rows where total_activities > 0 (attributed via first activity date)
@@ -994,7 +1074,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
     const id = crypto.randomUUID();
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
-    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true, touchedAccountsByTeam: {}, touchedTam: 0 };
+    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, isActive: true, touchedAccountsByTeam: {}, touchedTam: 0 };
     setUnassignedMembers((prev) => [...prev, member]);
     dbMutate(
       supabase

@@ -173,7 +173,7 @@ export interface DbMetricsOps {
   gtmx_team: string | null;
   account_prospecting_notes: string | null;
   opportunity_type: string | null;
-  created_date: string | null;
+  op_created_date: string | null;
   created_at: string;
   updated_at: string;
 }

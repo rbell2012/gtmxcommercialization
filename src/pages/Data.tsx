@@ -157,7 +157,7 @@ const DATA_TYPE_CONFIG: Record<DataTypeKey, { table: string; dateCol: string; la
   connects: { table: "metrics_connects", dateCol: "connect_date", label: "Connects" },
   demos: { table: "metrics_demos", dateCol: "demo_date", label: "Demos" },
   wins: { table: "metrics_wins", dateCol: "win_date", label: "Wins" },
-  ops: { table: "metrics_ops", dateCol: "op_date", label: "Ops" },
+  ops: { table: "metrics_ops", dateCol: "op_created_date", label: "Ops" },
   feedback: { table: "metrics_feedback", dateCol: "feedback_date", label: "Feedback" },
 };
 

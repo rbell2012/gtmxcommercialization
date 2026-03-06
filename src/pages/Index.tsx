@@ -428,7 +428,7 @@ const Index = () => {
       ...team,
       members: [
         ...team.members,
-        { id: memberId, name: newName.trim(), goals, wins: [], ducksEarned: 0, funnelByWeek: {}, isActive: true },
+        { id: memberId, name: newName.trim(), level: null, goals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, isActive: true, touchedAccountsByTeam: {}, touchedTam: 0 },
       ],
     }));
     dbMutate(
