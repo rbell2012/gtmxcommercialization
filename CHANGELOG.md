@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-05 (Database — Add created_date to metrics_ops)
+
+### Location – Database (`metrics_ops` table), Types (`src/lib/database.types.ts`), Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** The `metrics_ops` table needed a `created_date` column to track when each opportunity record was originally created, distinct from the system-managed `created_at` timestamp.
+
+**Changes:**
+- Added `created_date` (type `date`, nullable) column to the `metrics_ops` table in Supabase via migration.
+- Created local migration file `supabase/migrations/20260306000000_add_created_date_to_metrics_ops.sql`.
+- Updated the `DbMetricsOps` TypeScript interface in `src/lib/database.types.ts` to include `created_date: string | null`.
+- Updated `TeamsContext.tsx` to include `created_date` in the selected columns when fetching `metrics_ops` rows.
+
+---
+
 ## 2026-03-05 (Home Page — Active Project Tiles, Lifetime Stats, Page Overviews)
 
 ### Location – Home Page (`src/pages/Home.tsx`), App Router & Nav (`src/App.tsx`)
