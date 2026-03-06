@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-06 (Settings — Historical Member Roster Editing in Edit Team Modal)
+
+### Location – Settings Page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Members could only be managed from the flat Members table at the bottom of Settings, with no awareness of historical months. Goals and accelerators already supported per-month editing via the Test Phases selector in the Edit Team modal, but there was no equivalent way to view or modify which members were on a team for a past month. Users needed the ability to retroactively adjust team rosters (e.g. correct a late join, backfill a transfer) using the same month-selector workflow.
+
+**Changes:**
+- Added a "Team Members" section to the Edit Team modal (between Test Phases and Monthly Goals) showing the roster for the selected month with a member count badge.
+- Each member row displays the member's name, level badge, and a remove button.
+- Added an "Add Member" dropdown populated from all active members not currently on the roster, including unassigned members and members from other teams.
+- Added `editTeamMembers` and `editTeamMembersInitial` state to track the working roster and detect diffs on save.
+- Wired `startEditTeam` to initialize the roster from the team's current active members.
+- Wired `handlePhaseClick` to repopulate the roster from `getTeamMembersForMonth()` when switching to a historical month, or from the current roster when switching back to the current month.
+- Updated `saveEditTeam`: for the current month, diffs the roster and calls `assignMember()`/`unassignMember()` for changes; for historical months, calls the new `updateHistoricalRoster()`.
+- Added `updateHistoricalRoster(teamId, referenceDate, memberIds)` to `TeamsContext` — compares desired roster against current `member_team_history` entries for the month, inserts new entries for added members, and splits/trims/deletes entries for removed members, all persisted to Supabase.
+- Imported `getTeamMembersForMonth`, `memberTeamHistory`, `allMembersById`, and `updateHistoricalRoster` into Settings.
+
+---
+
 ## 2026-03-06 (Settings — Month Selector for Goals & Accelerators)
 
 ### Location – Settings Page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)

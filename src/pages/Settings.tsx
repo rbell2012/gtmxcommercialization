@@ -21,6 +21,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   useTeams,
   toMonthKey,
+  getTeamMembersForMonth,
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
   MEMBER_LEVELS,
@@ -75,7 +76,10 @@ const Settings = () => {
     removeMember,
     updateMember,
     teamGoalsHistory,
+    memberTeamHistory,
+    allMembersById,
     upsertTeamGoalsHistory,
+    updateHistoricalRoster,
   } = useTeams();
   const { toast } = useToast();
 
@@ -132,6 +136,8 @@ const Settings = () => {
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
+  const [editTeamMembers, setEditTeamMembers] = useState<string[]>([]);
+  const [editTeamMembersInitial, setEditTeamMembersInitial] = useState<string[]>([]);
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -219,6 +225,9 @@ const Settings = () => {
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
     setSelectedEditMonth(null);
+    const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
+    setEditTeamMembers(currentRoster);
+    setEditTeamMembersInitial(currentRoster);
   };
 
   const saveEditTeam = () => {
@@ -242,8 +251,9 @@ const Settings = () => {
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
       });
+      updateHistoricalRoster(editTeamId, selectedEditMonth, editTeamMembers);
       const label = selectedEditMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
-      toast({ title: `Goals updated for ${label}` });
+      toast({ title: `Team updated for ${label}` });
     } else {
       updateTeam(editTeamId, (t) => ({
         ...t,
@@ -259,6 +269,12 @@ const Settings = () => {
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
       }));
+
+      const added = editTeamMembers.filter((id) => !editTeamMembersInitial.includes(id));
+      const removed = editTeamMembersInitial.filter((id) => !editTeamMembers.includes(id));
+      for (const memberId of added) assignMember(memberId, editTeamId);
+      for (const memberId of removed) unassignMember(memberId, editTeamId);
+
       toast({ title: "Team updated" });
     }
     setEditTeamId(null);
@@ -540,9 +556,9 @@ const Settings = () => {
                   const handlePhaseClick = (phase: ComputedPhase) => {
                     const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
                     if (phaseIsCurrentMonth && !selectedEditMonth) return;
+                    const team = teams.find((t) => t.id === editTeamId);
                     if (phaseIsCurrentMonth) {
                       setSelectedEditMonth(null);
-                      const team = teams.find((t) => t.id === editTeamId);
                       if (team) {
                         setEditTeamParity(team.goalsParity);
                         setEditTeamGoals({ ...team.teamGoals });
@@ -550,6 +566,9 @@ const Settings = () => {
                         setEditAcceleratorConfig({ ...team.acceleratorConfig });
                         setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
                         setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                        const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
+                        setEditTeamMembers(currentRoster);
+                        setEditTeamMembersInitial(currentRoster);
                       }
                       return;
                     }
@@ -564,16 +583,18 @@ const Settings = () => {
                       setEditAcceleratorConfig({ ...entry.acceleratorConfig });
                       setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(entry.teamGoalsByLevel)));
                       setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...entry.goalScopeConfig });
-                    } else {
-                      const team = teams.find((t) => t.id === editTeamId);
-                      if (team) {
-                        setEditTeamParity(team.goalsParity);
-                        setEditTeamGoals({ ...team.teamGoals });
-                        setEditEnabledGoals({ ...team.enabledGoals });
-                        setEditAcceleratorConfig({ ...team.acceleratorConfig });
-                        setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
-                        setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
-                      }
+                    } else if (team) {
+                      setEditTeamParity(team.goalsParity);
+                      setEditTeamGoals({ ...team.teamGoals });
+                      setEditEnabledGoals({ ...team.enabledGoals });
+                      setEditAcceleratorConfig({ ...team.acceleratorConfig });
+                      setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
+                      setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                    }
+                    if (team) {
+                      const histMembers = getTeamMembersForMonth(team, d, memberTeamHistory, allMembersById).map((m) => m.id);
+                      setEditTeamMembers(histMembers);
+                      setEditTeamMembersInitial(histMembers);
                     }
                   };
 
@@ -641,6 +662,78 @@ const Settings = () => {
                           );
                         })}
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Team Members ── */}
+                {(() => {
+                  const roster = editTeamMembers
+                    .map((id) => allMembersById.get(id))
+                    .filter((m): m is NonNullable<typeof m> => m != null)
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                  const availableMembers = Array.from(allMembersById.values())
+                    .filter((m) => m.isActive && !editTeamMembers.includes(m.id))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+                  return (
+                    <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-foreground">Team Members</h4>
+                          <Badge variant="secondary" className="text-[10px]">{roster.length}</Badge>
+                        </div>
+                        <Select
+                          value="__add__"
+                          onValueChange={(val) => {
+                            if (val !== "__add__") {
+                              setEditTeamMembers((prev) => [...prev, val]);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="h-7 w-40 bg-background border-border/50 text-foreground text-xs">
+                            <SelectValue placeholder="+ Add Member" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-card border-border z-50">
+                            <SelectItem value="__add__" disabled>+ Add Member</SelectItem>
+                            {availableMembers.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.name}{m.level ? ` (${MEMBER_LEVEL_LABELS[m.level]})` : ""}
+                              </SelectItem>
+                            ))}
+                            {availableMembers.length === 0 && (
+                              <SelectItem value="__none__" disabled>No members available</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {roster.length === 0 ? (
+                        <p className="text-xs text-muted-foreground italic">No members assigned for this period.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {roster.map((m) => (
+                            <div key={m.id} className="flex items-center justify-between rounded-md bg-background/50 px-2.5 py-1.5 border border-border/30">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-foreground">{m.name}</span>
+                                {m.level && (
+                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                                    {MEMBER_LEVEL_LABELS[m.level]}
+                                  </Badge>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setEditTeamMembers((prev) => prev.filter((id) => id !== m.id))}
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                title="Remove from team"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

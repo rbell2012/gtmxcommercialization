@@ -428,6 +428,7 @@ interface TeamsContextType {
     teamGoalsByLevel: TeamGoalsByLevel;
     goalScopeConfig: GoalScopeConfig;
   }) => void;
+  updateHistoricalRoster: (teamId: string, referenceDate: Date, memberIds: string[]) => void;
   loading: boolean;
 }
 
@@ -1257,6 +1258,104 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
   }, []);
 
+  const updateHistoricalRoster = useCallback((teamId: string, referenceDate: Date, memberIds: string[]) => {
+    const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+    const monthEnd = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0, 23, 59, 59, 999);
+    const monthStartISO = monthStart.toISOString();
+    const monthEndISO = monthEnd.toISOString();
+
+    const currentIds = new Set<string>();
+    const relevantEntries: MemberTeamHistoryEntry[] = [];
+    for (const entry of memberTeamHistory) {
+      if (entry.teamId !== teamId) continue;
+      const start = new Date(entry.startedAt);
+      const end = entry.endedAt ? new Date(entry.endedAt) : new Date("9999-12-31");
+      if (start <= monthEnd && end >= monthStart) {
+        currentIds.add(entry.memberId);
+        relevantEntries.push(entry);
+      }
+    }
+
+    const desiredIds = new Set(memberIds);
+    const toAdd = memberIds.filter((id) => !currentIds.has(id));
+    const toRemove = Array.from(currentIds).filter((id) => !desiredIds.has(id));
+
+    if (toAdd.length === 0 && toRemove.length === 0) return;
+
+    const newEntries: MemberTeamHistoryEntry[] = [];
+    const removedEntryIds = new Set<string>();
+
+    for (const memberId of toRemove) {
+      const entries = relevantEntries.filter((e) => e.memberId === memberId);
+      for (const entry of entries) {
+        const entryStart = new Date(entry.startedAt);
+        const entryEnd = entry.endedAt ? new Date(entry.endedAt) : null;
+        removedEntryIds.add(entry.id);
+
+        if (entryStart < monthStart) {
+          const beforeEnd = new Date(monthStart.getTime() - 1);
+          dbMutate(
+            supabase.from("member_team_history").update({ ended_at: beforeEnd.toISOString() }).eq("id", entry.id),
+            "trim history entry before month",
+          );
+          newEntries.push({ ...entry, endedAt: beforeEnd.toISOString() });
+
+          if (!entryEnd || entryEnd > monthEnd) {
+            const afterStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth() + 1, 1);
+            dbMutate(
+              supabase.from("member_team_history").insert({
+                member_id: memberId,
+                team_id: teamId,
+                started_at: afterStart.toISOString(),
+                ended_at: entry.endedAt,
+              }),
+              "create continuation entry after month",
+            );
+            newEntries.push({
+              id: crypto.randomUUID(),
+              memberId,
+              teamId,
+              startedAt: afterStart.toISOString(),
+              endedAt: entry.endedAt,
+            });
+          }
+        } else if (!entryEnd || entryEnd > monthEnd) {
+          const afterStart = new Date(monthEnd.getFullYear(), monthEnd.getMonth() + 1, 1);
+          dbMutate(
+            supabase.from("member_team_history").update({ started_at: afterStart.toISOString() }).eq("id", entry.id),
+            "shift history entry start past month",
+          );
+          newEntries.push({ ...entry, startedAt: afterStart.toISOString() });
+        } else {
+          dbMutate(
+            supabase.from("member_team_history").delete().eq("id", entry.id),
+            "delete history entry within month",
+          );
+        }
+      }
+    }
+
+    for (const memberId of toAdd) {
+      const id = crypto.randomUUID();
+      dbMutate(
+        supabase.from("member_team_history").insert({
+          id,
+          member_id: memberId,
+          team_id: teamId,
+          started_at: monthStartISO,
+          ended_at: monthEndISO,
+        }),
+        "add historical roster entry",
+      );
+      newEntries.push({ id, memberId, teamId, startedAt: monthStartISO, endedAt: monthEndISO });
+    }
+
+    setMemberTeamHistory((prev) => [
+      ...prev.filter((e) => !removedEntryIds.has(e.id)),
+      ...newEntries,
+    ]);
+  }, [memberTeamHistory]);
+
   return (
     <TeamsContext.Provider
       value={{
@@ -1279,6 +1378,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         unassignMember,
         removeMember,
         upsertTeamGoalsHistory,
+        updateHistoricalRoster,
         loading,
       }}
     >
