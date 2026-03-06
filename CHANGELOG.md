@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-06 (Settings — Month Selector for Goals & Accelerators)
+
+### Location – Settings Page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** The Edit Team dialog in Settings only allowed editing goals and accelerators for the current month. There was no way to view or modify goals for past or future months within a team's test period. Users needed a visual month selector — matching the test phases bar on project pages — to set distinct monthly goals and accelerator rules per team.
+
+**Changes:**
+- Added a test phases selector bar inside the Edit Team dialog (between date fields and Monthly Goals), generated from the team's start/end dates via `generateTestPhases()`.
+- Each month segment is clickable; selecting a non-current month loads that month's historical goals from `team_goals_history` into the edit form (falls back to the team's current goals if no history exists).
+- Shows a "Viewing: [Month Year]" banner with a "Back to Current" link when a past/future month is selected.
+- Added `upsertTeamGoalsHistory` function to `TeamsContext` for writing goals to a specific month in `team_goals_history` without modifying the live team object.
+- Exported `toMonthKey` from `TeamsContext` for date-to-month-key conversion.
+- Modified `saveEditTeam` to route saves: current month updates the live team + auto-snapshots (existing flow); non-current months save only to `team_goals_history` via the new upsert function.
+- Month selection resets when the dialog opens or closes.
+
+---
+
 ## 2026-03-05 (Ops Counting — Use op_created_date & Calendar-Month Attribution)
 
 ### Location – Project Pages (`src/pages/Index.tsx`), Data Page (`src/pages/Data.tsx`), Context (`src/contexts/TeamsContext.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Types (`src/lib/database.types.ts`), Migration

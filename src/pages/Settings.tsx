@@ -20,6 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
   useTeams,
+  toMonthKey,
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
   MEMBER_LEVELS,
@@ -37,6 +38,7 @@ import {
   type GoalScopeConfig,
   DEFAULT_GOAL_SCOPE_CONFIG,
 } from "@/contexts/TeamsContext";
+import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 import { useToast } from "@/hooks/use-toast";
 
 function addMonths(dateStr: string, months: number): string {
@@ -72,6 +74,8 @@ const Settings = () => {
     unassignMember,
     removeMember,
     updateMember,
+    teamGoalsHistory,
+    upsertTeamGoalsHistory,
   } = useTeams();
   const { toast } = useToast();
 
@@ -127,6 +131,7 @@ const Settings = () => {
   const [editAcceleratorConfig, setEditAcceleratorConfig] = useState<AcceleratorConfig>({});
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
+  const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -213,25 +218,49 @@ const Settings = () => {
     setEditAcceleratorConfig({ ...team.acceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+    setSelectedEditMonth(null);
   };
 
   const saveEditTeam = () => {
     if (!editTeamId || !editTeamName.trim()) return;
-    updateTeam(editTeamId, (t) => ({
-      ...t,
-      name: editTeamName.trim(),
-      owner: editTeamOwner.trim(),
-      leadRep: editTeamLeadRep.trim(),
-      startDate: editTeamStartDate || null,
-      endDate: editTeamEndDate || null,
-      goalsParity: editTeamParity,
-      teamGoals: { ...editTeamGoals },
-      enabledGoals: { ...editEnabledGoals },
-      acceleratorConfig: { ...editAcceleratorConfig },
-      teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
-      goalScopeConfig: { ...editGoalScopeConfig },
-    }));
-    toast({ title: "Team updated" });
+    const isNonCurrentMonth = selectedEditMonth && !isCurrentMonth(selectedEditMonth);
+
+    if (isNonCurrentMonth) {
+      updateTeam(editTeamId, (t) => ({
+        ...t,
+        name: editTeamName.trim(),
+        owner: editTeamOwner.trim(),
+        leadRep: editTeamLeadRep.trim(),
+        startDate: editTeamStartDate || null,
+        endDate: editTeamEndDate || null,
+      }));
+      upsertTeamGoalsHistory(editTeamId, toMonthKey(selectedEditMonth), {
+        goalsParity: editTeamParity,
+        teamGoals: { ...editTeamGoals },
+        enabledGoals: { ...editEnabledGoals },
+        acceleratorConfig: { ...editAcceleratorConfig },
+        teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
+        goalScopeConfig: { ...editGoalScopeConfig },
+      });
+      const label = selectedEditMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
+      toast({ title: `Goals updated for ${label}` });
+    } else {
+      updateTeam(editTeamId, (t) => ({
+        ...t,
+        name: editTeamName.trim(),
+        owner: editTeamOwner.trim(),
+        leadRep: editTeamLeadRep.trim(),
+        startDate: editTeamStartDate || null,
+        endDate: editTeamEndDate || null,
+        goalsParity: editTeamParity,
+        teamGoals: { ...editTeamGoals },
+        enabledGoals: { ...editEnabledGoals },
+        acceleratorConfig: { ...editAcceleratorConfig },
+        teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
+        goalScopeConfig: { ...editGoalScopeConfig },
+      }));
+      toast({ title: "Team updated" });
+    }
     setEditTeamId(null);
   };
 
@@ -425,7 +454,7 @@ const Settings = () => {
             </div>
           )}
 
-          <Dialog open={!!editTeamId} onOpenChange={(open) => !open && setEditTeamId(null)}>
+          <Dialog open={!!editTeamId} onOpenChange={(open) => { if (!open) { setEditTeamId(null); setSelectedEditMonth(null); } }}>
             <DialogContent className="bg-card border-border max-h-[85vh] max-w-5xl w-full flex flex-col overflow-hidden">
               <DialogHeader>
                 <DialogTitle className="font-display text-foreground">Edit Team</DialogTitle>
@@ -499,6 +528,122 @@ const Settings = () => {
                     />
                   </div>
                 </div>
+
+                {/* ── Test Phases Selector ── */}
+                {(() => {
+                  const phases = generateTestPhases(editTeamStartDate || null, editTeamEndDate || null, {});
+                  if (phases.length === 0) return null;
+                  const now = new Date();
+                  const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
+                  const colorClasses = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+
+                  const handlePhaseClick = (phase: ComputedPhase) => {
+                    const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                    if (phaseIsCurrentMonth && !selectedEditMonth) return;
+                    if (phaseIsCurrentMonth) {
+                      setSelectedEditMonth(null);
+                      const team = teams.find((t) => t.id === editTeamId);
+                      if (team) {
+                        setEditTeamParity(team.goalsParity);
+                        setEditTeamGoals({ ...team.teamGoals });
+                        setEditEnabledGoals({ ...team.enabledGoals });
+                        setEditAcceleratorConfig({ ...team.acceleratorConfig });
+                        setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
+                        setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                      }
+                      return;
+                    }
+                    const d = phaseToDate(phase);
+                    setSelectedEditMonth(d);
+                    const monthKey = toMonthKey(d);
+                    const entry = teamGoalsHistory.find((h) => h.teamId === editTeamId && h.month === monthKey);
+                    if (entry) {
+                      setEditTeamParity(entry.goalsParity);
+                      setEditTeamGoals({ ...entry.teamGoals });
+                      setEditEnabledGoals({ ...entry.enabledGoals });
+                      setEditAcceleratorConfig({ ...entry.acceleratorConfig });
+                      setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(entry.teamGoalsByLevel)));
+                      setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...entry.goalScopeConfig });
+                    } else {
+                      const team = teams.find((t) => t.id === editTeamId);
+                      if (team) {
+                        setEditTeamParity(team.goalsParity);
+                        setEditTeamGoals({ ...team.teamGoals });
+                        setEditEnabledGoals({ ...team.enabledGoals });
+                        setEditAcceleratorConfig({ ...team.acceleratorConfig });
+                        setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
+                        setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                      }
+                    }
+                  };
+
+                  return (
+                    <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-2">
+                      <h4 className="text-sm font-semibold text-foreground">Test Phases</h4>
+                      {selectedEditMonth && !isCurrentMonth(selectedEditMonth) && (
+                        <div className="flex items-center justify-between rounded-md bg-primary/10 border border-primary/30 px-3 py-1.5">
+                          <span className="text-xs font-medium text-primary">
+                            Viewing: {selectedEditMonth.toLocaleString("en-US", { month: "long", year: "numeric" })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handlePhaseClick({ year: now.getFullYear(), month: now.getMonth() } as ComputedPhase)}
+                            className="text-xs font-semibold text-primary hover:text-primary/80 underline"
+                          >
+                            Back to Current
+                          </button>
+                        </div>
+                      )}
+                      <div className="flex h-5 w-full overflow-hidden rounded-full bg-muted">
+                        {phases.map((phase, i) => {
+                          const widthPct = 100 / phases.length;
+                          const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                          const phaseIsSelected = selectedEditMonth
+                            ? phase.year === selectedEditMonth.getFullYear() && phase.month === selectedEditMonth.getMonth()
+                            : phaseIsCurrentMonth;
+                          return (
+                            <div
+                              key={phase.monthIndex}
+                              className={`relative h-full cursor-pointer transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
+                              style={{ width: `${widthPct}%` }}
+                              onClick={() => handlePhaseClick(phase)}
+                            >
+                              <div
+                                className="h-full transition-all duration-500 ease-out"
+                                style={{
+                                  width: `${phase.progress}%`,
+                                  backgroundColor: colors[i % colors.length],
+                                  borderRadius: i === 0 && phase.progress > 0 ? "9999px 0 0 9999px" : i === phases.length - 1 && phase.progress >= 100 ? "0 9999px 9999px 0" : "0",
+                                }}
+                              />
+                              {i < phases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${phases.length}, minmax(0, 1fr))` }}>
+                        {phases.map((phase, i) => {
+                          const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
+                          const phaseIsSelected = selectedEditMonth
+                            ? phase.year === selectedEditMonth.getFullYear() && phase.month === selectedEditMonth.getMonth()
+                            : phaseIsCurrentMonth;
+                          return (
+                            <div
+                              key={phase.monthIndex}
+                              className={`text-center cursor-pointer rounded-md transition-colors px-0.5 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                              onClick={() => handlePhaseClick(phase)}
+                            >
+                              <p className={`text-[10px] font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[i % colorClasses.length]}`}>
+                                {phase.monthLabel}
+                              </p>
+                              <p className="text-[9px] text-muted-foreground">{phase.progress}%</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* ── Monthly Goals ── */}
                 <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">

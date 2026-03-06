@@ -184,7 +184,7 @@ export interface MemberGoalsHistoryEntry {
   level: MemberLevel | null;
 }
 
-function toMonthKey(d: Date): string {
+export function toMonthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
@@ -420,6 +420,14 @@ interface TeamsContextType {
   assignMember: (memberId: string, targetTeamId: string) => void;
   unassignMember: (memberId: string, fromTeamId: string) => void;
   removeMember: (memberId: string) => void;
+  upsertTeamGoalsHistory: (teamId: string, month: string, goals: {
+    goalsParity: boolean;
+    teamGoals: MemberGoals;
+    enabledGoals: EnabledGoals;
+    acceleratorConfig: AcceleratorConfig;
+    teamGoalsByLevel: TeamGoalsByLevel;
+    goalScopeConfig: GoalScopeConfig;
+  }) => void;
   loading: boolean;
 }
 
@@ -867,6 +875,46 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const upsertTeamGoalsHistory = useCallback((teamId: string, month: string, goals: {
+    goalsParity: boolean;
+    teamGoals: MemberGoals;
+    enabledGoals: EnabledGoals;
+    acceleratorConfig: AcceleratorConfig;
+    teamGoalsByLevel: TeamGoalsByLevel;
+    goalScopeConfig: GoalScopeConfig;
+  }) => {
+    dbMutate(
+      supabase
+        .from("team_goals_history")
+        .upsert({
+          team_id: teamId,
+          month,
+          goals_parity: goals.goalsParity,
+          team_goals: goals.teamGoals,
+          enabled_goals: goals.enabledGoals,
+          accelerator_config: goals.acceleratorConfig,
+          team_goals_by_level: goals.teamGoalsByLevel,
+          goal_scope_config: goals.goalScopeConfig,
+        }, { onConflict: "team_id,month" }),
+      "upsert team goals history",
+    );
+    setTeamGoalsHistory((prev) => {
+      const idx = prev.findIndex((h) => h.teamId === teamId && h.month === month);
+      const entry: TeamGoalsHistoryEntry = {
+        id: idx >= 0 ? prev[idx].id : crypto.randomUUID(),
+        teamId,
+        month,
+        ...goals,
+      };
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = entry;
+        return next;
+      }
+      return [...prev, entry];
+    });
+  }, []);
+
   const updateTeam = useCallback((teamId: string, updater: (team: Team) => Team) => {
     setTeams((prev) => {
       const next = prev.map((t) => (t.id === teamId ? updater(t) : t));
@@ -1230,6 +1278,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         assignMember,
         unassignMember,
         removeMember,
+        upsertTeamGoalsHistory,
         loading,
       }}
     >
