@@ -13,14 +13,38 @@ export default function Help() {
         <p>
           GTMx Pilots is a dashboard for managing sales pilot teams. It lets you
           track weekly funnel metrics, set monthly goals, calculate quota
-          attainment, and monitor real-time activity data — all in one place.
+          attainment, and monitor real-time activity data, all in one place.
         </p>
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page gives you one-click access to each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
           <li>The <Link to="/help" className="text-primary underline"><strong>Help</strong></Link> link (question-mark icon) and <Link to="/settings" className="text-primary underline"><strong>Settings</strong></Link> link (gear icon) are on the far right, next to the theme toggle.</li>
+        </ul>
+
+        <H3>Home Page</H3>
+        <p>
+          The <Link to="/home" className="text-primary underline">Home</Link> page
+          is the app's landing page. It's the first thing you see when you open
+          GTMx Pilots.
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong>Active Projects</strong>: one card per active team showing the
+            team name, owner, lead rep, member count, date range, a time-elapsed
+            progress bar with business days remaining, and lifetime stat tiles
+            (Ops, Demos, Wins, Feedback, Activity). Click any card to jump to that
+            project's dashboard.
+          </li>
+          <li>
+            <strong>Explore</strong>: overview cards describing what to expect on
+            each page: a "Project Pages" tile summarizing all project dashboards,
+            plus clickable tiles for{" "}
+            <Link to="/data" className="text-primary underline">Data &amp; Findings</Link> and{" "}
+            <Link to="/quota" className="text-primary underline">Quota</Link> with
+            bullet-point descriptions.
+          </li>
         </ul>
 
         <H3>Dark Mode</H3>
@@ -31,7 +55,7 @@ export default function Help() {
       </Section>
 
       {/* ---- 2. Settings ---- */}
-      <Section id="settings" title="2. Settings — Managing Teams &amp; Members">
+      <Section id="settings" title="2. Settings: Managing Teams &amp; Members">
         <p>
           The{" "}
           <Link to="/settings" className="text-primary underline">
@@ -44,7 +68,7 @@ export default function Help() {
         <H3>Creating a Team</H3>
         <ul className="list-disc pl-5 space-y-1">
           <li>Click <strong>"New Team"</strong> and enter a name and owner.</li>
-          <li>Pick a <strong>Start Date</strong> — the End Date auto-fills to 9 months later but can be adjusted.</li>
+          <li>Pick a <strong>Start Date</strong>. The End Date auto-fills to 9 months later but can be adjusted.</li>
           <li>The team will appear in the nav bar and on the <Link to="/Pilots" className="text-primary underline">Pilots</Link> page once created.</li>
         </ul>
 
@@ -65,7 +89,7 @@ export default function Help() {
         <H3>Archiving (Deleting) a Team</H3>
         <p>
           Click the delete button on a team card. A confirmation dialog will
-          appear. Archiving is a <strong>soft delete</strong> — all historical
+          appear. Archiving is a <strong>soft delete</strong>: all historical
           data is preserved. Members are moved to the unassigned pool.
         </p>
 
@@ -74,17 +98,37 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li><strong>Name, Owner, Lead Rep, Start/End Dates</strong></li>
           <li>
-            <strong>Monthly Goals</strong> — Toggle individual metrics on or off,
+            <strong>Test Phases Month Selector</strong>: a visual month-selector
+            bar (matching the test phases bar on project pages) appears between
+            the date fields and Monthly Goals. Click any month to load that
+            month's goals and accelerators into the form. A "Viewing: [Month
+            Year]" banner appears with a "Back to Current" link when viewing a
+            non-current month. Saving while viewing a past or future month writes
+            only to that month's historical record; saving on the current month
+            updates the live team configuration.
+          </li>
+          <li>
+            <strong>Team Members</strong>: below the month selector, a "Team
+            Members" section shows the roster for the selected month with a member
+            count badge. Each row displays the member's name, level badge, and a
+            remove button. An "Add Member" dropdown lets you add any active member
+            not currently on the roster. When viewing a historical month, changes
+            to the roster update the historical record, so you can retroactively
+            correct a late join, backfill a transfer, or remove a member who
+            wasn't actually on the team that month.
+          </li>
+          <li>
+            <strong>Monthly Goals</strong>: toggle individual metrics on or off,
             set per-level targets (ADR, BDR, Rep, Senior, Principal, Lead), and
             enable Parity mode to auto-split team goals across members.
           </li>
           <li>
-            <strong>Goal Scope (Self vs Team)</strong> — For each metric, choose
+            <strong>Goal Scope (Self vs Team)</strong>: for each metric, choose
             whether the goal is measured per individual rep or as a summed team
             total.
           </li>
           <li>
-            <strong>Accelerators</strong> — Define stackable IF/THEN rules that
+            <strong>Accelerators</strong>: define stackable IF/THEN rules that
             modify quota. For example: "IF Calls &gt; 600 THEN +10% to Quota."
             Each rule has its own condition, effect, and Self/Team scope.
           </li>
@@ -93,15 +137,15 @@ export default function Help() {
 
         <H3>Managing Members</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li><strong>Add a member</strong> by clicking "New Member" — enter a name and optionally set their level.</li>
-          <li><strong>Edit inline</strong> — click a member's name or level in the table to edit in place. A pencil icon appears on hover.</li>
-          <li><strong>Remove a member</strong> — this archives them (soft delete). Their funnel data and win stories remain on the team for historical reporting.</li>
-          <li><strong>Move a member</strong> between teams — the member's team assignment is updated in place so all historical data follows them. A history record tracks which teams they've been on and when, ensuring past months show the correct roster on each team.</li>
+          <li><strong>Add a member</strong> by clicking "New Member", then enter a name and optionally set their level.</li>
+          <li><strong>Edit inline</strong>: click a member's name or level in the table to edit in place. A pencil icon appears on hover.</li>
+          <li><strong>Remove a member</strong>: this archives them (soft delete). Their funnel data and win stories remain on the team for historical reporting.</li>
+          <li><strong>Move a member</strong> between teams. The member's team assignment is updated in place so all historical data follows them. A history record tracks which teams they've been on and when, ensuring past months show the correct roster on each team.</li>
         </ul>
       </Section>
 
       {/* ---- 3. Pilots Page ---- */}
-      <Section id="pilots" title="3. Pilots Page — The Main Dashboard">
+      <Section id="pilots" title="3. Pilots Page: The Main Dashboard">
         <p>
           The{" "}
           <Link to="/Pilots" className="text-primary underline">
@@ -123,7 +167,7 @@ export default function Help() {
 
         <H4>Test Phases</H4>
         <ul className="list-disc pl-5 space-y-1">
-          <li>Phases are <strong>auto-generated</strong> from the team's start and end dates — one phase per calendar month.</li>
+          <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
           <li>Click the <strong>phase label</strong> to edit its description.</li>
           <li>Click <strong>"Extend the Test"</strong> to add one month to the team's end date.</li>
@@ -156,7 +200,7 @@ export default function Help() {
         <H4>Mission &amp; Purpose</H4>
         <p>
           A free-text field where managers describe the project's mission and
-          purpose. Each project has its own independent mission statement —
+          purpose. Each project has its own independent mission statement;
           editing one pilot's mission does not affect any other. Saved
           automatically.
         </p>
@@ -183,7 +227,7 @@ export default function Help() {
             is divided equally across active members and persisted to each
             member's weekly funnel. Touched Accounts, Avg TAM, and Touch Rate
             are computed and displayed alongside the editable Total TAM. Click{" "}
-            <strong>Edit</strong> to change it — the new value applies from the
+            <strong>Edit</strong> to change it. The new value applies from the
             current week forward while older weeks retain their original value.
           </li>
         </ul>
@@ -197,14 +241,14 @@ export default function Help() {
           <li>
             <strong>Monthly Conversion Rates</strong> (Call→Connect, Connect→Demo,
             Demo→Win) are scoped to the selected month, matching all other stats
-            on the page — they no longer mix data across month boundaries.
+            on the page, and they no longer mix data across month boundaries.
           </li>
         </ul>
 
         <H4>Monthly Goals</H4>
         <ul className="list-disc pl-5 space-y-1">
           <li>Displays a read-only table of each enabled metric with the member's current value, goal target, progress bar, and percentage.</li>
-          <li>Percentages are uncapped — values above 100% turn green to indicate the goal has been exceeded.</li>
+          <li>Percentages are uncapped: values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
           <li>Goals are configured in <Link to="/settings" className="text-primary underline">Settings</Link>, not on this page.</li>
@@ -228,7 +272,7 @@ export default function Help() {
         <H3 id="weekly-data">3c. Weekly Data</H3>
         <ul className="list-disc pl-5 space-y-1">
           <li>A comprehensive grid showing every metric per member per week, starting from the team's start date through the current week.</li>
-          <li>Columns are <strong>Monday-aligned</strong>. The most recent weeks are visible first — scroll left to see older weeks.</li>
+          <li>Columns are <strong>Monday-aligned</strong>. The most recent weeks are visible first; scroll left to see older weeks.</li>
           <li>
             <strong>Monthly summary columns</strong> are interleaved after the
             last week of each calendar month. TAM shows the carried value from
@@ -238,7 +282,7 @@ export default function Help() {
           </li>
           <li><strong>Player</strong> and <strong>Metric</strong> columns are frozen on the left; <strong>Total</strong> is frozen on the right. The Total column sums only the weekly values (monthly summary columns are not double-counted).</li>
           <li>The <strong>Activity</strong> row is always visible directly below TAM, regardless of whether the activity goal is enabled in team settings.</li>
-          <li>TAM values <strong>carry forward</strong> — once set, TAM persists in future weeks until a new value is submitted.</li>
+          <li>TAM values <strong>carry forward</strong>: once set, TAM persists in future weeks until a new value is submitted.</li>
           <li>Conversion rate rows (Touch Rate, Call-to-Connect, Connect-to-Demo, Demo-to-Win) are included below the metric rows.</li>
           <li>
             Below a thick separator line, the <strong>Team Monthly Aggregate</strong>{" "}
@@ -267,7 +311,7 @@ export default function Help() {
             submitted for a week, they are locked. Past weeks that were never
             submitted are also locked by default to prevent silent changes to
             historical data. To re-open any locked week, click{" "}
-            <strong>Edit Submission</strong> — a confirmation dialog will ask
+            <strong>Edit Submission</strong>. A confirmation dialog will ask
             for your name. This is logged to an audit trail so managers can see
             who unlocked the week and when.
           </li>
@@ -337,7 +381,7 @@ export default function Help() {
             Data &amp; Findings
           </Link>{" "}
           page provides deal-cycle analytics, revenue impact tracking, and a
-          filterable metrics explorer — all derived from the underlying metrics
+          filterable metrics explorer, all derived from the underlying metrics
           event data.
         </p>
 
@@ -422,13 +466,25 @@ export default function Help() {
             Activity data from external metrics tables (calls, connects,
             demos, ops, wins, feedback, activity) syncs in{" "}
             <strong>real time</strong>. When new data is inserted or updated,
-            the app refreshes automatically — no manual page reload needed.
+            the app refreshes automatically; no manual page reload needed.
           </li>
           <li>
             External event data is aggregated into weekly totals and provides
             the <strong>baseline</strong>. Any non-zero value entered manually
             in Rep Self-Overrides will override the external value for that
             metric and week.
+          </li>
+          <li>
+            <strong>Ops are counted by creation date</strong>, not close date.
+            An opportunity appears in the week and month it was created, giving
+            an accurate picture of pipeline generation timing.
+          </li>
+          <li>
+            <strong>Calendar-month attribution:</strong> Monthly totals are
+            calculated using actual calendar-month boundaries. Events are
+            attributed to the month their date falls in, avoiding
+            misattribution near month boundaries that can occur with
+            week-based bucketing.
           </li>
         </ul>
       </Section>
@@ -459,9 +515,20 @@ export default function Help() {
             back and update a prior week's funnel data.
           </li>
           <li>
-            <strong>Look back in time</strong> — click any past month in the
+            <strong>Look back in time</strong>: click any past month in the
             test phases bar to see historical data with the correct roster,
             goals, and accelerators.
+          </li>
+          <li>
+            <strong>Start from <Link to="/home" className="text-primary underline">Home</Link></strong>:{" "}
+            the Home page gives you a bird's-eye view of all active projects
+            with lifetime stats and quick links to every section of the app.
+          </li>
+          <li>
+            <strong>Edit past months</strong>: in the Edit Team modal on{" "}
+            <Link to="/settings" className="text-primary underline">Settings</Link>,
+            use the month selector to retroactively adjust goals, accelerators,
+            and team rosters for any month in the test period.
           </li>
           <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for

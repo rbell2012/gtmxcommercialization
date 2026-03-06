@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-06 (Help Page — Updated for Recent Features, Removed Em Dashes)
+
+### Location – Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated since 2026-03-05 and was missing documentation for several features added between 2026-03-05 and 2026-03-06: the new Home landing page, the month selector for editing goals and accelerators in the Edit Team modal, historical member roster editing in the Edit Team modal, and ops creation-date attribution with calendar-month accuracy. Additionally, all em dashes used as punctuation throughout the page were replaced with more conventional punctuation (colons, periods, semicolons, commas) for consistency.
+
+**Changes:**
+- Updated **Navigating the App** (section 1) to mention the new Home link (house icon) as the first item in the nav bar.
+- Added a **Home Page** subsection (section 1) documenting Active Projects cards (team name, owner, lead rep, member count, date range, progress bar, lifetime stats) and the Explore section with page-overview tiles.
+- Added **Test Phases Month Selector** to the Editing a Team subsection (section 2): visual month-selector bar for loading/editing goals and accelerators for any month in the test period, with "Viewing" banner, save routing, and month reset behavior.
+- Added **Team Members** to the Editing a Team subsection (section 2): roster display per selected month with member count badge, add/remove controls, and historical roster editing for retroactive corrections.
+- Added two new bullets to **Real-Time Data** (section 6): ops are now counted by creation date (not close date), and monthly totals use calendar-month attribution for accurate month-boundary counting.
+- Added two new tips to **Tips & Shortcuts** (section 7): "Start from Home" for a bird's-eye project overview, and "Edit past months" for retroactive goal/roster adjustments in the Edit Team modal.
+- Replaced all 30 em dashes with more common punctuation throughout the page: colons after labels, periods between independent sentences, semicolons between related clauses, and commas with conjunctions for continuations.
+
+---
+
 ## 2026-03-06 (Settings — Historical Member Roster Editing in Edit Team Modal)
 
 ### Location – Settings Page (`src/pages/Settings.tsx`), Context (`src/contexts/TeamsContext.tsx`)
