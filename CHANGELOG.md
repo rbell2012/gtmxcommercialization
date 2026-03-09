@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-09 (Home Page — Add Roadmap Explore Tile)
+
+### Location — Home Page (`src/pages/Home.tsx`)
+
+**Rationale:** The Explore section on the Home page had tiles for Project Pages, Data & Findings, and Quota, but no tile for the Roadmap page. Adding one gives users a consistent entry point to the Roadmap alongside the other sections.
+
+**Changes:**
+- Added a new `PageOverviewCard` for Roadmap in the Explore grid, using the `MapIcon` from lucide-react.
+- Includes three bullet points: Phase labels, Team member availability windows, and Unassigned rep visibility.
+- Clicking the tile navigates to `/roadmap`.
+
+---
+
 ## 2026-03-09 (Roadmap — Compact Tiles with Inline Members)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)

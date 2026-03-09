@@ -11,6 +11,7 @@ import {
   Trophy,
   BarChart3,
   Target,
+  Map as MapIcon,
   ArrowRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -339,6 +340,18 @@ const Home = () => {
                 "Team-scoped and individual-scoped views",
               ]}
               onClick={() => navigate("/quota")}
+            />
+
+            <PageOverviewCard
+              title="Roadmap"
+              icon={<MapIcon className="h-5 w-5 text-primary" />}
+              description="Timeline view of all projects with phase milestones and team availability."
+              bullets={[
+                "Phase labels",
+                "Team member availability windows",
+                "Unassigned rep visibility",
+              ]}
+              onClick={() => navigate("/roadmap")}
             />
           </div>
         </section>
