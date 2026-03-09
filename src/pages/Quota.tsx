@@ -17,7 +17,7 @@ import {
 } from "@/contexts/TeamsContext";
 import { getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const METRIC_BAR_COLORS: string[] = [
   "progress-bar-orange",
@@ -54,6 +54,8 @@ const Quota = () => {
   const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
+  const [previousExpanded, setPreviousExpanded] = useState(false);
+  const [nextExpanded, setNextExpanded] = useState(false);
   const referenceDate = selectedMonth ?? undefined;
 
   const allPhases = useMemo(() => mergePhases(activeTeams), [activeTeams]);
@@ -68,7 +70,24 @@ const Quota = () => {
           </h1>
         </div>
 
-        {allPhases.length > 0 && (
+        {allPhases.length > 0 && (() => {
+          const { previousPhases, visiblePhases, nextPhases } = splitPhases(allPhases);
+          const hasPrev = previousPhases.length > 0;
+          const hasNext = nextPhases.length > 0;
+          const segments: (ComputedPhase | { bucket: "previous" | "next"; count: number })[] = [];
+          if (hasPrev && !previousExpanded) {
+            segments.push({ bucket: "previous", count: previousPhases.length });
+          } else if (hasPrev) {
+            segments.push(...previousPhases);
+          }
+          segments.push(...visiblePhases);
+          if (hasNext && !nextExpanded) {
+            segments.push({ bucket: "next", count: nextPhases.length });
+          } else if (hasNext) {
+            segments.push(...nextPhases);
+          }
+          const gridTemplateCols = segments.map(s => "bucket" in s ? "auto" : "1fr").join(" ");
+          return (
           <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
             {selectedMonth && !isCurrentMonth(selectedMonth) && (
               <div className="mb-3 flex items-center justify-between rounded-md bg-primary/10 border border-primary/30 px-3 py-1.5">
@@ -83,9 +102,25 @@ const Quota = () => {
                 </button>
               </div>
             )}
-            <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
-              {allPhases.map((phase, i) => {
-                const widthPct = 100 / allPhases.length;
+            <div className="grid" style={{ gridTemplateColumns: gridTemplateCols }}>
+              <div className="rounded-full bg-muted h-6" style={{ gridRow: 1, gridColumn: '1 / -1' }} />
+              {segments.map((seg, i) => {
+                const isFirst = i === 0;
+                const isLast = i === segments.length - 1;
+                if ("bucket" in seg) {
+                  return (
+                    <div
+                      key={`bar-${seg.bucket}`}
+                      className="relative h-6 z-[1] cursor-pointer overflow-hidden hover:brightness-110"
+                      style={{ gridRow: 1, gridColumn: i + 1, borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0' }}
+                      onClick={() => seg.bucket === "previous" ? setPreviousExpanded(true) : setNextExpanded(true)}
+                    >
+                      <div className="h-full w-full" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
+                      {!isLast && <div className="absolute right-0 top-0 h-full w-px bg-border z-[2]" />}
+                    </div>
+                  );
+                }
+                const phase = seg;
                 const fillPct = phase.progress;
                 const now = new Date();
                 const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
@@ -94,31 +129,35 @@ const Quota = () => {
                   : phaseIsCurrentMonth;
                 return (
                   <div
-                    key={`${phase.year}-${phase.month}`}
-                    className={`relative h-full cursor-pointer transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
-                    style={{ width: `${widthPct}%` }}
+                    key={`bar-${phase.year}-${phase.month}`}
+                    className={`relative h-6 z-[1] cursor-pointer overflow-hidden transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
+                    style={{ gridRow: 1, gridColumn: i + 1, ...(!phaseIsSelected ? { borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0' } : {}) }}
                     onClick={() => {
                       if (phaseIsCurrentMonth && !selectedMonth) return;
                       if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
                       setSelectedMonth(phaseToDate(phase));
                     }}
                   >
-                    <div
-                      className="h-full transition-all duration-500 ease-out"
-                      style={{
-                        width: `${fillPct}%`,
-                        backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
-                        borderRadius: i === 0 && fillPct > 0 ? "9999px 0 0 9999px" : i === allPhases.length - 1 && fillPct >= 100 ? "0 9999px 9999px 0" : "0",
-                      }}
-                    />
-                    {i < allPhases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
+                    <div className="h-full transition-all duration-500 ease-out" style={{ width: `${fillPct}%`, backgroundColor: BAR_COLORS[phase.monthIndex % BAR_COLORS.length] }} />
+                    {!isLast && <div className="absolute right-0 top-0 h-full w-px bg-border z-[2]" />}
                   </div>
                 );
               })}
-            </div>
-            <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${allPhases.length}, minmax(0, 1fr))` }}>
-              {allPhases.map((phase, i) => {
-                const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+              {segments.map((seg, i) => {
+                const colorClasses = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+                if ("bucket" in seg) {
+                  return (
+                    <div
+                      key={`label-${seg.bucket}`}
+                      className="mt-2 text-center cursor-pointer rounded-md transition-colors py-0.5 hover:bg-muted/50 whitespace-nowrap"
+                      style={{ gridRow: 2, gridColumn: i + 1 }}
+                      onClick={() => seg.bucket === "previous" ? setPreviousExpanded(true) : setNextExpanded(true)}
+                    >
+                      <p className="text-[10px] font-semibold text-muted-foreground">{seg.bucket === "previous" ? `Prev (${seg.count})` : `Next (${seg.count})`}</p>
+                    </div>
+                  );
+                }
+                const phase = seg;
                 const now = new Date();
                 const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
                 const phaseIsSelected = selectedMonth
@@ -127,15 +166,16 @@ const Quota = () => {
                 const monthName = new Date(phase.year, phase.month, 1).toLocaleString("en-US", { month: "short" });
                 return (
                   <div
-                    key={`${phase.year}-${phase.month}`}
-                    className={`text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                    key={`label-${phase.year}-${phase.month}`}
+                    className={`mt-2 text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                    style={{ gridRow: 2, gridColumn: i + 1 }}
                     onClick={() => {
                       if (phaseIsCurrentMonth && !selectedMonth) return;
                       if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
                       setSelectedMonth(phaseToDate(phase));
                     }}
                   >
-                    <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colors[i % colors.length]}`}>
+                    <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>
                       {monthName}
                     </p>
                     <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
@@ -143,8 +183,19 @@ const Quota = () => {
                 );
               })}
             </div>
+            {(previousExpanded || nextExpanded) && (
+              <div className="mt-1 flex justify-center">
+                <button
+                  onClick={() => { setPreviousExpanded(false); setNextExpanded(false); }}
+                  className="text-[10px] font-medium text-muted-foreground hover:text-primary underline"
+                >
+                  Collapse
+                </button>
+              </div>
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {activeTeams.length === 0 && (
           <p className="text-sm text-muted-foreground">No active teams.</p>

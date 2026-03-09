@@ -56,6 +56,38 @@ export function generateTestPhases(
   return phases;
 }
 
+export interface SplitPhases {
+  previousPhases: ComputedPhase[];
+  visiblePhases: ComputedPhase[];
+  nextPhases: ComputedPhase[];
+}
+
+export function splitPhases(phases: ComputedPhase[]): SplitPhases {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const cutoffDate = new Date(currentYear, currentMonth - 2, 1);
+  const cutoffYear = cutoffDate.getFullYear();
+  const cutoffMonth = cutoffDate.getMonth();
+
+  const previousPhases: ComputedPhase[] = [];
+  const visiblePhases: ComputedPhase[] = [];
+  const nextPhases: ComputedPhase[] = [];
+
+  for (const phase of phases) {
+    if (phase.year < cutoffYear || (phase.year === cutoffYear && phase.month < cutoffMonth)) {
+      previousPhases.push(phase);
+    } else if (phase.year > currentYear || (phase.year === currentYear && phase.month > currentMonth)) {
+      nextPhases.push(phase);
+    } else {
+      visiblePhases.push(phase);
+    }
+  }
+
+  return { previousPhases, visiblePhases, nextPhases };
+}
+
 export function isCurrentMonth(date: Date): boolean {
   const now = new Date();
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();

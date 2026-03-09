@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
 import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
-import { generateTestPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -285,6 +285,8 @@ const Index = () => {
 
   const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
+  const [previousExpanded, setPreviousExpanded] = useState(false);
+  const [nextExpanded, setNextExpanded] = useState(false);
   const referenceDate = selectedMonth ?? undefined;
 
   useEffect(() => {
@@ -582,7 +584,26 @@ const Index = () => {
               )}
             </div>
           </div>
-          {computedPhases.length > 0 ? (
+          {computedPhases.length > 0 ? (() => {
+            const { previousPhases, visiblePhases, nextPhases } = splitPhases(computedPhases);
+            const hasPrev = previousPhases.length > 0;
+            const hasNext = nextPhases.length > 0;
+            const segments: (ComputedPhase | { bucket: "previous" | "next"; count: number })[] = [];
+            if (hasPrev && !previousExpanded) {
+              segments.push({ bucket: "previous", count: previousPhases.length });
+            } else if (hasPrev) {
+              segments.push(...previousPhases);
+            }
+            segments.push(...visiblePhases);
+            if (hasNext && !nextExpanded) {
+              segments.push({ bucket: "next", count: nextPhases.length });
+            } else if (hasNext) {
+              segments.push(...nextPhases);
+            }
+            const gridTemplateCols = segments.map(s => "bucket" in s ? "auto" : "1fr").join(" ");
+            const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
+            const colorClasses = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+            return (
             <>
               {selectedMonth && !isCurrentMonth(selectedMonth) && (
                 <div className="mb-3 flex items-center justify-between rounded-md bg-primary/10 border border-primary/30 px-3 py-1.5">
@@ -597,10 +618,25 @@ const Index = () => {
                   </button>
                 </div>
               )}
-              <div className="flex h-6 w-full overflow-hidden rounded-full bg-muted">
-                {computedPhases.map((phase, i) => {
-                  const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
-                  const widthPct = 100 / computedPhases.length;
+              <div className="grid" style={{ gridTemplateColumns: gridTemplateCols }}>
+                <div className="rounded-full bg-muted h-6" style={{ gridRow: 1, gridColumn: '1 / -1' }} />
+                {segments.map((seg, i) => {
+                  const isFirst = i === 0;
+                  const isLast = i === segments.length - 1;
+                  if ("bucket" in seg) {
+                    return (
+                      <div
+                        key={`bar-${seg.bucket}`}
+                        className="relative h-6 z-[1] cursor-pointer overflow-hidden hover:brightness-110"
+                        style={{ gridRow: 1, gridColumn: i + 1, borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0' }}
+                        onClick={() => seg.bucket === "previous" ? setPreviousExpanded(true) : setNextExpanded(true)}
+                      >
+                        <div className="h-full w-full" style={{ backgroundColor: "hsl(var(--muted-foreground) / 0.3)" }} />
+                        {!isLast && <div className="absolute right-0 top-0 h-full w-px bg-border z-[2]" />}
+                      </div>
+                    );
+                  }
+                  const phase = seg;
                   const fillPct = phase.progress;
                   const now = new Date();
                   const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
@@ -609,47 +645,58 @@ const Index = () => {
                     : phaseIsCurrentMonth;
                   return (
                     <div
-                      key={phase.monthIndex}
-                      className={`relative h-full cursor-pointer transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
-                      style={{ width: `${widthPct}%` }}
+                      key={`bar-${phase.monthIndex}`}
+                      className={`relative h-6 z-[1] cursor-pointer overflow-hidden transition-all ${phaseIsSelected ? "ring-2 ring-primary ring-offset-1 ring-offset-background z-10 rounded-sm" : "hover:brightness-110"}`}
+                      style={{ gridRow: 1, gridColumn: i + 1, ...(!phaseIsSelected ? { borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0' } : {}) }}
                       onClick={() => {
                         if (phaseIsCurrentMonth && !selectedMonth) return;
                         if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
                         setSelectedMonth(phaseToDate(phase));
                       }}
                     >
-                      <div
-                        className="h-full transition-all duration-500 ease-out"
-                        style={{
-                          width: `${fillPct}%`,
-                          backgroundColor: colors[i % colors.length],
-                          borderRadius: i === 0 && fillPct > 0 ? "9999px 0 0 9999px" : i === computedPhases.length - 1 && fillPct >= 100 ? "0 9999px 9999px 0" : "0",
-                        }}
-                      />
-                      {i < computedPhases.length - 1 && <div className="absolute right-0 top-0 h-full w-px bg-border" />}
+                      <div className="h-full transition-all duration-500 ease-out" style={{ width: `${fillPct}%`, backgroundColor: colors[phase.monthIndex % colors.length] }} />
+                      {!isLast && <div className="absolute right-0 top-0 h-full w-px bg-border z-[2]" />}
                     </div>
                   );
                 })}
-              </div>
-              <div className="mt-2 grid gap-1" style={{ gridTemplateColumns: `repeat(${computedPhases.length}, minmax(0, 1fr))` }}>
-                {computedPhases.map((phase, i) => {
-                  const colors = ["text-primary", "text-accent", "text-primary", "text-accent", "text-primary", "text-accent"];
+                {segments.map((seg, i) => {
+                  if ("bucket" in seg) {
+                    return (
+                      <div
+                        key={`label-${seg.bucket}`}
+                        className="mt-2 text-center cursor-pointer rounded-md transition-colors py-0.5 hover:bg-muted/50 whitespace-nowrap"
+                        style={{ gridRow: 2, gridColumn: i + 1 }}
+                        onClick={() => seg.bucket === "previous" ? setPreviousExpanded(true) : setNextExpanded(true)}
+                      >
+                        <p className="text-[10px] font-semibold text-muted-foreground">{seg.bucket === "previous" ? `Prev (${seg.count})` : `Next (${seg.count})`}</p>
+                      </div>
+                    );
+                  }
+                  const phase = seg;
                   const now = new Date();
                   const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
                   const phaseIsSelected = selectedMonth
                     ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
                     : phaseIsCurrentMonth;
+                  const isInExpandedBucket =
+                    (previousExpanded && previousPhases.includes(phase)) ||
+                    (nextExpanded && nextPhases.includes(phase));
                   return (
                     <div
-                      key={phase.monthIndex}
-                      className={`text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                      key={`label-${phase.monthIndex}`}
+                      className={`mt-2 text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
+                      style={{ gridRow: 2, gridColumn: i + 1 }}
                       onClick={() => {
+                        if (isInExpandedBucket) {
+                          setSelectedMonth(phaseToDate(phase));
+                          return;
+                        }
                         if (phaseIsCurrentMonth && !selectedMonth) return;
                         if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
                         setSelectedMonth(phaseToDate(phase));
                       }}
                     >
-                      <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colors[i % colors.length]}`}>{phase.monthLabel}</p>
+                      <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>{phase.monthLabel}</p>
                       <Input
                         value={phase.label}
                         onChange={(e) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value)}
@@ -662,8 +709,19 @@ const Index = () => {
                   );
                 })}
               </div>
+              {(previousExpanded || nextExpanded) && (
+                <div className="mt-1 flex justify-center">
+                  <button
+                    onClick={() => { setPreviousExpanded(false); setNextExpanded(false); }}
+                    className="text-[10px] font-medium text-muted-foreground hover:text-primary underline"
+                  >
+                    Collapse
+                  </button>
+                </div>
+              )}
             </>
-          ) : (
+            );
+          })() : (
             <p className="text-sm text-muted-foreground text-center py-4">
               Set start and end dates in{" "}
               <a href="/settings" className="text-primary underline hover:text-primary/80">Settings</a>

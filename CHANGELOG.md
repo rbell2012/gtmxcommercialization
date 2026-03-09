@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-08 (Test Phases — Collapsible Previous/Next Buckets)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Settings Page (`src/pages/Settings.tsx`), Test Phases Utility (`src/lib/test-phases.ts`)
+
+**Rationale:** When a test spans many months, the test phases progress bar and month labels became too narrow to read or interact with. Users needed the display condensed to only the most relevant months, with older and future months accessible on demand.
+
+**Changes:**
+- Added `splitPhases()` utility to `src/lib/test-phases.ts` that partitions phases into three groups: previous (more than 2 months before current), visible (current month + 2 prior), and next (after current month).
+- When collapsed, older months are grouped into a "Prev (N)" bucket on the left and future months into a "Next (N)" bucket on the right, each showing only as wide as their label text.
+- Both buckets display a grey bar in the progress row; clicking either bucket expands it to show all individual months inline, with a "Collapse" link to re-collapse.
+- Merged the progress bar and month label grid into a single CSS grid so bar segments and labels share identical column widths, ensuring perfect vertical alignment.
+- Applied the same collapsible bucket pattern consistently across all three pages (Pilots, Quota, Settings edit team modal) per the project rule that all project pages remain identical in appearance and operation.
+
+---
+
 ## 2026-03-06 (Help Page — Updated for Recent Features, Removed Em Dashes)
 
 ### Location – Help Page (`src/pages/Help.tsx`)
