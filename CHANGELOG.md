@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-09 (Mission & Purpose — Replace Submitted Badge with Last Edit Timestamp)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (Supabase migration `add_mission_last_edit_to_teams`)
+
+**Rationale:** The "✅ Submitted" badge and checkmark in the Mission & Purpose section added visual noise without providing useful information. Replacing it with a small "last edit: mm/dd/yy" timestamp gives managers a quick reference for when the mission details were last saved, which is more actionable than a binary submitted state.
+
+**Changes:**
+- Removed the green "✅ Submitted" badge from the Mission & Purpose card header.
+- Added a muted "last edit: mm/dd/yy" timestamp that appears in the same location after the first submit.
+- Added `missionLastEdit: string | null` to the `Team` interface in `TeamsContext.tsx` with full round-trip support: DB load mapping, change detection, Supabase persist payload, and default `null` for new teams.
+- Added `mission_last_edit: string | null` to the `DbTeam` interface in `database.types.ts`.
+- The Submit button now records `new Date().toISOString()` into `missionLastEdit` each time it is clicked, so the timestamp reflects the most recent save.
+- Applied a Supabase migration (`20260309000000_add_mission_last_edit_to_teams.sql`) adding a `mission_last_edit timestamptz` column to the `teams` table, and pushed it directly to the live database.
+
+---
+
 ## 2026-03-09 (Help Page — Core Metric Definitions & Technical Details)
 
 ### Location — Help Page (`src/pages/Help.tsx`)
