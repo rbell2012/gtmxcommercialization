@@ -51,6 +51,7 @@ function Nav() {
           </Link>
         );
       })}
+      <span className="h-4 w-px bg-border shrink-0" />
       <Link
         to="/data"
         className={`text-sm font-medium whitespace-nowrap transition-colors ${

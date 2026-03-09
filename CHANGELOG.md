@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-09 (Nav Bar — Add Separator Before Data & Findings)
+
+### Location — Navigation Bar (`src/App.tsx`)
+
+**Rationale:** The header nav had a vertical separator between Home and the pilot tabs, but no visual break between the last pilot tab and Data & Findings. Adding a matching separator improves visual grouping by clearly distinguishing the pilot links from the utility links.
+
+**Changes:**
+- Added a `<span className="h-4 w-px bg-border shrink-0" />` separator immediately before the Data & Findings link in the `Nav` component, matching the existing separator style used after Home.
+
+---
+
 ## 2026-03-09 (Help Page — Updated for Compact Tiles, Roadmap Explore Tile & Phase Priorities)
 
 ### Location — Help Page (`src/pages/Help.tsx`)
