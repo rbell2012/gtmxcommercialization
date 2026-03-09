@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-03-08 (Mission & Purpose — Structured Fields Expansion)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Help Page (`src/pages/Help.tsx`), Database (Supabase migration `add_mission_fields_to_teams`)
+
+**Rationale:** The Mission & Purpose of Test section was a single free-text field, which did not capture the structured details managers need to record for each pilot: who sponsors the test, what revenue lever is targeted, what the business goal is, and what specifically is being tested. Adding dedicated fields for each of these brings the section in line with how test documentation is actually consumed and reviewed.
+
+**Changes:**
+- Applied a Supabase migration adding five new text columns to the `teams` table: `executive_sponsor`, `executive_proxy`, `revenue_lever`, `business_goal`, and `what_we_are_testing`.
+- Updated `DbTeam` in `database.types.ts` to include the five new fields.
+- Added camelCase equivalents (`executiveSponsor`, `executiveProxy`, `revenueLever`, `businessGoal`, `whatWeAreTesting`) to the `Team` interface in `TeamsContext.tsx`, mapped them in `assembleTeams`, included them in `updateTeam` change detection and Supabase persist payload, and initialized them as empty strings in `addTeam`.
+- Expanded the Mission & Purpose card in `Index.tsx` from a single textarea into a structured 2-column grid: Revenue Lever and Business Goal on the top row, What We Are Testing spanning full width, Executive Sponsor and Executive Proxy side-by-side, and the original Mission Statement textarea at the bottom.
+- In edit mode, all fields render as inputs/textareas. In submitted mode, values display as read-only text with small uppercase labels, toggled via the Submit/Edit button now positioned in the card header.
+- Updated the Help page Mission & Purpose documentation to describe all six fields and the submit/edit workflow.
+- All pilot/project pages remain identical in appearance and operation — each maintains its own independent field values.
+
+---
+
+## 2026-03-08 (Test Phases — Replace Progress % with Wins Display)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Settings Page (`src/pages/Settings.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** The progress percentage shown under each test phase month represented calendar time elapsed, which was not actionable. Replacing it with the actual wins count (and goal when configured) gives managers an immediate view of outcome performance per phase month.
+
+**Changes:**
+- Added `getPhaseWinsLabel()` helper to `src/lib/quota-helpers.ts` that computes total wins for a given month across one or more teams, and returns a formatted label.
+- When a wins goal is enabled for the team, the label displays as "X / Y wins" (actual vs. goal).
+- When no wins goal is configured, the label displays as "X wins" (total only).
+- Replaced `{phase.progress}%` text in the test phases section on the Pilots page with the wins label, scoped to the active team.
+- Applied the same replacement on the Quota page, summing wins across all active teams since that page is cross-team.
+- Applied the same replacement on the Settings page, scoped to the team currently being edited.
+
+---
+
 ## 2026-03-08 (Monthly Goals — Wins Column Always Visible as Rightmost)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`)

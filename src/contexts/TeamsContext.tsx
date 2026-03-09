@@ -143,6 +143,11 @@ export interface Team {
   tamSubmitted: boolean;
   missionPurpose: string;
   missionSubmitted: boolean;
+  executiveSponsor: string;
+  executiveProxy: string;
+  revenueLever: string;
+  businessGoal: string;
+  whatWeAreTesting: string;
   goalsParity: boolean;
   teamGoals: MemberGoals;
   enabledGoals: EnabledGoals;
@@ -371,6 +376,11 @@ function assembleTeams(
       tamSubmitted: t.tam_submitted ?? false,
       missionPurpose: t.mission_purpose ?? "",
       missionSubmitted: t.mission_submitted ?? false,
+      executiveSponsor: t.executive_sponsor ?? "",
+      executiveProxy: t.executive_proxy ?? "",
+      revenueLever: t.revenue_lever ?? "",
+      businessGoal: t.business_goal ?? "",
+      whatWeAreTesting: t.what_we_are_testing ?? "",
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
         calls: t.team_goal_calls ?? 0,
@@ -943,6 +953,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.tamSubmitted !== updated.tamSubmitted ||
             old.missionPurpose !== updated.missionPurpose ||
             old.missionSubmitted !== updated.missionSubmitted ||
+            old.executiveSponsor !== updated.executiveSponsor ||
+            old.executiveProxy !== updated.executiveProxy ||
+            old.revenueLever !== updated.revenueLever ||
+            old.businessGoal !== updated.businessGoal ||
+            old.whatWeAreTesting !== updated.whatWeAreTesting ||
             goalsChanged)
         ) {
           dbMutate(
@@ -959,6 +974,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 tam_submitted: updated.tamSubmitted,
                 mission_purpose: updated.missionPurpose,
                 mission_submitted: updated.missionSubmitted,
+                executive_sponsor: updated.executiveSponsor,
+                executive_proxy: updated.executiveProxy,
+                revenue_lever: updated.revenueLever,
+                business_goal: updated.businessGoal,
+                what_we_are_testing: updated.whatWeAreTesting,
                 goals_parity: updated.goalsParity,
                 team_goal_calls: updated.teamGoals.calls,
                 team_goal_ops: updated.teamGoals.ops,
@@ -1058,6 +1078,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           sortOrder: nextOrder, isActive: true,
           startDate, endDate, totalTam: 0, tamSubmitted: false,
           missionPurpose: "", missionSubmitted: false,
+          executiveSponsor: "", executiveProxy: "", revenueLever: "", businessGoal: "", whatWeAreTesting: "",
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },
           acceleratorConfig: {},

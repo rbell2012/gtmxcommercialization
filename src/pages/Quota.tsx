@@ -15,7 +15,7 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -178,7 +178,7 @@ const Quota = () => {
                     <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>
                       {monthName}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
+                    <p className="text-[10px] text-muted-foreground">{getPhaseWinsLabel(activeTeams, phase.year, phase.month)}</p>
                   </div>
                 );
               })}

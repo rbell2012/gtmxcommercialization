@@ -40,6 +40,7 @@ import {
   DEFAULT_GOAL_SCOPE_CONFIG,
 } from "@/contexts/TeamsContext";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { getPhaseWinsLabel } from "@/lib/quota-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 function addMonths(dateStr: string, months: number): string {
@@ -697,7 +698,7 @@ const Settings = () => {
                               <p className={`text-[10px] font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>
                                 {phase.monthLabel}
                               </p>
-                              <p className="text-[9px] text-muted-foreground">{phase.progress}%</p>
+                              <p className="text-[9px] text-muted-foreground">{(() => { const t = teams.find((t) => t.id === editTeamId); return t ? getPhaseWinsLabel([t], phase.year, phase.month) : "0"; })()}</p>
                             </div>
                           );
                         })}

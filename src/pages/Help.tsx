@@ -199,10 +199,21 @@ export default function Help() {
 
         <H4>Mission &amp; Purpose</H4>
         <p>
-          A free-text field where managers describe the project's mission and
-          purpose. Each project has its own independent mission statement;
-          editing one pilot's mission does not affect any other. Saved
-          automatically.
+          A structured section where managers capture key details about the
+          project's test. Each project has its own independent values;
+          editing one pilot does not affect any other. Fields include:
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li><strong>Revenue Lever:</strong> The primary revenue lever being targeted.</li>
+          <li><strong>Business Goal:</strong> The business outcome the test aims to achieve.</li>
+          <li><strong>What We Are Testing:</strong> A description of the hypothesis or approach under test.</li>
+          <li><strong>Executive Sponsor:</strong> The executive sponsor overseeing the test.</li>
+          <li><strong>Executive Proxy:</strong> The executive proxy supporting the test.</li>
+          <li><strong>Mission Statement:</strong> A free-text field for additional mission context.</li>
+        </ul>
+        <p>
+          All fields save automatically. Once submitted, values display as
+          read-only text. Click <strong>Edit</strong> to unlock and modify.
         </p>
 
         <H4>Lifetime Stats</H4>
@@ -533,6 +544,118 @@ export default function Help() {
           <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for
             comfortable viewing in low-light environments.
+          </li>
+        </ul>
+      </Section>
+
+      {/* ---- 8. Metric Definitions ---- */}
+      <Section id="metric-definitions" title="8. Metric Definitions">
+        <p>
+          Below are the definitions for each core metric tracked in GTMx Pilots,
+          including where the data comes from and how it's aggregated.
+        </p>
+
+        <H3>TAM (Total Addressable Market)</H3>
+        <p>
+          The total number of addressable accounts assigned to a rep or team.
+          When external TAM data exists (from the metrics system), each rep's TAM
+          is the sum of their assigned account records. When no external data is
+          available, a manager enters a Total TAM value that is divided equally
+          across active members. TAM is a <strong>snapshot</strong>, not a
+          cumulative metric: once set for a week, it carries forward automatically
+          until a new value is submitted. Monthly summaries use the last week's
+          carried TAM value. Touch Rate is derived from TAM as{" "}
+          <em>Touched Accounts / TAM</em>.
+        </p>
+
+        <H3>Activity</H3>
+        <p>
+          Any individual outreach action performed by a rep, such as emails,
+          social touches, or other non-call engagement. Each row in the activity
+          data source counts as <strong>1 activity</strong>. Activities are
+          attributed to the week and month of the activity date. Weekly totals
+          are summed into monthly and lifetime aggregates.
+        </p>
+
+        <H3>Call</H3>
+        <p>
+          A phone call or equivalent direct outreach attempt made by a rep. Each
+          row in the calls data source counts as <strong>1 call</strong>. Calls
+          are attributed by call date and feed into the{" "}
+          <em>Call → Connect</em> conversion rate.
+        </p>
+
+        <H3>Connect</H3>
+        <p>
+          A successful live conversation with a prospect resulting from a call or
+          outreach. Each row in the connects data source counts as{" "}
+          <strong>1 connect</strong>. Connects are attributed by connect date and
+          feed into both the <em>Call → Connect</em> and{" "}
+          <em>Connect → Demo</em> conversion rates.
+        </p>
+
+        <H3>Demo</H3>
+        <p>
+          A product demonstration or qualified meeting held with a prospect. Each
+          row in the demos data source counts as <strong>1 demo</strong>. Demos
+          are attributed by demo date and feed into the{" "}
+          <em>Connect → Demo</em> and <em>Demo → Win</em> conversion rates.
+        </p>
+
+        <H3>Ops (Opportunities)</H3>
+        <p>
+          A sales opportunity created in the pipeline. Each row in the
+          opportunities data source counts as <strong>1 op</strong>.
+          Opportunities are attributed by <strong>creation date</strong>, not
+          close date, so they appear in the week and month the opportunity was
+          first generated. This gives an accurate picture of pipeline generation
+          timing.
+        </p>
+
+        <H3>Win</H3>
+        <p>
+          A closed-won deal or successful outcome. Each row in the wins data
+          source counts as <strong>1 win</strong>. Wins are attributed by win
+          date and are summed into weekly, monthly, and lifetime totals. Win
+          Stories (recorded in the Rep Self-Overrides section) capture the
+          narrative details of each win but are separate from the numeric win
+          count.
+        </p>
+
+        <H3>Feedback</H3>
+        <p>
+          Qualitative or structured feedback received from a prospect or
+          customer interaction. Each row in the feedback data source counts as{" "}
+          <strong>1 feedback event</strong>. Feedback is attributed by feedback
+          date and is summed into weekly, monthly, and lifetime totals.
+        </p>
+
+        <H3>General Notes</H3>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong>Dual-source model:</strong> All metrics (except TAM) pull
+            from external data tables in real time. If a rep enters a non-zero
+            value in Rep Self-Overrides for a given metric and week, that manual
+            value completely replaces the external value for that cell.
+          </li>
+          <li>
+            <strong>Weekly bucketing:</strong> Events are grouped into
+            Monday-aligned weeks based on their date field.
+          </li>
+          <li>
+            <strong>Monthly totals:</strong> Calculated using calendar-month
+            boundaries so events are attributed to the correct month regardless
+            of which week they fall in.
+          </li>
+          <li>
+            <strong>Lifetime totals:</strong> The sum of all weekly values across
+            the entire test duration.
+          </li>
+          <li>
+            <strong>Conversion rates:</strong> Touch Rate (Touched Accounts /
+            TAM), Call → Connect (Connects / Calls), Connect → Demo (Demos /
+            Connects), and Demo → Win (Wins / Demos). Rates are calculated
+            per-month and lifetime.
           </li>
         </ul>
       </Section>

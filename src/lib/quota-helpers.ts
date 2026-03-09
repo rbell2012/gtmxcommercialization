@@ -37,6 +37,21 @@ export function getTeamMetricTotal(team: Team, metric: GoalMetric, referenceDate
     .reduce((sum, m) => sum + getMemberMetricTotal(m, metric, referenceDate), 0);
 }
 
+export function getPhaseWinsLabel(teams: Team[], year: number, month: number): string {
+  const phaseDate = new Date(year, month, 15);
+  let totalWins = 0;
+  let totalGoal = 0;
+  for (const team of teams) {
+    totalWins += (team.members ?? []).reduce((s, m) => s + getMemberMetricTotal(m, 'wins', phaseDate), 0);
+    if (team.enabledGoals?.wins) {
+      totalGoal += (team.members ?? [])
+        .filter((m) => m.isActive)
+        .reduce((s, m) => s + getEffectiveGoal(team, m, 'wins'), 0);
+    }
+  }
+  return totalGoal > 0 ? `${totalWins} / ${totalGoal} wins` : `${totalWins} wins`;
+}
+
 /**
  * Returns the "current" value for a metric, respecting goal scope.
  * Team-scoped: sum of all active members. Individual-scoped: that member only.
