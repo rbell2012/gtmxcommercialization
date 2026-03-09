@@ -697,12 +697,23 @@ const Index = () => {
                       }}
                     >
                       <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>{phase.monthLabel}</p>
-                      <Input
+                      <textarea
                         value={phase.label}
-                        onChange={(e) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value)}
+                        onChange={(e) => {
+                          updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value);
+                          e.target.style.height = "auto";
+                          e.target.style.height = e.target.scrollHeight + "px";
+                        }}
+                        ref={(el) => {
+                          if (el) {
+                            el.style.height = "auto";
+                            el.style.height = el.scrollHeight + "px";
+                          }
+                        }}
                         onClick={(e) => e.stopPropagation()}
                         placeholder="—"
-                        className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
+                        rows={1}
+                        className="w-full text-xs text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 resize-none overflow-hidden"
                       />
                       <p className="text-[10px] text-muted-foreground">{getPhaseWinsLabel([activeTeam!], phase.year, phase.month)}</p>
                     </div>

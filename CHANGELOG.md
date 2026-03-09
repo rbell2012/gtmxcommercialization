@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Test Phase Labels — Multi-line Text Wrapping)
+
+### Location — Pilots Page (`src/pages/Index.tsx`)
+
+**Rationale:** Phase label text was truncated when it exceeded the width of a single line, making it impossible to read longer descriptions such as paragraphs or detailed phase notes. Labels needed to wrap to additional rows so the full content is always visible.
+
+**Changes:**
+- Replaced the single-line `<Input>` element for phase labels with an auto-resizing `<textarea>` that starts at one row and expands as content grows.
+- Added auto-height logic in both `onChange` (recalculates on each keystroke) and `ref` (sizes correctly on initial render) to eliminate scrollbars and keep the textarea exactly as tall as its content.
+- Increased font size from `text-[10px]` to `text-xs` (12px) so label text matches the visual weight of surrounding elements.
+- Applied `resize-none` and `overflow-hidden` to prevent manual drag-resizing and hide scrollbar flash during height recalculation.
+
+---
+
 ## 2026-03-08 (Mission & Purpose — Structured Fields Expansion)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Help Page (`src/pages/Help.tsx`), Database (Supabase migration `add_mission_fields_to_teams`)
