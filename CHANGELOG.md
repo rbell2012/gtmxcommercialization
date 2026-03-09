@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Help Page — Updated for Compact Tiles, Roadmap Explore Tile & Phase Priorities)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to reflect four recent changes: the new Roadmap Explore tile on the Home page, compact project card layout on the Home page, compact roadmap tiles with inline members (and removal of the "Inactive" badge), and the new per-month priorities text field in Test Phases. Users consulting the Help page would not know about these features.
+
+**Changes:**
+- Updated **Home Page — Explore** (section 1) to include the Roadmap tile alongside Data & Findings and Quota in the Explore description.
+- Updated **Home Page — Active Projects** (section 1) to describe the compact card layout: inline member count next to the project name, "Owner: X · Lead: Y" on the same line, and date range/progress bar in the card header.
+- Updated **Roadmap — Calendar Grid** (section 5) to describe compact project tiles where the project name, member avatars, and "Starts"/"Ends" badges all appear on a single line with graceful wrapping. Removed mention of the "Inactive" badge (inactive projects are now distinguished solely by 60% opacity).
+- Added a new bullet to **Test Phases** (section 3a) documenting the per-month priorities text field below each headline, noting that priorities are only visible on the Pilots page and not on the Roadmap.
+
+---
+
 ## 2026-03-09 (Home Page — Add Roadmap Explore Tile)
 
 ### Location — Home Page (`src/pages/Home.tsx`)

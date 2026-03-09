@@ -31,18 +31,19 @@ export default function Help() {
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Active Projects</strong>: one card per active team showing the
-            team name, owner, lead rep, member count, date range, a time-elapsed
-            progress bar with business days remaining, and lifetime stat tiles
-            (Ops, Demos, Wins, Feedback, Activity). Click any card to jump to that
-            project's dashboard.
+            <strong>Active Projects</strong>: one compact card per active team showing the
+            project name with an inline member count, owner and lead rep on the same
+            line (Owner: X · Lead: Y), date range with a time-elapsed progress bar
+            and business days remaining, and lifetime stat tiles (Ops, Demos, Wins,
+            Feedback, Activity). Click any card to jump to that project's dashboard.
           </li>
           <li>
             <strong>Explore</strong>: overview cards describing what to expect on
             each page: a "Project Pages" tile summarizing all project dashboards,
             plus clickable tiles for{" "}
-            <Link to="/data" className="text-primary underline">Data &amp; Findings</Link> and{" "}
-            <Link to="/quota" className="text-primary underline">Quota</Link> with
+            <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>,{" "}
+            <Link to="/quota" className="text-primary underline">Quota</Link>, and{" "}
+            <Link to="/roadmap" className="text-primary underline">Roadmap</Link> with
             bullet-point descriptions.
           </li>
         </ul>
@@ -170,7 +171,8 @@ export default function Help() {
           <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
           <li>Below each month, a <strong>wins label</strong> shows the total wins for that month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only).</li>
-          <li>Click the <strong>phase label</strong> to edit its description. Labels support <strong>multi-line text</strong>: the field auto-expands as you type so longer notes and paragraphs are always fully visible.</li>
+          <li>Click the <strong>phase label</strong> (headline) to edit its description. Labels support <strong>multi-line text</strong>: the field auto-expands as you type so longer notes and paragraphs are always fully visible.</li>
+          <li>Below each headline, a second <strong>priorities</strong> text field lets managers record per-month priorities alongside the headline. Priorities are only visible on the Pilots page; the Roadmap page shows only the headline.</li>
           <li>
             <strong>Collapsible buckets:</strong> When a test spans many months,
             older months are grouped into a "Prev (N)" bucket on the left and
@@ -433,15 +435,15 @@ export default function Help() {
             regardless of whether other projects start or end in a given month.
           </li>
           <li>
-            Project cards show the project name (clickable, links to the Pilots
-            page), the <strong>phase label</strong> for that month,{" "}
-            <strong>"Starts"/"Ends" badges</strong> on the first and last months,
-            and <strong>member avatar initials</strong> with tooltips.
+            Project cards are <strong>compact</strong>: the project name, member
+            avatar initials, and "Starts"/"Ends" badges all appear on a single
+            line (wrapping gracefully when the name is long). The{" "}
+            <strong>phase label</strong> for that month is shown below. Project
+            names are clickable and link to the Pilots page.
           </li>
           <li>
             <strong>Inactive projects</strong> (non-archived but toggled off)
-            appear at 60% opacity with an "Inactive" badge to distinguish them
-            from active projects.
+            appear at 60% opacity to distinguish them from active projects.
           </li>
         </ul>
 
