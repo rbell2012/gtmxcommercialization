@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 (Roadmap Page — Multi-Month Calendar View)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`), App Shell (`src/App.tsx`)
+
+**Rationale:** There was no way to visualize projects over time, understand what's coming, see who's working on what, or gauge capacity for upcoming work. A dedicated Roadmap page provides a forward-looking calendar view of all non-archived projects with team member assignments and availability forecasting.
+
+**Changes:**
+- Created new `src/pages/Roadmap.tsx` page with a 6-month sliding calendar grid (current month + 5 forward), navigable with left/right arrows and a "Today" reset button.
+- Each month column displays project cards for every non-archived project active during that month, with a colored left border for visual grouping per project.
+- Project cards show the project name (clickable, links to the Pilots page), the phase label for that month (from `team_phase_labels`), "Starts"/"Ends" badges on the first and last months, and member avatar initials with tooltips.
+- Inactive (but non-archived) projects appear at 60% opacity with an "Inactive" badge to distinguish them from active projects.
+- Capacity summary bar at the top shows active members, available members, and total headcount.
+- Team Availability section at the bottom lists members who are currently available and groups upcoming availability by the month their current project ends.
+- Added `/roadmap` route and "Roadmap" nav link (with Map icon) in `App.tsx` after the Quota link.
+
+---
+
 ## 2026-03-09 (Test Phases — Dynamic Re-centering on Month Selection)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Settings Page (`src/pages/Settings.tsx`), Utility (`src/lib/test-phases.ts`)
