@@ -585,7 +585,7 @@ const Index = () => {
             </div>
           </div>
           {computedPhases.length > 0 ? (() => {
-            const { previousPhases, visiblePhases, nextPhases } = splitPhases(computedPhases);
+            const { previousPhases, visiblePhases, nextPhases } = splitPhases(computedPhases, selectedMonth ?? undefined);
             const hasPrev = previousPhases.length > 0;
             const hasNext = nextPhases.length > 0;
             const segments: (ComputedPhase | { bucket: "previous" | "next"; count: number })[] = [];
@@ -611,7 +611,7 @@ const Index = () => {
                     Viewing: {selectedMonth.toLocaleString("en-US", { month: "long", year: "numeric" })}
                   </span>
                   <button
-                    onClick={() => setSelectedMonth(null)}
+                    onClick={() => { setSelectedMonth(null); setPreviousExpanded(false); setNextExpanded(false); }}
                     className="text-xs font-semibold text-primary hover:text-primary/80 underline"
                   >
                     Back to Current
@@ -650,8 +650,10 @@ const Index = () => {
                       style={{ gridRow: 1, gridColumn: i + 1, ...(!phaseIsSelected ? { borderRadius: isFirst ? '9999px 0 0 9999px' : isLast ? '0 9999px 9999px 0' : '0' } : {}) }}
                       onClick={() => {
                         if (phaseIsCurrentMonth && !selectedMonth) return;
-                        if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                        if (phaseIsCurrentMonth) { setSelectedMonth(null); setPreviousExpanded(false); setNextExpanded(false); return; }
                         setSelectedMonth(phaseToDate(phase));
+                        setPreviousExpanded(false);
+                        setNextExpanded(false);
                       }}
                     >
                       <div className="h-full transition-all duration-500 ease-out" style={{ width: `${fillPct}%`, backgroundColor: colors[phase.monthIndex % colors.length] }} />
@@ -678,22 +680,17 @@ const Index = () => {
                   const phaseIsSelected = selectedMonth
                     ? phase.year === selectedMonth.getFullYear() && phase.month === selectedMonth.getMonth()
                     : phaseIsCurrentMonth;
-                  const isInExpandedBucket =
-                    (previousExpanded && previousPhases.includes(phase)) ||
-                    (nextExpanded && nextPhases.includes(phase));
                   return (
                     <div
                       key={`label-${phase.monthIndex}`}
                       className={`mt-2 text-center cursor-pointer rounded-md transition-colors px-1 py-0.5 ${phaseIsSelected ? "bg-primary/15" : "hover:bg-muted/50"}`}
                       style={{ gridRow: 2, gridColumn: i + 1 }}
                       onClick={() => {
-                        if (isInExpandedBucket) {
-                          setSelectedMonth(phaseToDate(phase));
-                          return;
-                        }
                         if (phaseIsCurrentMonth && !selectedMonth) return;
-                        if (phaseIsCurrentMonth) { setSelectedMonth(null); return; }
+                        if (phaseIsCurrentMonth) { setSelectedMonth(null); setPreviousExpanded(false); setNextExpanded(false); return; }
                         setSelectedMonth(phaseToDate(phase));
+                        setPreviousExpanded(false);
+                        setNextExpanded(false);
                       }}
                     >
                       <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>{phase.monthLabel}</p>

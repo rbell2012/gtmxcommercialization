@@ -559,6 +559,8 @@ const Settings = () => {
                   const handlePhaseClick = (phase: ComputedPhase) => {
                     const phaseIsCurrentMonth = phase.year === now.getFullYear() && phase.month === now.getMonth();
                     if (phaseIsCurrentMonth && !selectedEditMonth) return;
+                    setSettingsPrevExpanded(false);
+                    setSettingsNextExpanded(false);
                     const team = teams.find((t) => t.id === editTeamId);
                     if (phaseIsCurrentMonth) {
                       setSelectedEditMonth(null);
@@ -601,7 +603,7 @@ const Settings = () => {
                     }
                   };
 
-                  const { previousPhases: sPrev, visiblePhases: sVis, nextPhases: sNext } = splitPhases(phases);
+                  const { previousPhases: sPrev, visiblePhases: sVis, nextPhases: sNext } = splitPhases(phases, selectedEditMonth ?? undefined);
                   const hasPrev = sPrev.length > 0;
                   const hasNext = sNext.length > 0;
                   const segs: (ComputedPhase | { bucket: "previous" | "next"; count: number })[] = [];

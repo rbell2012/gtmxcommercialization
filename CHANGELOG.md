@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Test Phases — Dynamic Re-centering on Month Selection)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Settings Page (`src/pages/Settings.tsx`), Utility (`src/lib/test-phases.ts`)
+
+**Rationale:** When expanding the "Prev" or "Next" phase buckets and selecting a different month, the visible window stayed anchored on the current calendar month, which forced users to scroll through a long flat list of all expanded months. The phases bar should dynamically re-center around whichever month the user selects, showing the selected month plus up to 2 prior months and collapsing everything else back into "Prev" / "Next" buckets.
+
+**Changes:**
+- Updated `splitPhases()` in `test-phases.ts` to accept an optional `anchorDate` parameter; when provided, the visible window (anchor + 2 prior months) centers on the anchor instead of today's date.
+- Updated Index.tsx, Quota.tsx, and Settings.tsx to pass the currently selected month to `splitPhases`, so the split dynamically re-centers on selection.
+- All month click handlers (progress bars, labels, "Back to Current") now collapse the expanded prev/next states, causing the view to re-split cleanly around the new selection.
+- If the selected month is among the first 1–2 months of the test and there are no earlier months to group, the "Prev" bucket naturally does not appear.
+
+---
+
 ## 2026-03-09 (Monthly Goals — Hide Goal Display When Goal Is Zero)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`)

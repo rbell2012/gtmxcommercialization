@@ -62,12 +62,12 @@ export interface SplitPhases {
   nextPhases: ComputedPhase[];
 }
 
-export function splitPhases(phases: ComputedPhase[]): SplitPhases {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+export function splitPhases(phases: ComputedPhase[], anchorDate?: Date): SplitPhases {
+  const anchor = anchorDate ?? new Date();
+  const anchorYear = anchor.getFullYear();
+  const anchorMonth = anchor.getMonth();
 
-  const cutoffDate = new Date(currentYear, currentMonth - 2, 1);
+  const cutoffDate = new Date(anchorYear, anchorMonth - 2, 1);
   const cutoffYear = cutoffDate.getFullYear();
   const cutoffMonth = cutoffDate.getMonth();
 
@@ -78,7 +78,7 @@ export function splitPhases(phases: ComputedPhase[]): SplitPhases {
   for (const phase of phases) {
     if (phase.year < cutoffYear || (phase.year === cutoffYear && phase.month < cutoffMonth)) {
       previousPhases.push(phase);
-    } else if (phase.year > currentYear || (phase.year === currentYear && phase.month > currentMonth)) {
+    } else if (phase.year > anchorYear || (phase.year === anchorYear && phase.month > anchorMonth)) {
       nextPhases.push(phase);
     } else {
       visiblePhases.push(phase);
