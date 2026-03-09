@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Help Page — Updated for Recent 03-08 & 03-09 Features)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to reflect several features added on 2026-03-08 and 2026-03-09: collapsible previous/next phase buckets, wins display replacing progress percentages in test phases, multi-line phase label wrapping, the "last edit" timestamp replacing the submitted badge in Mission & Purpose, and the always-visible wins column in Monthly Goals. These features were documented in the changelog but users consulting the Help page would not know about them.
+
+**Changes:**
+- Updated **Test Phases** (section 3a) with three new bullets: wins labels below each phase month showing "X / Y wins" or "X wins," multi-line label support with auto-expanding height, and collapsible "Prev (N)" / "Next (N)" buckets for long test timelines.
+- Updated **Mission & Purpose** (section 3a) to document the Submit button workflow and the "last edit: mm/dd/yy" timestamp that replaced the old "Submitted" badge.
+- Updated **Monthly Goals** (section 3b) to document that the Wins column always appears as the rightmost column, showing raw count when no goal is configured.
+- Added a **"Check wins per phase"** tip to Tips & Shortcuts (section 7) pointing out the at-a-glance wins labels in the test phases bar.
+
+---
+
 ## 2026-03-09 (Mission & Purpose — Replace Submitted Badge with Last Edit Timestamp)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`), Context (`src/contexts/TeamsContext.tsx`), Types (`src/lib/database.types.ts`), Database (Supabase migration `add_mission_last_edit_to_teams`)

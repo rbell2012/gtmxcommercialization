@@ -169,7 +169,16 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
-          <li>Click the <strong>phase label</strong> to edit its description.</li>
+          <li>Below each month, a <strong>wins label</strong> shows the total wins for that month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only).</li>
+          <li>Click the <strong>phase label</strong> to edit its description. Labels support <strong>multi-line text</strong>: the field auto-expands as you type so longer notes and paragraphs are always fully visible.</li>
+          <li>
+            <strong>Collapsible buckets:</strong> When a test spans many months,
+            older months are grouped into a "Prev (N)" bucket on the left and
+            future months into a "Next (N)" bucket on the right. Click either
+            bucket to expand and see all individual months; click "Collapse" to
+            re-collapse. The current month and two prior months are always
+            visible by default.
+          </li>
           <li>Click <strong>"Extend the Test"</strong> to add one month to the team's end date.</li>
           <li>If no dates are set, you'll see a link to <Link to="/settings" className="text-primary underline">Settings</Link> to configure them.</li>
         </ul>
@@ -212,8 +221,10 @@ export default function Help() {
           <li><strong>Mission Statement:</strong> A free-text field for additional mission context.</li>
         </ul>
         <p>
-          All fields save automatically. Once submitted, values display as
-          read-only text. Click <strong>Edit</strong> to unlock and modify.
+          Click <strong>Submit</strong> to save. Once submitted, values display
+          as read-only text with a <strong>"last edit: mm/dd/yy"</strong>{" "}
+          timestamp showing when the mission details were last saved. Click{" "}
+          <strong>Edit</strong> to unlock and modify.
         </p>
 
         <H4>Lifetime Stats</H4>
@@ -259,6 +270,7 @@ export default function Help() {
         <H4>Monthly Goals</H4>
         <ul className="list-disc pl-5 space-y-1">
           <li>Displays a read-only table of each enabled metric with the member's current value, goal target, progress bar, and percentage.</li>
+          <li>The <strong>Wins column always appears</strong> as the rightmost column, even when no wins goal is configured. Without a goal, the cell shows only the raw count (e.g. "4"); with a goal, it renders the full actual/goal, progress bar, and percentage like other metrics.</li>
           <li>Percentages are uncapped: values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
@@ -540,6 +552,11 @@ export default function Help() {
             <Link to="/settings" className="text-primary underline">Settings</Link>,
             use the month selector to retroactively adjust goals, accelerators,
             and team rosters for any month in the test period.
+          </li>
+          <li>
+            <strong>Check wins per phase</strong>: the wins label below each
+            test phase month gives you an at-a-glance view of outcome
+            performance without opening Monthly Goals.
           </li>
           <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for
