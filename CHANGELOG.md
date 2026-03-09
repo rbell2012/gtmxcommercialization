@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Monthly Goals — Hide Goal Display When Goal Is Zero)
+
+### Location — Pilots Page (`src/pages/Index.tsx`)
+
+**Rationale:** When a team member's role has no goals configured for the current month (goal value = 0), the Monthly Goals table was displaying "actual / 0" with an empty progress bar and "0%" — which is confusing and cluttered. The display should instead show only the raw count (e.g. "1" or "3"), consistent with how the Wins column already behaves when no wins goal is enabled.
+
+**Changes:**
+- Updated the `hasGoal` condition in the active-members goals table to also require `goal > 0`, so members with a zero goal for a metric see only their raw count instead of "actual / 0" with a progress bar and percentage.
+- Applied the same fix to the former-members goals table for consistency.
+- Moved the `goal` variable declaration before the `hasGoal` check (since `hasGoal` now depends on the goal value).
+- Simplified the `pct` calculation since `hasGoal` now guarantees `goal > 0`.
+
+---
+
 ## 2026-03-09 (Help Page — Updated for Recent 03-08 & 03-09 Features)
 
 ### Location — Help Page (`src/pages/Help.tsx`)
