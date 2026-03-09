@@ -36,13 +36,11 @@ function Nav() {
       <span className="h-4 w-px bg-border shrink-0" />
       {visibleTeams.map((team, i) => {
         const slug = pilotNameToSlug(team.name);
-        const isCurrent =
-          location.pathname === `/Pilots/${slug}` ||
-          (location.pathname === "/Pilots" && i === 0);
+        const isCurrent = location.pathname === `/${slug}`;
         return (
           <Link
             key={team.id}
-            to={i === 0 ? "/Pilots" : `/Pilots/${slug}`}
+            to={`/${slug}`}
             className={`text-sm font-medium whitespace-nowrap transition-colors ${
               isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground"
             }`}
@@ -114,8 +112,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Navigate to="/home" replace />} />
               <Route path="/home" element={<Home />} />
-              <Route path="/Pilots" element={<Index />} />
-              <Route path="/Pilots/:pilotId" element={<Index />} />
+              <Route path="/:pilotId" element={<Index />} />
               <Route path="/data" element={<Data />} />
               <Route path="/quota" element={<Quota />} />
               <Route path="/roadmap" element={<Roadmap />} />

@@ -101,7 +101,7 @@ function ProjectCard({ team, index }: { team: Team; index: number }) {
   const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity"), 0);
 
   const slug = pilotNameToSlug(team.name);
-  const path = index === 0 ? "/Pilots" : `/Pilots/${slug}`;
+  const path = `/${slug}`;
 
   return (
     <Card

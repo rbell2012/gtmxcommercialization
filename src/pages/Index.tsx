@@ -292,7 +292,8 @@ const Index = () => {
 
   useEffect(() => {
     if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
-      navigate("/Pilots", { replace: true });
+      const firstSlug = teams[0] ? pilotNameToSlug(teams[0].name) : "home";
+      navigate(`/${firstSlug}`, { replace: true });
     }
   }, [pilotId, teams, navigate]);
 
@@ -508,8 +509,7 @@ const Index = () => {
         <Tabs value={activeTab} onValueChange={(val) => {
           const team = teams.find((t) => t.id === val);
           if (!team) return;
-          const isFirst = teams[0].id === team.id;
-          navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+          navigate(`/${pilotNameToSlug(team.name)}`);
         }}>
           <TabsList className="mb-6 grid w-full bg-muted p-1 h-auto" style={{ gridTemplateColumns: `repeat(${teams.length}, minmax(0, 1fr))` }}>
             {teams.map((team) => {
@@ -1134,8 +1134,7 @@ const Index = () => {
               <TeamTab
                 team={getHistoricalTeam(team, referenceDate, teamGoalsHistory)}
                 onAddMemberClick={() => {
-                  const isFirst = teams[0].id === team.id;
-                  navigate(isFirst ? "/Pilots" : `/Pilots/${pilotNameToSlug(team.name)}`);
+                  navigate(`/${pilotNameToSlug(team.name)}`);
                   setAddMemberOpen(true);
                 }}
                 selectedMember={selectedMember}

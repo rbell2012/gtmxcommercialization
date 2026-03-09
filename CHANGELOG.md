@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-09 (Routing — Rename /Pilots to Project-Name Slugs)
+
+### Location — App-wide (`src/App.tsx`, `src/pages/Index.tsx`, `src/pages/Home.tsx`, `src/pages/Roadmap.tsx`, `src/pages/Help.tsx`)
+
+**Rationale:** The `/Pilots` and `/Pilots/:pilotId` URL scheme did not match the pattern used elsewhere in the app where each page is identified by its own name. Renaming the route to `/:pilotId` makes each project accessible directly by its slug (e.g., `/Mad_Max` instead of `/Pilots/Mad_Max`), giving cleaner URLs and removing the special-case logic that treated the first team differently from the rest.
+
+**Changes:**
+- Replaced the `/Pilots` and `/Pilots/:pilotId` routes in `App.tsx` with a single `/:pilotId` dynamic route. React Router v6 static routes (`/home`, `/data`, etc.) take precedence automatically.
+- Updated the `Nav` component in `App.tsx` so every team link points to `/${slug}` instead of special-casing the first team as `/Pilots`.
+- Updated `Index.tsx` tab switching, add-member navigation, and invalid-pilot redirect to use `/${slug}` paths.
+- Simplified `Home.tsx` project card links and `Roadmap.tsx` tile links to `/${slug}`, removing the first-team ternary.
+- Added `useTeams` and `pilotNameToSlug` to `Help.tsx` so the five documentation links formerly pointing to `/Pilots` now resolve dynamically to the first active team's slug.
+
+---
+
 ## 2026-03-09 (Nav Bar — Add Separator Before Data & Findings)
 
 ### Location — Navigation Bar (`src/App.tsx`)

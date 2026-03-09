@@ -362,7 +362,7 @@ const Roadmap = () => {
                 const color = getProjectColor(proj.colorIndex);
                 const activeMembers = proj.team.members.filter((m) => m.isActive);
                 const slug = pilotNameToSlug(proj.team.name);
-                const path = proj.colorIndex === 0 ? "/Pilots" : `/Pilots/${slug}`;
+                const path = `/${slug}`;
                 const isInactive = !proj.team.isActive;
 
                 return (

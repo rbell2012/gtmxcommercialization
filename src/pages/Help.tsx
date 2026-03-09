@@ -1,6 +1,10 @@
 import { Link } from "react-router-dom";
+import { useTeams, pilotNameToSlug } from "@/contexts/TeamsContext";
 
 export default function Help() {
+  const { teams } = useTeams();
+  const firstActive = teams.find((t) => t.isActive);
+  const pilotsPath = firstActive ? `/${pilotNameToSlug(firstActive.name)}` : "/home";
   return (
     <div className="max-w-4xl mx-auto px-6 py-10 text-foreground">
       <h1 className="text-3xl font-bold mb-2">How to Use GTMx Pilots</h1>
@@ -63,14 +67,14 @@ export default function Help() {
             Settings
           </Link>{" "}
           page is where you configure teams and members. All changes here
-          propagate automatically to the <Link to="/Pilots" className="text-primary underline">Pilots</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, and <Link to="/data" className="text-primary underline">Data</Link> pages.
+          propagate automatically to the <Link to={pilotsPath} className="text-primary underline">Pilots</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, and <Link to="/data" className="text-primary underline">Data</Link> pages.
         </p>
 
         <H3>Creating a Team</H3>
         <ul className="list-disc pl-5 space-y-1">
           <li>Click <strong>"New Team"</strong> and enter a name and owner.</li>
           <li>Pick a <strong>Start Date</strong>. The End Date auto-fills to 9 months later but can be adjusted.</li>
-          <li>The team will appear in the nav bar and on the <Link to="/Pilots" className="text-primary underline">Pilots</Link> page once created.</li>
+          <li>The team will appear in the nav bar and on the <Link to={pilotsPath} className="text-primary underline">Pilots</Link> page once created.</li>
         </ul>
 
         <H3>Reordering Teams</H3>
@@ -83,7 +87,7 @@ export default function Help() {
         <H3>Activating / Deactivating a Team</H3>
         <p>
           Use the <strong>toggle switch</strong> on a team card to make it
-          inactive. Inactive teams are hidden from the nav bar and <Link to="/Pilots" className="text-primary underline">Pilots</Link> page
+          inactive. Inactive teams are hidden from the nav bar and <Link to={pilotsPath} className="text-primary underline">Pilots</Link> page
           but retain all data. Toggle it back on at any time.
         </p>
 
@@ -149,7 +153,7 @@ export default function Help() {
       <Section id="pilots" title="3. Pilots Page: The Main Dashboard">
         <p>
           The{" "}
-          <Link to="/Pilots" className="text-primary underline">
+          <Link to={pilotsPath} className="text-primary underline">
             Pilots
           </Link>{" "}
           page is the heart of the app. Each team gets its own tab with four
@@ -601,7 +605,7 @@ export default function Help() {
           </li>
           <li>
             <strong>Collapse sections</strong> you aren't using to reduce
-            scrolling on the <Link to="/Pilots" className="text-primary underline">Pilots</Link> page. Your preference is saved automatically
+            scrolling on the <Link to={pilotsPath} className="text-primary underline">Pilots</Link> page. Your preference is saved automatically
             and shared across all pilots.
           </li>
           <li>
