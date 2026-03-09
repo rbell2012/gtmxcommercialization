@@ -108,32 +108,29 @@ function ProjectCard({ team, index }: { team: Team; index: number }) {
       onClick={() => navigate(path)}
     >
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors shrink-0">
-            {team.name}
-          </CardTitle>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">
-              Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Lead Rep: <span className="text-foreground font-medium">{team.leadRep || "—"}</span>
-            </span>
-            <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="text-sm">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <CardTitle className="font-display text-xl text-foreground group-hover:text-primary transition-colors shrink-0">
+              {team.name}
+            </CardTitle>
+            <div className="flex items-center gap-1.5 shrink-0">
               <Users className="h-3.5 w-3.5 text-primary" />
-              <span className="text-sm font-medium text-primary">{members.length} members</span>
+              <span className="text-sm font-medium text-primary">{members.length}</span>
             </div>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {team.owner && <><span className="font-semibold text-foreground">Owner:</span> {team.owner}</>}
+              {team.owner && team.leadRep ? " · " : ""}
+              {team.leadRep && <><span className="font-semibold text-foreground">Lead:</span> {team.leadRep}</>}
+            </span>
+          </div>
+          <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+        </div>
+        {(dateRange || (team.startDate && team.endDate)) && (
+          <div className="flex items-center gap-3 mt-1.5">
             {dateRange && (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">{dateRange}</span>
+                <span className="text-xs text-muted-foreground">{dateRange}</span>
               </div>
             )}
             {team.startDate && team.endDate && (() => {
@@ -148,14 +145,16 @@ function ProjectCard({ team, index }: { team: Team; index: number }) {
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {bizDaysLeft > 0
-                      ? <span className="font-semibold text-foreground">{bizDaysLeft} business day{bizDaysLeft !== 1 ? "s" : ""} left</span>
+                      ? <span className="font-semibold text-foreground">{bizDaysLeft} business day{bizDaysLeft !== 1 ? "s" : ""}</span>
                       : <span className="font-semibold text-foreground">Complete</span>}
                   </span>
                 </div>
               );
             })()}
           </div>
-        </div>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
 
         <div className="rounded-lg border border-accent/20 bg-accent/5 p-3">
           <div className="flex items-center gap-1.5 mb-2">

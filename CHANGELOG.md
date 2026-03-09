@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-09 (Home Page — Compact Project Card Tiles)
+
+### Location — Home Page (`src/pages/Home.tsx`)
+
+**Rationale:** The project cards on the Home page used three separate rows for the project name, member/owner/lead info, and date/progress, taking up more vertical space than necessary. Consolidating these elements onto fewer lines makes the tiles more compact so more projects are visible without scrolling.
+
+**Changes:**
+- Moved the member count (icon + number) up onto the same line as the project name, eliminating the separate "X members" info row.
+- Collapsed "Owner" and "Lead Rep" labels into a compact inline format (`Owner: X · Lead: Y`) on the same line as the project name and member count, instead of separate `<span>` elements on the right side of the header.
+- Bolded the "Owner" and "Lead" labels (`font-semibold text-foreground`) so they visually stand out from their values.
+- Moved the date range and progress bar into a sub-row within the card header (conditionally rendered) instead of being a separate `CardContent` section.
+- Reduced `CardContent` vertical spacing from `space-y-4` to `space-y-3` and removed top padding (`pt-0`) since the date/progress info moved into the header.
+- Net result: each project tile is roughly one row shorter, improving density on the Home page.
+
+---
+
 ## 2026-03-09 (Test Phases — Add Priorities Field)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`), Shared Types & Helpers (`src/lib/database.types.ts`, `src/lib/test-phases.ts`), Supabase (`supabase/migrations/20250226000000_create_team_phase_priorities.sql`)
