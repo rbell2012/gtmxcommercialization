@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Roadmap Page — Align Projects into Consistent Rows)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** On the Roadmap page, each month column independently listed only the projects active in that month, so when a project ended (e.g. Mad Max in April), all projects below it shifted up in subsequent months. This caused the same project (e.g. "Ricky's Test") to appear at different vertical positions across columns, making it hard to visually track a project over time.
+
+**Changes:**
+- Replaced the per-column flex layout with a single CSS grid spanning all months, using explicit `gridColumn` / `gridRow` placement so every project occupies a fixed row across the entire visible window.
+- Added a `orderedTeamIds` memo that computes a stable, global ordering of all projects visible in the current window (preserving the original team ordering).
+- Added a `projectLookup` memo (monthKey → teamId → project data) for O(1) cell lookups during rendering.
+- Empty grid cells (where a project is not active in a given month) render as empty divs that hold the row's space, while CSS grid ensures all cells in the same row share the same height.
+
+---
+
 ## 2026-03-09 (Roadmap Page — Multi-Month Calendar View)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`), App Shell (`src/App.tsx`)

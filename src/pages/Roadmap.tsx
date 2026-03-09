@@ -155,6 +155,29 @@ const Roadmap = () => {
     return result;
   }, [months, allTeams, phaseLabelsByTeam]);
 
+  const { orderedTeamIds, projectLookup } = useMemo(() => {
+    const visibleTeamIds = new Set<string>();
+    for (const monthKey of Object.keys(projectsByMonth)) {
+      for (const proj of projectsByMonth[monthKey]) {
+        visibleTeamIds.add(proj.team.id);
+      }
+    }
+
+    const orderedTeamIds = allTeams
+      .filter((t) => visibleTeamIds.has(t.id))
+      .map((t) => t.id);
+
+    const projectLookup: Record<string, Record<string, ProjectForMonth>> = {};
+    for (const [monthKey, projects] of Object.entries(projectsByMonth)) {
+      projectLookup[monthKey] = {};
+      for (const proj of projects) {
+        projectLookup[monthKey][proj.team.id] = proj;
+      }
+    }
+
+    return { orderedTeamIds, projectLookup };
+  }, [projectsByMonth, allTeams]);
+
   const today = new Date();
 
   const { activeCount, availableMembers, totalCount, upcomingAvailability } = useMemo(() => {
@@ -295,104 +318,114 @@ const Roadmap = () => {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${MONTHS_VISIBLE}, minmax(0, 1fr))` }}>
-            {months.map((month) => {
+          <div
+            className="grid gap-x-4 gap-y-2"
+            style={{
+              gridTemplateColumns: `repeat(${MONTHS_VISIBLE}, minmax(0, 1fr))`,
+              gridTemplateRows: `auto repeat(${orderedTeamIds.length}, auto)`,
+            }}
+          >
+            {/* Row 1: Month headers */}
+            {months.map((month, colIdx) => {
               const monthKey = format(month, "yyyy-MM");
               const isCurrentMonth = isSameMonth(month, today);
-              const projects = projectsByMonth[monthKey] ?? [];
-
               return (
-                <div key={monthKey} className="flex flex-col gap-3">
-                  {/* Month header */}
-                  <div
-                    className={`rounded-lg px-3 py-2 text-center text-sm font-semibold transition-colors ${
-                      isCurrentMonth
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {formatMonthHeader(month)}
-                  </div>
-
-                  {/* Project cards */}
-                  <div className="flex flex-col gap-2 min-h-[120px]">
-                    {projects.length === 0 ? (
-                      <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-border p-4">
-                        <p className="text-xs text-muted-foreground">No projects</p>
-                      </div>
-                    ) : (
-                      projects.map((proj) => {
-                        const color = getProjectColor(proj.colorIndex);
-                        const activeMembers = proj.team.members.filter((m) => m.isActive);
-                        const slug = pilotNameToSlug(proj.team.name);
-                        const path = proj.colorIndex === 0 ? "/Pilots" : `/Pilots/${slug}`;
-                        const isInactive = !proj.team.isActive;
-
-                        return (
-                          <Card
-                            key={proj.team.id}
-                            className={`border-l-4 ${color.border} ${color.bg} cursor-pointer transition-all hover:shadow-md ${isInactive ? "opacity-60" : ""}`}
-                            onClick={() => navigate(path)}
-                          >
-                            <CardContent className="p-3 space-y-2">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className={`text-sm font-bold leading-tight ${color.text}`}>
-                                  {proj.team.name}
-                                </span>
-                                <div className="flex items-center gap-1 shrink-0">
-                                  {isInactive && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-muted-foreground/40 text-muted-foreground">
-                                      Inactive
-                                    </Badge>
-                                  )}
-                                  {proj.isStart && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-500/50 text-green-600 dark:text-green-400">
-                                      Starts
-                                    </Badge>
-                                  )}
-                                  {proj.isEnd && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600 dark:text-amber-400">
-                                      Ends
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-
-                              {proj.phaseLabel && (
-                                <p className="text-xs text-muted-foreground leading-tight">
-                                  {proj.phaseLabel}
-                                </p>
-                              )}
-
-                              {/* Members */}
-                              <div className="flex flex-wrap gap-1">
-                                {activeMembers.slice(0, 3).map((m) => (
-                                  <Tooltip key={m.id}>
-                                    <TooltipTrigger asChild>
-                                      <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
-                                        {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" className="text-xs">
-                                      {m.name}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                ))}
-                                {activeMembers.length > 3 && (
-                                  <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
-                                    +{activeMembers.length - 3}
-                                  </span>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })
-                    )}
-                  </div>
+                <div
+                  key={monthKey}
+                  className={`rounded-lg px-3 py-2 text-center text-sm font-semibold transition-colors mb-1 ${
+                    isCurrentMonth
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                  style={{ gridColumn: colIdx + 1, gridRow: 1 }}
+                >
+                  {formatMonthHeader(month)}
                 </div>
               );
             })}
+
+            {/* Project cells: one per (team, month) */}
+            {orderedTeamIds.map((teamId, rowIdx) =>
+              months.map((month, colIdx) => {
+                const monthKey = format(month, "yyyy-MM");
+                const proj = projectLookup[monthKey]?.[teamId];
+
+                if (!proj) {
+                  return (
+                    <div
+                      key={`${teamId}-${monthKey}`}
+                      style={{ gridColumn: colIdx + 1, gridRow: rowIdx + 2 }}
+                    />
+                  );
+                }
+
+                const color = getProjectColor(proj.colorIndex);
+                const activeMembers = proj.team.members.filter((m) => m.isActive);
+                const slug = pilotNameToSlug(proj.team.name);
+                const path = proj.colorIndex === 0 ? "/Pilots" : `/Pilots/${slug}`;
+                const isInactive = !proj.team.isActive;
+
+                return (
+                  <Card
+                    key={`${teamId}-${monthKey}`}
+                    className={`border-l-4 ${color.border} ${color.bg} cursor-pointer transition-all hover:shadow-md ${isInactive ? "opacity-60" : ""}`}
+                    style={{ gridColumn: colIdx + 1, gridRow: rowIdx + 2 }}
+                    onClick={() => navigate(path)}
+                  >
+                    <CardContent className="p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={`text-sm font-bold leading-tight ${color.text}`}>
+                          {proj.team.name}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isInactive && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-muted-foreground/40 text-muted-foreground">
+                              Inactive
+                            </Badge>
+                          )}
+                          {proj.isStart && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-500/50 text-green-600 dark:text-green-400">
+                              Starts
+                            </Badge>
+                          )}
+                          {proj.isEnd && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-amber-500/50 text-amber-600 dark:text-amber-400">
+                              Ends
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {proj.phaseLabel && (
+                        <p className="text-xs text-muted-foreground leading-tight">
+                          {proj.phaseLabel}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-1">
+                        {activeMembers.slice(0, 3).map((m) => (
+                          <Tooltip key={m.id}>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
+                                {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="text-xs">
+                              {m.name}
+                            </TooltipContent>
+                          </Tooltip>
+                        ))}
+                        {activeMembers.length > 3 && (
+                          <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
+                            +{activeMembers.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
           </div>
         )}
 
