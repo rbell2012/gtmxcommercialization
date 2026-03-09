@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Roadmap — Compact Tiles with Inline Members)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** The roadmap tiles used three separate rows (project name, phase label, member avatars), consuming more vertical space than necessary. Compacting tiles lets more projects and months fit on screen without scrolling.
+
+**Changes:**
+- Moved member avatars and status badges (Starts/Ends) onto the same line as the project name, right-aligned via `ml-auto`.
+- The outer flex row uses `flex-wrap` so that when the project name is long, the badges and avatars gracefully wrap to a second line instead of truncating the name.
+- Reduced card padding from `p-3 space-y-2` to `p-2.5 space-y-1` for a tighter overall tile.
+- Removed the "Inactive" badge since the existing opacity/transparency effect on inactive tiles already communicates that status.
+
+---
+
 ## 2026-03-09 (Home Page — Compact Project Card Tiles)
 
 ### Location — Home Page (`src/pages/Home.tsx`)

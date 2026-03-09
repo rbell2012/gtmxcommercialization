@@ -372,17 +372,12 @@ const Roadmap = () => {
                     style={{ gridColumn: colIdx + 1, gridRow: rowIdx + 2 }}
                     onClick={() => navigate(path)}
                   >
-                    <CardContent className="p-3 space-y-2">
-                      <div className="flex items-center justify-between gap-1">
+                    <CardContent className="p-2.5 space-y-1">
+                      <div className="flex items-center flex-wrap gap-x-1 gap-y-0.5">
                         <span className={`text-sm font-bold leading-tight ${color.text}`}>
                           {proj.team.name}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isInactive && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-muted-foreground/40 text-muted-foreground">
-                              Inactive
-                            </Badge>
-                          )}
+                        <div className="flex items-center gap-1 ml-auto">
                           {proj.isStart && (
                             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-500/50 text-green-600 dark:text-green-400">
                               Starts
@@ -393,6 +388,23 @@ const Roadmap = () => {
                               Ends
                             </Badge>
                           )}
+                          {activeMembers.slice(0, 3).map((m) => (
+                            <Tooltip key={m.id}>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
+                                  {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="text-xs">
+                                {m.name}
+                              </TooltipContent>
+                            </Tooltip>
+                          ))}
+                          {activeMembers.length > 3 && (
+                            <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
+                              +{activeMembers.length - 3}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -401,26 +413,6 @@ const Roadmap = () => {
                           {proj.phaseLabel}
                         </p>
                       )}
-
-                      <div className="flex flex-wrap gap-1">
-                        {activeMembers.slice(0, 3).map((m) => (
-                          <Tooltip key={m.id}>
-                            <TooltipTrigger asChild>
-                              <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
-                                {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom" className="text-xs">
-                              {m.name}
-                            </TooltipContent>
-                          </Tooltip>
-                        ))}
-                        {activeMembers.length > 3 && (
-                          <span className="inline-flex items-center justify-center h-5 px-1.5 rounded-full bg-muted text-[9px] font-medium text-muted-foreground ring-1 ring-border">
-                            +{activeMembers.length - 3}
-                          </span>
-                        )}
-                      </div>
                     </CardContent>
                   </Card>
                 );
