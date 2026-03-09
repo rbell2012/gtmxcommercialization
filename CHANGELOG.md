@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-09 (Help Page — Updated for Roadmap, Re-centering & Zero-Goal Features)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to reflect several features added on 2026-03-09: the new Roadmap page (6-month calendar view with capacity summary and team availability), dynamic re-centering of test phase buckets when selecting a different month, and the zero-goal display fix in Monthly Goals. Users consulting the Help page would not know about these features or behaviors.
+
+**Changes:**
+- Updated **Navigating the App** (section 1) to include the Roadmap link in the nav bar listing, between Quota and Settings.
+- Added a new **Section 5: Roadmap Page** documenting the 6-month sliding calendar grid with left/right navigation and "Today" reset, project cards with phase labels, "Starts"/"Ends" badges, and member avatar initials, fixed-row alignment so projects stay at the same vertical position across months, inactive project styling (60% opacity with "Inactive" badge), capacity summary bar (active/available/total headcount), and team availability grouping by month of project end.
+- Renumbered subsequent sections: Data & Findings (6), Real-Time Data (7), Tips & Shortcuts (8), Metric Definitions (9).
+- Updated **Test Phases** (section 3a) with a new bullet documenting dynamic re-centering: clicking a different month re-centers the visible window around the selected month (plus up to 2 prior months) and collapses everything else back into "Prev" / "Next" buckets.
+- Updated **Monthly Goals** (section 3b) with a new bullet documenting zero-goal display: when a metric's goal is zero (not configured for the member's role), the cell shows only the raw count instead of "actual / 0" with an empty progress bar.
+- Added a **"Plan ahead with Roadmap"** tip to Tips & Shortcuts (section 8) encouraging use of the calendar view for project overlap and availability planning.
+
+---
+
 ## 2026-03-09 (Roadmap Page — Align Projects into Consistent Rows)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)

@@ -18,7 +18,7 @@ export default function Help() {
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/roadmap" className="text-primary underline">Roadmap</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
           <li>The <Link to="/help" className="text-primary underline"><strong>Help</strong></Link> link (question-mark icon) and <Link to="/settings" className="text-primary underline"><strong>Settings</strong></Link> link (gear icon) are on the far right, next to the theme toggle.</li>
         </ul>
@@ -179,6 +179,13 @@ export default function Help() {
             re-collapse. The current month and two prior months are always
             visible by default.
           </li>
+          <li>
+            <strong>Dynamic re-centering:</strong> When you click a different
+            month, the visible window re-centers around the selected month
+            (showing it plus up to 2 prior months) and collapses everything
+            else back into "Prev" / "Next" buckets. This keeps the display
+            compact regardless of which month you navigate to.
+          </li>
           <li>Click <strong>"Extend the Test"</strong> to add one month to the team's end date.</li>
           <li>If no dates are set, you'll see a link to <Link to="/settings" className="text-primary underline">Settings</Link> to configure them.</li>
         </ul>
@@ -271,6 +278,7 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li>Displays a read-only table of each enabled metric with the member's current value, goal target, progress bar, and percentage.</li>
           <li>The <strong>Wins column always appears</strong> as the rightmost column, even when no wins goal is configured. Without a goal, the cell shows only the raw count (e.g. "4"); with a goal, it renders the full actual/goal, progress bar, and percentage like other metrics.</li>
+          <li>When a metric's goal is <strong>zero</strong> (not configured for the member's role in the current month), the cell shows only the raw count instead of "actual / 0" with an empty progress bar.</li>
           <li>Percentages are uncapped: values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
@@ -396,8 +404,69 @@ export default function Help() {
         </ul>
       </Section>
 
-      {/* ---- 5. Data & Findings ---- */}
-      <Section id="data" title="5. Data &amp; Findings Page">
+      {/* ---- 5. Roadmap ---- */}
+      <Section id="roadmap" title="5. Roadmap Page">
+        <p>
+          The{" "}
+          <Link to="/roadmap" className="text-primary underline">
+            Roadmap
+          </Link>{" "}
+          page provides a forward-looking calendar view of all non-archived
+          projects with team member assignments and availability forecasting.
+        </p>
+
+        <H4>Calendar Grid</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A <strong>6-month sliding calendar</strong> showing the current month
+            plus 5 months forward. Navigate with <strong>left/right arrows</strong>{" "}
+            or click <strong>"Today"</strong> to reset to the current window.
+          </li>
+          <li>
+            Each month column displays <strong>project cards</strong> for every
+            non-archived project active during that month, with a colored left
+            border for visual grouping.
+          </li>
+          <li>
+            Projects occupy a <strong>fixed row</strong> across all months, so
+            the same project always appears at the same vertical position
+            regardless of whether other projects start or end in a given month.
+          </li>
+          <li>
+            Project cards show the project name (clickable, links to the Pilots
+            page), the <strong>phase label</strong> for that month,{" "}
+            <strong>"Starts"/"Ends" badges</strong> on the first and last months,
+            and <strong>member avatar initials</strong> with tooltips.
+          </li>
+          <li>
+            <strong>Inactive projects</strong> (non-archived but toggled off)
+            appear at 60% opacity with an "Inactive" badge to distinguish them
+            from active projects.
+          </li>
+        </ul>
+
+        <H4>Capacity Summary</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A summary bar at the top shows <strong>active members</strong>{" "}
+            (currently assigned to a project), <strong>available members</strong>{" "}
+            (not on any active project), and <strong>total headcount</strong>.
+          </li>
+        </ul>
+
+        <H4>Team Availability</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A section at the bottom lists <strong>currently available</strong>{" "}
+            members and groups <strong>upcoming availability</strong> by the
+            month each member's current project ends, so you can plan staffing
+            for future projects.
+          </li>
+        </ul>
+      </Section>
+
+      {/* ---- 6. Data & Findings ---- */}
+      <Section id="data" title="6. Data &amp; Findings Page">
         <p>
           The{" "}
           <Link to="/data" className="text-primary underline">
@@ -482,8 +551,8 @@ export default function Help() {
         </ul>
       </Section>
 
-      {/* ---- 6. Real-Time Data ---- */}
-      <Section id="realtime" title="6. Real-Time Data">
+      {/* ---- 7. Real-Time Data ---- */}
+      <Section id="realtime" title="7. Real-Time Data">
         <ul className="list-disc pl-5 space-y-1">
           <li>
             Activity data from external metrics tables (calls, connects,
@@ -512,8 +581,8 @@ export default function Help() {
         </ul>
       </Section>
 
-      {/* ---- 7. Tips ---- */}
-      <Section id="tips" title="7. Tips &amp; Shortcuts">
+      {/* ---- 8. Tips ---- */}
+      <Section id="tips" title="8. Tips &amp; Shortcuts">
         <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong>Hover over the quota %</strong> on the <Link to="/quota" className="text-primary underline">Quota</Link> page for a
@@ -559,14 +628,19 @@ export default function Help() {
             performance without opening Monthly Goals.
           </li>
           <li>
+            <strong>Plan ahead with <Link to="/roadmap" className="text-primary underline">Roadmap</Link></strong>:{" "}
+            use the 6-month calendar view to see which projects overlap, who's
+            assigned where, and when team members become available for new work.
+          </li>
+          <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for
             comfortable viewing in low-light environments.
           </li>
         </ul>
       </Section>
 
-      {/* ---- 8. Metric Definitions ---- */}
-      <Section id="metric-definitions" title="8. Metric Definitions">
+      {/* ---- 9. Metric Definitions ---- */}
+      <Section id="metric-definitions" title="9. Metric Definitions">
         <p>
           Below are the definitions for each core metric tracked in GTMx Pilots,
           including where the data comes from and how it's aggregated.
