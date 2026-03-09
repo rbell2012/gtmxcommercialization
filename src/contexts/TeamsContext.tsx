@@ -143,6 +143,7 @@ export interface Team {
   tamSubmitted: boolean;
   missionPurpose: string;
   missionSubmitted: boolean;
+  missionLastEdit: string | null;
   executiveSponsor: string;
   executiveProxy: string;
   revenueLever: string;
@@ -376,6 +377,7 @@ function assembleTeams(
       tamSubmitted: t.tam_submitted ?? false,
       missionPurpose: t.mission_purpose ?? "",
       missionSubmitted: t.mission_submitted ?? false,
+      missionLastEdit: t.mission_last_edit ?? null,
       executiveSponsor: t.executive_sponsor ?? "",
       executiveProxy: t.executive_proxy ?? "",
       revenueLever: t.revenue_lever ?? "",
@@ -953,6 +955,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.tamSubmitted !== updated.tamSubmitted ||
             old.missionPurpose !== updated.missionPurpose ||
             old.missionSubmitted !== updated.missionSubmitted ||
+            old.missionLastEdit !== updated.missionLastEdit ||
             old.executiveSponsor !== updated.executiveSponsor ||
             old.executiveProxy !== updated.executiveProxy ||
             old.revenueLever !== updated.revenueLever ||
@@ -974,6 +977,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 tam_submitted: updated.tamSubmitted,
                 mission_purpose: updated.missionPurpose,
                 mission_submitted: updated.missionSubmitted,
+                mission_last_edit: updated.missionLastEdit,
                 executive_sponsor: updated.executiveSponsor,
                 executive_proxy: updated.executiveProxy,
                 revenue_lever: updated.revenueLever,
@@ -1077,7 +1081,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           id: tempId, name, owner, leadRep: "",
           sortOrder: nextOrder, isActive: true,
           startDate, endDate, totalTam: 0, tamSubmitted: false,
-          missionPurpose: "", missionSubmitted: false,
+          missionPurpose: "", missionSubmitted: false, missionLastEdit: null,
           executiveSponsor: "", executiveProxy: "", revenueLever: "", businessGoal: "", whatWeAreTesting: "",
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },

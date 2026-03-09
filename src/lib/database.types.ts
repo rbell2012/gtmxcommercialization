@@ -27,6 +27,7 @@ export interface DbTeam {
   goal_scope_config: Record<string, unknown> | null;
   mission_purpose: string;
   mission_submitted: boolean;
+  mission_last_edit: string | null;
   executive_sponsor: string;
   executive_proxy: string;
   revenue_lever: string;

@@ -747,9 +747,13 @@ const Index = () => {
           <div className="flex items-center justify-between mb-4">
             <label className="font-display text-lg font-semibold text-foreground">Mission & Purpose of Test</label>
             <div className="flex items-center gap-2">
-              {activeTeam.missionSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+              {activeTeam.missionLastEdit && (
+                <span className="text-[10px] text-muted-foreground">
+                  last edit: {new Date(activeTeam.missionLastEdit).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+                </span>
+              )}
               {!activeTeam.missionSubmitted ? (
-                <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+                <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true, missionLastEdit: new Date().toISOString() }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
                   Submit
                 </Button>
               ) : (
