@@ -567,6 +567,17 @@ export default function Help() {
           carried TAM value. Touch Rate is derived from TAM as{" "}
           <em>Touched Accounts / TAM</em>.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_tam</code>. Static count of distinct accounts per
+            rep. Mad Max accounts from <code>google_sheet_mad_max</code> grouped
+            by GTMx rep, Sterno accounts from <code>google_sheet_sterno</code>{" "}
+            grouped by account owner, plus a hardcoded 2,400 for Lo Picton
+            (Guest Pro). Excludes DNQ/mid-market/enterprise statuses (Mad Max)
+            and disqualified outcomes (Sterno).
+          </li>
+        </ul>
 
         <H3>Activity</H3>
         <p>
@@ -576,6 +587,16 @@ export default function Help() {
           attributed to the week and month of the activity date. Weekly totals
           are summed into monthly and lifetime aggregates.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_activity</code>. All tasks and events owned by reps
+            on Bridget's team (manager_employee_id = '108763') since
+            2025-07-01. Two branches: TASK_ACTIVITY (by task_ownerid) and
+            GTM.EVENT (by event_owner_userid), both joined to
+            EMPLOYEE_CURRENT.
+          </li>
+        </ul>
 
         <H3>Call</H3>
         <p>
@@ -584,6 +605,14 @@ export default function Help() {
           are attributed by call date and feed into the{" "}
           <em>Call → Connect</em> conversion rate.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_calls</code>. Subset of{" "}
+            <code>all_gtmx_activity</code> where{" "}
+            <code>activity_type ILIKE '%call%'</code>.
+          </li>
+        </ul>
 
         <H3>Connect</H3>
         <p>
@@ -593,6 +622,15 @@ export default function Help() {
           feed into both the <em>Call → Connect</em> and{" "}
           <em>Connect → Demo</em> conversion rates.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_connects</code>. Subset of{" "}
+            <code>all_gtmx_activity</code> where{" "}
+            <code>activity_type ILIKE '%call%'</code> AND{" "}
+            <code>activity_outcome ILIKE '%connect%'</code>.
+          </li>
+        </ul>
 
         <H3>Demo</H3>
         <p>
@@ -601,6 +639,20 @@ export default function Help() {
           are attributed by demo date and feed into the{" "}
           <em>Connect → Demo</em> and <em>Demo → Win</em> conversion rates.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_demos</code>. 9 UNION branches from GTM.EVENT and
+            TASK_ACTIVITY, filtered to Bridget's team via an activity_users
+            CTE. Includes: completed events with type = Demo, subject = Demo,
+            task calls with subject containing "demo," Shane's "Toast Boost"
+            events, Carly's "Meeting Booked: Toast Exclusive Offers Demo"
+            events, Zoe's "marketing test" tasks, events where the owner also
+            owns an opp on the same account, and events with{" "}
+            <code>meeting_type ILIKE '%gtmx%'</code>. All joined to
+            ANALYTICS_CORE.ACCOUNT for account names.
+          </li>
+        </ul>
 
         <H3>Ops (Opportunities)</H3>
         <p>
@@ -611,6 +663,17 @@ export default function Help() {
           first generated. This gives an accurate picture of pipeline generation
           timing.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_ops</code>. 4 UNION branches from GTM.OPPORTUNITY:
+            opp name contains #GTMX (clause 1), #Guestpro with rep hardcoded
+            to Lo Picton (clause 2), opp owner on Bridget's team since
+            2025-09-01 (clause 3), or account has 2025CateringTest in
+            prospecting notes with specific date/type/owner filters (clause 4).
+            Deduplicated with SELECT DISTINCT.
+          </li>
+        </ul>
 
         <H3>Win</H3>
         <p>
@@ -621,6 +684,20 @@ export default function Help() {
           narrative details of each win but are separate from the numeric win
           count.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_wins</code>. Union of two sources:{" "}
+            <strong>(1) all_gtmx_wins_from_ops</strong> — same 4-clause
+            structure as Ops but filtered to{" "}
+            <code>opportunity_iswon = TRUE</code> and won stages (ILIKE
+            '%16%' through '%Won%').{" "}
+            <strong>(2) mad_max_wins</strong> — from{" "}
+            <code>google_sheet_mad_max</code> where status is "Boost
+            Committed," "Offers Activated," or "Multiple Offers." Multiple
+            Offers rows are duplicated (count as 2 wins).
+          </li>
+        </ul>
 
         <H3>Feedback</H3>
         <p>
@@ -629,6 +706,17 @@ export default function Help() {
           <strong>1 feedback event</strong>. Feedback is attributed by feedback
           date and is summed into weekly, monthly, and lifetime totals.
         </p>
+        <ul className="list-disc !pl-14 space-y-1">
+          <li>
+            <strong>Technical Details:</strong> Sourced from{" "}
+            <code>all_gtmx_feedback</code>. Two sources unioned: Sterno
+            feedback from <code>google_sheet_sterno</code> (where{" "}
+            <code>feedback_completed = TRUE</code> and not disqualified), and
+            Mad Max feedback from <code>google_sheets_mad_max_feedback</code>.
+            Blank rep names default to Ross Armstrong (Sterno), Zoe Lang (Mad
+            Max), or Lo Picton (Guest Pro).
+          </li>
+        </ul>
 
         <H3>General Notes</H3>
         <ul className="list-disc pl-5 space-y-1">

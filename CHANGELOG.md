@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Help Page — Core Metric Definitions & Technical Details)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** Users and stakeholders needed a single reference explaining how each core metric (TAM, Activity, Call, Connect, Demo, Ops, Win, Feedback) is defined, aggregated, and — critically — how the underlying data is calculated in the external database before it reaches Supabase. Adding this documentation directly in the Help page makes it accessible to anyone using the app without requiring separate technical docs.
+
+**Changes:**
+- Added a new **Section 8: Metric Definitions** at the bottom of the Help page.
+- Each metric (TAM, Activity, Call, Connect, Demo, Ops, Win, Feedback) includes a plain-English definition covering what the metric measures, how it's attributed (by date), and how it's aggregated (weekly, monthly, lifetime).
+- Added an indented **Technical Details** bullet beneath each metric documenting the external database calculation: source view/table name, SQL logic (UNION branches, ILIKE filters, CTE references), join tables, hardcoded overrides, deduplication rules, and special counting rules (e.g. Multiple Offers = 2 wins for Mad Max).
+- Added a **General Notes** subsection covering the dual-source model (external vs. manual overrides), Monday-aligned weekly bucketing, calendar-month attribution, lifetime summation, and conversion rate formulas.
+
+---
+
 ## 2026-03-09 (Test Phase Labels — Multi-line Text Wrapping)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`)
