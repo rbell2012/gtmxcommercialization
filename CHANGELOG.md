@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-09 (Test Phases — Add Priorities Field)
+
+### Location — Pilots Page (`src/pages/Index.tsx`), Shared Types & Helpers (`src/lib/database.types.ts`, `src/lib/test-phases.ts`), Supabase (`supabase/migrations/20250226000000_create_team_phase_priorities.sql`)
+
+**Rationale:** Each test phase month had a single editable "headline" text box, but there was no way to capture per-month priorities alongside the headline. A second text field was needed so managers can record priorities for each phase month. Only the headline should appear on the Roadmap page; priorities are only visible on the Pilots page.
+
+**Changes:**
+- Created a new `team_phase_priorities` Supabase table (migration + applied to live DB) mirroring the existing `team_phase_labels` schema: `id`, `team_id`, `month_index`, `priority`, `created_at`, `updated_at`, with a unique constraint on `(team_id, month_index)`, open RLS policies, and an `updated_at` trigger.
+- Added `DbTeamPhasePriority` interface to `src/lib/database.types.ts`.
+- Extended the `ComputedPhase` interface in `src/lib/test-phases.ts` with a `priority: string` field and added an optional `priorities` parameter (defaulting to `{}`) to `generateTestPhases()` so existing callers are unaffected.
+- On the Pilots page (`src/pages/Index.tsx`): added `phasePriorities` state, a `useEffect` to fetch from `team_phase_priorities` when the active team changes, an `updatePhasePriority()` callback that upserts to Supabase, and a second `<textarea>` below the headline textarea with identical styling bound to `phase.priority`.
+- The Roadmap page (`src/pages/Roadmap.tsx`) continues to display only the headline label — no changes were made there.
+
+---
+
 ## 2026-03-09 (Help Page — Updated for Roadmap, Re-centering & Zero-Goal Features)
 
 ### Location — Help Page (`src/pages/Help.tsx`)

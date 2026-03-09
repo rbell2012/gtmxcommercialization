@@ -14,7 +14,7 @@ import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeamPhaseLabel } from "@/lib/database.types";
+import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
 import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal, getPhaseWinsLabel } from "@/lib/quota-helpers";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -284,6 +284,7 @@ const Index = () => {
   const [newRoleName, setNewRoleName] = useState("");
 
   const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
+  const [phasePriorities, setPhasePriorities] = useState<Record<string, Record<number, string>>>({});
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const [previousExpanded, setPreviousExpanded] = useState(false);
   const [nextExpanded, setNextExpanded] = useState(false);
@@ -328,6 +329,24 @@ const Index = () => {
       });
   }, [activeTeam?.id]);
 
+  useEffect(() => {
+    if (!activeTeam?.id) return;
+    if (phasePriorities[activeTeam.id]) return;
+    supabase
+      .from("team_phase_priorities")
+      .select("*")
+      .eq("team_id", activeTeam.id)
+      .then(({ data }) => {
+        if (data) {
+          const priorities: Record<number, string> = {};
+          for (const row of data as DbTeamPhasePriority[]) {
+            priorities[row.month_index] = row.priority;
+          }
+          setPhasePriorities((prev) => ({ ...prev, [activeTeam.id]: priorities }));
+        }
+      });
+  }, [activeTeam?.id]);
+
   const updatePhaseLabel = useCallback((teamId: string, monthIndex: number, label: string) => {
     setPhaseLabels((prev) => ({
       ...prev,
@@ -344,9 +363,26 @@ const Index = () => {
     );
   }, []);
 
+  const updatePhasePriority = useCallback((teamId: string, monthIndex: number, priority: string) => {
+    setPhasePriorities((prev) => ({
+      ...prev,
+      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: priority },
+    }));
+    dbMutate(
+      supabase
+        .from("team_phase_priorities")
+        .upsert(
+          { team_id: teamId, month_index: monthIndex, priority },
+          { onConflict: "team_id,month_index" }
+        ),
+      "update phase priority",
+    );
+  }, []);
+
   const teamLabels = phaseLabels[activeTeam?.id ?? ""] ?? {};
+  const teamPriorities = phasePriorities[activeTeam?.id ?? ""] ?? {};
   const computedPhases = activeTeam
-    ? generateTestPhases(activeTeam.startDate, activeTeam.endDate, teamLabels)
+    ? generateTestPhases(activeTeam.startDate, activeTeam.endDate, teamLabels, teamPriorities)
     : [];
   const overallProgress = activeTeam
     ? computeOverallProgress(activeTeam.startDate, activeTeam.endDate)
@@ -698,6 +734,24 @@ const Index = () => {
                         value={phase.label}
                         onChange={(e) => {
                           updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value);
+                          e.target.style.height = "auto";
+                          e.target.style.height = e.target.scrollHeight + "px";
+                        }}
+                        ref={(el) => {
+                          if (el) {
+                            el.style.height = "auto";
+                            el.style.height = el.scrollHeight + "px";
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder="—"
+                        rows={1}
+                        className="w-full text-xs text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 resize-none overflow-hidden"
+                      />
+                      <textarea
+                        value={phase.priority}
+                        onChange={(e) => {
+                          updatePhasePriority(activeTeam!.id, phase.monthIndex, e.target.value);
                           e.target.style.height = "auto";
                           e.target.style.height = e.target.scrollHeight + "px";
                         }}

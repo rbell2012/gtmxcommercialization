@@ -120,6 +120,15 @@ export interface DbTeamPhaseLabel {
   updated_at: string;
 }
 
+export interface DbTeamPhasePriority {
+  id: string;
+  team_id: string;
+  month_index: number;
+  priority: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DbSuperhex {
   id: string;
   salesforce_accountid: string | null;

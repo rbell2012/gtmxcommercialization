@@ -3,6 +3,7 @@ export interface ComputedPhase {
   monthLabel: string;
   progress: number;
   label: string;
+  priority: string;
   year: number;
   month: number; // 0-indexed JS month
 }
@@ -10,7 +11,8 @@ export interface ComputedPhase {
 export function generateTestPhases(
   startDate: string | null,
   endDate: string | null,
-  labels: Record<number, string>
+  labels: Record<number, string>,
+  priorities: Record<number, string> = {}
 ): ComputedPhase[] {
   if (!startDate || !endDate) return [];
 
@@ -45,6 +47,7 @@ export function generateTestPhases(
       monthLabel: `(${index + 1}) ${monthName}`,
       progress,
       label: labels[index] ?? "",
+      priority: priorities[index] ?? "",
       year,
       month,
     });
