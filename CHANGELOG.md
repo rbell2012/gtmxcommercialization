@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-08 (Monthly Goals — Wins Column Always Visible as Rightmost)
+
+### Location — Pilots Page (`src/pages/Index.tsx`)
+
+**Rationale:** Wins are the most important outcome metric and should always be visible in the Monthly Goals table regardless of whether a formal goal target is configured. Previously, wins only appeared if toggled on in Settings, and its column position was determined by the static `GOAL_METRICS` array order rather than being pinned to the right edge for quick scanning.
+
+**Changes:**
+- Wins column now always appears in the Monthly Goals table, even when not configured as an enabled goal in Settings.
+- Reordered visible metrics so wins is always the rightmost column; if feedback is also an enabled goal, feedback appears to the right of wins (becoming the rightmost).
+- When wins has no goal configured, the cell displays only the raw count (e.g. "4") without the "/ target" denominator, progress bar, or percentage calculation.
+- When wins does have a goal configured, it renders identically to all other goal metrics (actual / goal, progress bar, percentage).
+- Applied the same no-goal display logic to the Former Members section at the bottom of the goals table.
+- Preserved the "Configure goals in Settings" empty state: it still appears when no goals (including wins and feedback) are enabled.
+
+---
+
 ## 2026-03-08 (Test Phases — Collapsible Previous/Next Buckets)
 
 ### Location — Pilots Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Settings Page (`src/pages/Settings.tsx`), Test Phases Utility (`src/lib/test-phases.ts`)

@@ -15,7 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal, getPhaseWinsLabel } from "@/lib/quota-helpers";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
@@ -704,7 +704,7 @@ const Index = () => {
                         placeholder="—"
                         className="h-5 w-full text-[10px] text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50"
                       />
-                      <p className="text-[10px] text-muted-foreground">{phase.progress}%</p>
+                      <p className="text-[10px] text-muted-foreground">{getPhaseWinsLabel([activeTeam!], phase.year, phase.month)}</p>
                     </div>
                   );
                 })}
@@ -733,27 +733,103 @@ const Index = () => {
         {/* Mission & Purpose */}
         {activeTeam && (
         <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.missionSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-4">
             <label className="font-display text-lg font-semibold text-foreground">Mission & Purpose of Test</label>
-            {activeTeam.missionSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+            <div className="flex items-center gap-2">
+              {activeTeam.missionSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+              {!activeTeam.missionSubmitted ? (
+                <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
+                  Submit
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
+                  Edit
+                </Button>
+              )}
+            </div>
           </div>
-          <Textarea
-            value={activeTeam.missionPurpose}
-            onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, missionPurpose: e.target.value }))}
-            placeholder="Describe the mission and purpose of this test..."
-            className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
-            rows={3}
-            disabled={activeTeam.missionSubmitted}
-          />
-          <div className="mt-3 flex justify-end">
-            {!activeTeam.missionSubmitted ? (
-              <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
-                Submit
-              </Button>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-4">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Revenue Lever</label>
+              {activeTeam.missionSubmitted ? (
+                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.revenueLever || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              ) : (
+                <Input
+                  value={activeTeam.revenueLever}
+                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, revenueLever: e.target.value }))}
+                  placeholder="e.g. Opp:Win"
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Business Goal</label>
+              {activeTeam.missionSubmitted ? (
+                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.businessGoal || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              ) : (
+                <Input
+                  value={activeTeam.businessGoal}
+                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, businessGoal: e.target.value }))}
+                  placeholder="Describe the business goal..."
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                />
+              )}
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">What We Are Testing</label>
+              {activeTeam.missionSubmitted ? (
+                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.whatWeAreTesting || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              ) : (
+                <Textarea
+                  value={activeTeam.whatWeAreTesting}
+                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, whatWeAreTesting: e.target.value }))}
+                  placeholder="Describe what is being tested..."
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
+                  rows={2}
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Sponsor</label>
+              {activeTeam.missionSubmitted ? (
+                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.executiveSponsor || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              ) : (
+                <Input
+                  value={activeTeam.executiveSponsor}
+                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveSponsor: e.target.value }))}
+                  placeholder="Executive sponsor name"
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Proxy</label>
+              {activeTeam.missionSubmitted ? (
+                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.executiveProxy || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              ) : (
+                <Input
+                  value={activeTeam.executiveProxy}
+                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveProxy: e.target.value }))}
+                  placeholder="Executive proxy name"
+                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                />
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mission Statement</label>
+            {activeTeam.missionSubmitted ? (
+              <p className="text-sm text-foreground min-h-[1.5rem] whitespace-pre-wrap">{activeTeam.missionPurpose || <span className="text-muted-foreground/50 italic">—</span>}</p>
             ) : (
-              <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
-                Edit
-              </Button>
+              <Textarea
+                value={activeTeam.missionPurpose}
+                onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, missionPurpose: e.target.value }))}
+                placeholder="Describe the mission and purpose of this test..."
+                className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
+                rows={3}
+              />
             )}
           </div>
         </div>
@@ -1386,7 +1462,13 @@ function TeamTab({
           {/* ===== GOALS ===== */}
           {(() => {
             const goalMembers = activeMembers.map((m) => getHistoricalMember(m, referenceDate, memberGoalsHistory));
-            const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
+            const winsHasGoal = team.enabledGoals.wins;
+            const baseMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m] && m !== 'wins' && m !== 'feedback');
+            const visibleMetrics: GoalMetric[] = [
+              ...baseMetrics,
+              'wins',
+              ...(team.enabledGoals.feedback ? ['feedback' as GoalMetric] : []),
+            ];
             return (
               <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
                 <div className="mb-4 flex items-center justify-between">
@@ -1401,7 +1483,7 @@ function TeamTab({
                   </Button>
                 </div>
 
-                {visibleMetrics.length === 0 ? (
+                {baseMetrics.length === 0 && !winsHasGoal && !team.enabledGoals.feedback ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
                     Configure goals in{" "}
                     <a href="/settings" className="text-primary underline hover:text-primary/80">Settings</a>
@@ -1443,26 +1525,33 @@ function TeamTab({
                               </td>
                               {visibleMetrics.map((metric, metricIdx) => {
                                 const actual = getScopedMetricTotal(team, m, metric, referenceDate);
+                                const hasGoal = metric !== 'wins' || winsHasGoal;
                                 const goal = getEffectiveGoal(team, m, metric);
                                 const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
-                                const pct = goal > 0 ? (actual / goal) * 100 : 0;
+                                const pct = hasGoal && goal > 0 ? (actual / goal) * 100 : 0;
                                 const barPct = Math.min(pct, 100);
                                 return (
                                   <td key={metric} className="py-3 px-2">
                                     <div className="flex flex-col items-center gap-1">
-                                      <span className="text-xs font-semibold text-foreground tabular-nums">
-                                        {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
-                                      </span>
-                                      {isTeamScope && (
-                                        <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+                                      {hasGoal ? (
+                                        <>
+                                          <span className="text-xs font-semibold text-foreground tabular-nums">
+                                            {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
+                                          </span>
+                                          {isTeamScope && (
+                                            <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+                                          )}
+                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                              style={{ width: `${barPct}%` }}
+                                            />
+                                          </div>
+                                          <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
+                                        </>
+                                      ) : (
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
                                       )}
-                                      <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                        <div
-                                          className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                          style={{ width: `${barPct}%` }}
-                                        />
-                                      </div>
-                                      <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
                                     </div>
                                   </td>
                                 );
@@ -1488,19 +1577,26 @@ function TeamTab({
                                   </td>
                                   {visibleMetrics.map((metric, metricIdx) => {
                                     const actual = getScopedMetricTotal(team, m, metric, referenceDate);
+                                    const hasGoal = metric !== 'wins' || winsHasGoal;
                                     const goal = getEffectiveGoal(team, m, metric);
-                                    const pct = goal > 0 ? (actual / goal) * 100 : 0;
+                                    const pct = hasGoal && goal > 0 ? (actual / goal) * 100 : 0;
                                     const barPct = Math.min(pct, 100);
                                     return (
                                       <td key={metric} className="py-2 px-2">
                                         <div className="flex flex-col items-center gap-0.5">
-                                          <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
-                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                            <div
-                                              className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                              style={{ width: `${barPct}%` }}
-                                            />
-                                          </div>
+                                          {hasGoal ? (
+                                            <>
+                                              <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
+                                              <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                                <div
+                                                  className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                                  style={{ width: `${barPct}%` }}
+                                                />
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <span className="text-xs text-muted-foreground tabular-nums">{actual}</span>
+                                          )}
                                         </div>
                                       </td>
                                     );
