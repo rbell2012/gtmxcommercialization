@@ -1540,10 +1540,10 @@ function TeamTab({
                               </td>
                               {visibleMetrics.map((metric, metricIdx) => {
                                 const actual = getScopedMetricTotal(team, m, metric, referenceDate);
-                                const hasGoal = metric !== 'wins' || winsHasGoal;
                                 const goal = getEffectiveGoal(team, m, metric);
+                                const hasGoal = (metric !== 'wins' || winsHasGoal) && goal > 0;
                                 const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
-                                const pct = hasGoal && goal > 0 ? (actual / goal) * 100 : 0;
+                                const pct = hasGoal ? (actual / goal) * 100 : 0;
                                 const barPct = Math.min(pct, 100);
                                 return (
                                   <td key={metric} className="py-3 px-2">
@@ -1592,9 +1592,9 @@ function TeamTab({
                                   </td>
                                   {visibleMetrics.map((metric, metricIdx) => {
                                     const actual = getScopedMetricTotal(team, m, metric, referenceDate);
-                                    const hasGoal = metric !== 'wins' || winsHasGoal;
                                     const goal = getEffectiveGoal(team, m, metric);
-                                    const pct = hasGoal && goal > 0 ? (actual / goal) * 100 : 0;
+                                    const hasGoal = (metric !== 'wins' || winsHasGoal) && goal > 0;
+                                    const pct = hasGoal ? (actual / goal) * 100 : 0;
                                     const barPct = Math.min(pct, 100);
                                     return (
                                       <td key={metric} className="py-2 px-2">
