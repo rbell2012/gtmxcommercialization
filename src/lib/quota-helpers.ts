@@ -63,6 +63,24 @@ export function getScopedMetricTotal(team: Team, member: TeamMember, metric: Goa
     : getMemberMetricTotal(member, metric, referenceDate);
 }
 
+function getMemberAccountNames(m: TeamMember, metric: GoalMetric, referenceDate?: Date): string[] {
+  const now = referenceDate ?? new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return m.metricAccountNames?.[monthKey]?.[metric] ?? [];
+}
+
+export function getScopedAccountNames(team: Team, member: TeamMember, metric: GoalMetric, referenceDate?: Date): string[] {
+  const scope = team.goalScopeConfig?.[metric] ?? 'individual';
+  if (scope !== 'team') return getMemberAccountNames(member, metric, referenceDate);
+  const merged = new Set<string>();
+  for (const m of (team.members ?? []).filter((mm) => mm.isActive)) {
+    for (const name of getMemberAccountNames(m, metric, referenceDate)) {
+      merged.add(name);
+    }
+  }
+  return Array.from(merged).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 export function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMetric): number {
   const scope = team.goalScopeConfig?.[metric] ?? 'individual';
 

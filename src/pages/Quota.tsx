@@ -15,7 +15,7 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getScopedMetricTotal, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -399,6 +399,7 @@ function MemberQuotaRow({
   visibleMetrics: GoalMetric[];
   referenceDate?: Date;
 }) {
+  const [copiedMetric, setCopiedMetric] = useState<string | null>(null);
   const quotaPct = computeQuota(team, member, referenceDate);
   const quotaBreakdown = computeQuotaBreakdown(team, member, referenceDate);
   const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
@@ -471,31 +472,66 @@ function MemberQuotaRow({
         const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
         const needed = Math.max(0, goal - current);
         const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
+        const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+        const accountNames = hasAccountNames ? getScopedAccountNames(team, member, metric, referenceDate) : [];
+
+        const cellContent = (
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-xs font-semibold text-foreground tabular-nums">
+              {current} <span className="text-muted-foreground font-normal">/</span> {goal}
+            </span>
+            {isTeamScope && (
+              <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+            )}
+            <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="flex flex-col items-center gap-0.5">
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                need <span className="font-semibold text-foreground">{needed}</span>
+              </span>
+              <span className="text-[10px] text-muted-foreground tabular-nums">
+                <span className="font-semibold text-foreground">{formatPerDay(needed, daysLeft)}</span>/day
+              </span>
+            </div>
+          </div>
+        );
 
         return (
           <td key={metric} className="py-3 px-2 w-[140px]">
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-xs font-semibold text-foreground tabular-nums">
-                {current} <span className="text-muted-foreground font-normal">/</span> {goal}
-              </span>
-              {isTeamScope && (
-                <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
-              )}
-              <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                <div
-                  className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="text-[10px] text-muted-foreground tabular-nums">
-                  need <span className="font-semibold text-foreground">{needed}</span>
-                </span>
-                <span className="text-[10px] text-muted-foreground tabular-nums">
-                  <span className="font-semibold text-foreground">{formatPerDay(needed, daysLeft)}</span>/day
-                </span>
-              </div>
-            </div>
+            {hasAccountNames && accountNames.length > 0 ? (
+              <Tooltip open={copiedMetric === metric ? true : undefined}>
+                <TooltipTrigger asChild>
+                  <div
+                    className="cursor-pointer"
+                    onClick={() => {
+                      navigator.clipboard.writeText(accountNames.join(", "));
+                      setCopiedMetric(metric);
+                      setTimeout(() => setCopiedMetric(null), 1000);
+                    }}
+                  >
+                    {cellContent}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[480px] p-3">
+                  {copiedMetric === metric ? (
+                    <p className="text-xs font-semibold text-green-500">Copied!</p>
+                  ) : (
+                    <>
+                      <p className="text-xs font-semibold mb-1.5">{GOAL_METRIC_LABELS[metric]}</p>
+                      <div className={`${accountNames.length > 6 ? "columns-3" : accountNames.length > 3 ? "columns-2" : ""} gap-x-4 text-xs text-muted-foreground`}>
+                        {accountNames.map((name) => (
+                          <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            ) : cellContent}
           </td>
         );
       })}

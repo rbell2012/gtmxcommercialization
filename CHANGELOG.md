@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 (Quota — Account Name Hover Tooltips on Ops/Demos/Wins)
+
+### Location — Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Teams Context (`src/contexts/TeamsContext.tsx`), Index Page (`src/pages/Index.tsx`)
+
+**Rationale:** The Quota page showed numeric totals for ops, demos, and wins but provided no way to see which accounts or opportunities contributed to those numbers. Users needed a quick way to view and copy the account names.
+
+**Changes:**
+- Added `account_name` to the `metrics_demos` and `metrics_wins` Supabase fetch calls, and `opportunity_name` to `metrics_ops` in `TeamsContext.tsx`.
+- Added `aggregateNamesBy` function in `TeamsContext.tsx` that collects unique account/opportunity names per rep per month (parallel to the existing count-based aggregation).
+- Added `metricAccountNames` field to the `TeamMember` interface, populated during the monthly metrics assembly loop with alphabetically sorted names.
+- Added `getScopedAccountNames` helper in `quota-helpers.ts` that returns account names for individual scope or merges/deduplicates across all active team members for team scope.
+- Wrapped ops, demos, and wins metric cells on the Quota page in a `Tooltip` that displays alphabetized account names in a responsive multi-column layout (1/2/3 columns based on count).
+- Clicking a metric cell copies the comma-separated account names to the clipboard and shows a "Copied!" confirmation tooltip for 1 second.
+- Updated all `TeamMember` construction sites (`dbMemberToApp`, `createMember`, and `Index.tsx` inline) to initialize the new field.
+
+---
+
 ## 2026-03-09 (Settings / All Pages — Drag-and-Drop Member Reordering)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`), All Project Pages (`src/pages/Index.tsx`, `src/pages/Quota.tsx`, `src/pages/Roadmap.tsx`)
