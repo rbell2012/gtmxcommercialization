@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-10 (Help Page — Account Name Tooltips Documentation)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to document the new account name hover tooltips and click-to-copy feature added to the Quota page and project page Monthly Goals sections. Users consulting the Help page would not know they can hover over ops, demos, or wins cells to see contributing account names, or click to copy them.
+
+**Changes:**
+- Added an **Account name tooltips** bullet to the **Monthly Goals** subsection (section 3b) explaining the hover-to-view and click-to-copy behavior for ops, demos, and wins cells on project pages.
+- Added an **Account name tooltips** bullet to the **Quota Page** section (section 4) documenting the same feature on the Quota page, including the alphabetized name display and "Copied!" confirmation.
+
+---
+
 ## 2026-03-09 (Nav Header — Add Icons to Quota and Data & Findings Links)
 
 ### Location — Navigation Header (`src/App.tsx`)

@@ -317,6 +317,7 @@ export default function Help() {
           <li>Percentages are uncapped: values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
+          <li><strong>Account name tooltips:</strong> Hover over an ops, demos, or wins cell to see which accounts or opportunities contributed. Click the cell to copy the names to your clipboard.</li>
           <li>Goals are configured in <Link to="/settings" className="text-primary underline">Settings</Link>, not on this page.</li>
         </ul>
 
@@ -435,6 +436,12 @@ export default function Help() {
             goals, accelerators, and roster that were in effect during that
             period, so quota calculations are always correct for the time frame
             you're looking at.
+          </li>
+          <li>
+            <strong>Account name tooltips:</strong> Hover over any ops, demos,
+            or wins metric cell to see the alphabetized account/opportunity
+            names that contribute to that number. Click the cell to copy the
+            names to your clipboard (a "Copied!" confirmation appears briefly).
           </li>
         </ul>
       </Section>
