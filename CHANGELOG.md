@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Nav Header — Add Icons to Quota and Data & Findings Links)
+
+### Location — Navigation Header (`src/App.tsx`)
+
+**Rationale:** The Roadmap and Home links in the top navigation bar included small icons next to their text, but the Quota and Data & Findings links were plain text only. Adding icons brings visual consistency across all nav links.
+
+**Changes:**
+- Imported `FileChartColumn` and `Target` icons from lucide-react into `App.tsx`.
+- Added a `FileChartColumn` icon (`h-3.5 w-3.5`) to the Data & Findings nav link, matching the icon used on the Data page header.
+- Added a `Target` icon (`h-3.5 w-3.5`) to the Quota nav link, matching the icon used on the Quota page header.
+- Updated both links to use `flex items-center gap-1` layout, consistent with the Roadmap and Home links.
+
+---
+
 ## 2026-03-09 (Quota / Project Pages — Account Name Hover Tooltips with Click-to-Copy)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`), Project Pages (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Teams Context (`src/contexts/TeamsContext.tsx`)

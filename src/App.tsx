@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
-import { HelpCircle, Settings, Home as HomeIcon, Map as MapIcon } from "lucide-react";
+import { HelpCircle, Settings, Home as HomeIcon, Map as MapIcon, FileChartColumn, Target } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import Home from "./pages/Home";
 import Index from "./pages/Index";
@@ -36,18 +36,20 @@ function Nav() {
       <span className="h-4 w-px bg-border shrink-0" />
       <Link
         to="/data"
-        className={`text-sm font-medium whitespace-nowrap transition-colors ${
+        className={`flex items-center gap-1 text-sm font-medium whitespace-nowrap transition-colors ${
           location.pathname === "/data" ? "text-primary" : "text-muted-foreground hover:text-foreground"
         }`}
       >
+        <FileChartColumn className="h-3.5 w-3.5" />
         Data &amp; Findings
       </Link>
       <Link
         to="/quota"
-        className={`text-sm font-medium whitespace-nowrap transition-colors ${
+        className={`flex items-center gap-1 text-sm font-medium whitespace-nowrap transition-colors ${
           location.pathname === "/quota" ? "text-primary" : "text-muted-foreground hover:text-foreground"
         }`}
       >
+        <Target className="h-3.5 w-3.5" />
         Quota
       </Link>
       <Link
