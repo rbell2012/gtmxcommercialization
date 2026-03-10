@@ -22,7 +22,7 @@ export default function Help() {
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), a vertical separator, then each active team. A second vertical separator separates the team tabs from <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/roadmap" className="text-primary underline">Roadmap</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/roadmap" className="text-primary underline">Roadmap</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
           <li>The <Link to="/help" className="text-primary underline"><strong>Help</strong></Link> link (question-mark icon) and <Link to="/settings" className="text-primary underline"><strong>Settings</strong></Link> link (gear icon) are on the far right, next to the theme toggle.</li>
         </ul>
@@ -475,18 +475,8 @@ export default function Help() {
             names are clickable and link to the Pilots page.
           </li>
           <li>
-            <strong>Active / Inactive divider:</strong> a solid horizontal line
-            separates active projects from inactive projects in the grid, making
-            it easy to see at a glance which projects are live and which are not.
-          </li>
-          <li>
             <strong>Inactive projects</strong> (non-archived but toggled off)
             appear at 60% opacity to distinguish them from active projects.
-          </li>
-          <li>
-            <strong>Alternating row colors:</strong> project rows alternate
-            between two distinct colors (blue and orange) for easy visual
-            scanning across months.
           </li>
         </ul>
 
