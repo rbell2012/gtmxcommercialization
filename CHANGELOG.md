@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-03-09 (Settings — Unarchive Projects & Ended Tests Sections)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Archived teams had no way to be restored — once archived, they were permanently hidden. Additionally, teams whose test period had ended (past end date, inactive, not archived) had no dedicated view, mixing them in with active teams or losing visibility entirely. These changes introduce an unarchive flow and a dedicated "Ended Tests" section for better project lifecycle management.
+
+**Changes:**
+- Added `ArchivedTeam` exported interface to `TeamsContext` with `id`, `name`, `owner`, and `archivedAt` fields.
+- Added `archivedTeams` state, `loadArchivedTeams()` (queries teams where `archived_at` is not null, ordered most-recent first), and `unarchiveTeam()` (clears `archived_at` in Supabase, reconstructs the full `Team` object with empty members, adds to active state, removes from archived list) to `TeamsProvider`.
+- Exposed `archivedTeams`, `loadArchivedTeams`, and `unarchiveTeam` via the context interface and provider value.
+- Added a collapsible "Archived Teams" section on the Settings page below the active teams grid. Lazy-loads archived teams on expand. Each card shows name, owner, archive date, and a "Restore" button with a confirmation dialog explaining the team returns with no members.
+- Added a collapsible "Ended Tests" section above the Archived Teams section for teams whose end date is in the past, are inactive, and are not archived. Each card shows name, owner, date range, an active toggle, and an archive button.
+- No Supabase migration needed — `archived_at` is an existing nullable column; unarchiving simply sets it back to `null`.
+
+---
+
 ## 2026-03-09 (Members — Archive/Unarchive Instead of Delete)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Supabase Migration
