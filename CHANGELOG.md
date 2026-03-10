@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-09 (Data — Active Projects Only in Deal Averages)
+
+### Location — Data & Findings Page (`src/pages/Data.tsx`)
+
+**Rationale:** The Deal Averages project dropdown was listing all non-archived projects, including inactive ones. Users should only see active projects in the filter to avoid selecting projects that are no longer running.
+
+**Changes:**
+- Added `is_active` to the `TeamBasic` interface and the Supabase teams query so the active status is available on loaded teams.
+- Filtered the Deal Averages project dropdown (`teams.filter((t) => t.is_active)`) to only display projects where `is_active` is true.
+- "All Projects" option still aggregates across all data regardless of active status.
+
+---
+
 ## 2026-03-09 (Header Nav — Reordered Navigation Groups)
 
 ### Location — App Shell (`src/App.tsx`)
