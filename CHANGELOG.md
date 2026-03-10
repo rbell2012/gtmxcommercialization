@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 (Help Page — Updated for Archive/Unarchive, Ended Tests, Roadmap Divider & Nav Separators)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to reflect four recent changes: the new Ended Tests and Archived Teams sections on Settings, the member archive/unarchive flow replacing delete, the active/inactive divider and alternating row colors on the Roadmap, and the visual separators added to the navigation bar. Users consulting the Help page would not know about these features.
+
+**Changes:**
+- Updated **Navigating the App** (section 1) to describe the two vertical separators in the nav bar — one after Home, one before Data & Findings — that visually group Home, team tabs, and utility links.
+- Added a new **Ended Tests** subsection to **Settings** (section 2) documenting the collapsible section for teams whose end date has passed, showing name, owner, date range, active toggle, and archive button.
+- Added a new **Unarchiving a Team** subsection to **Settings** (section 2) documenting the collapsible "Archived Teams" section with lazy-loading, archive date display, and the Restore button (noting restored teams return with no members).
+- Replaced the "Remove a member" bullet in **Managing Members** (section 2) with **"Archive a member"**, explaining the reversible archive flow via the archive icon and confirmation dialog, and that all history is preserved.
+- Added a new **Archived Members** subsection to **Settings** (section 2) documenting the collapsible section with name, level, archive date, and Restore button that reloads data and adds the member to the unassigned pool.
+- Added an **Active / Inactive divider** bullet to **Roadmap — Calendar Grid** (section 5) documenting the solid horizontal line separating active from inactive projects.
+- Added an **Alternating row colors** bullet to **Roadmap — Calendar Grid** (section 5) documenting the blue/orange alternating color scheme for project rows.
+
+---
+
 ## 2026-03-09 (Settings — Unarchive Projects & Ended Tests Sections)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`)
