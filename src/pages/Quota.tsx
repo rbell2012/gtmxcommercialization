@@ -400,6 +400,7 @@ function MemberQuotaRow({
   referenceDate?: Date;
 }) {
   const [copiedMetric, setCopiedMetric] = useState<string | null>(null);
+  const [forceOpenMetric, setForceOpenMetric] = useState<string | null>(null);
   const quotaPct = computeQuota(team, member, referenceDate);
   const quotaBreakdown = computeQuotaBreakdown(team, member, referenceDate);
   const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
@@ -503,13 +504,17 @@ function MemberQuotaRow({
         return (
           <td key={metric} className="py-3 px-2 w-[140px]">
             {hasAccountNames && accountNames.length > 0 ? (
-              <Tooltip open={copiedMetric === metric ? true : undefined}>
+              <Tooltip
+                open={forceOpenMetric === metric ? true : undefined}
+                onOpenChange={(open) => { if (!open && forceOpenMetric === metric && copiedMetric !== metric) setForceOpenMetric(null); }}
+              >
                 <TooltipTrigger asChild>
                   <div
                     className="cursor-pointer"
                     onClick={() => {
                       navigator.clipboard.writeText(accountNames.join(", "));
                       setCopiedMetric(metric);
+                      setForceOpenMetric(metric);
                       setTimeout(() => setCopiedMetric(null), 1000);
                     }}
                   >

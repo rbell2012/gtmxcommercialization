@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 (Quota / Project Pages — Account Name Hover Tooltips with Click-to-Copy)
+
+### Location — Quota Page (`src/pages/Quota.tsx`), Project Pages (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Teams Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** The Quota page and project page Monthly Goals sections showed numeric totals for ops, demos, and wins but gave no visibility into which accounts or opportunities contributed. Users needed a quick way to see and copy the account names.
+
+**Changes:**
+- Added `account_name` to `metrics_demos` and `metrics_wins` Supabase fetch calls, and `opportunity_name` to `metrics_ops` in `TeamsContext.tsx`.
+- Added `aggregateNamesBy` function to collect unique account/opportunity names per rep per month alongside existing count-based aggregation.
+- Added `metricAccountNames` field to the `TeamMember` interface, populated with alphabetically sorted names during monthly metrics assembly.
+- Added `getScopedAccountNames` helper in `quota-helpers.ts` that returns names for individual scope or merges/deduplicates across all active team members for team scope.
+- Wrapped ops, demos, and wins metric cells on both the Quota page and project page Monthly Goals sections (active and former members) in tooltips displaying alphabetized account names in a responsive multi-column layout.
+- Clicking a metric cell copies comma-separated account names to the clipboard, shows a "Copied!" confirmation for 1 second, then transitions back to showing the account names.
+- Tooltip stays open as long as the cursor remains over the cell, using `onOpenChange` rather than a timer to release the force-open state.
+
+---
+
 ## 2026-03-09 (Data & Findings / Roadmap — Consistent Page Header Styling)
 
 ### Location — Data & Findings Page (`src/pages/Data.tsx`), Roadmap Page (`src/pages/Roadmap.tsx`)

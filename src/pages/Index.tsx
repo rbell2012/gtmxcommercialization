@@ -15,7 +15,8 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getEffectiveGoal, getPhaseWinsLabel } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getPhaseWinsLabel } from "@/lib/quota-helpers";
+import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
@@ -1267,6 +1268,8 @@ function TeamTab({
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogName, setEditDialogName] = useState("");
   const [editDialogTarget, setEditDialogTarget] = useState<{ memberId: string; weekKey: string } | null>(null);
+  const [copiedMetricKey, setCopiedMetricKey] = useState<string | null>(null);
+  const [forceOpenKey, setForceOpenKey] = useState<string | null>(null);
 
   const confirmEditSubmission = () => {
     if (!editDialogName.trim() || !editDialogTarget) return;
@@ -1597,29 +1600,70 @@ function TeamTab({
                                 const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
                                 const pct = hasGoal ? (actual / goal) * 100 : 0;
                                 const barPct = Math.min(pct, 100);
+                                const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+                                const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
+                                const copyKey = `${m.id}::${metric}`;
+
+                                const cellContent = (
+                                  <div className="flex flex-col items-center gap-1">
+                                    {hasGoal ? (
+                                      <>
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">
+                                          {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
+                                        </span>
+                                        {isTeamScope && (
+                                          <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
+                                        )}
+                                        <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                            style={{ width: `${barPct}%` }}
+                                          />
+                                        </div>
+                                        <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
+                                    )}
+                                  </div>
+                                );
+
                                 return (
                                   <td key={metric} className="py-3 px-2">
-                                    <div className="flex flex-col items-center gap-1">
-                                      {hasGoal ? (
-                                        <>
-                                          <span className="text-xs font-semibold text-foreground tabular-nums">
-                                            {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
-                                          </span>
-                                          {isTeamScope && (
-                                            <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
-                                          )}
-                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                            <div
-                                              className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                              style={{ width: `${barPct}%` }}
-                                            />
+                                    {hasAcctNames && accountNames.length > 0 ? (
+                                      <UiTooltip
+                                        open={forceOpenKey === copyKey ? true : undefined}
+                                        onOpenChange={(open) => { if (!open && forceOpenKey === copyKey && copiedMetricKey !== copyKey) setForceOpenKey(null); }}
+                                      >
+                                        <TooltipTrigger asChild>
+                                          <div
+                                            className="cursor-pointer"
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(accountNames.join(", "));
+                                              setCopiedMetricKey(copyKey);
+                                              setForceOpenKey(copyKey);
+                                              setTimeout(() => setCopiedMetricKey(null), 1000);
+                                            }}
+                                          >
+                                            {cellContent}
                                           </div>
-                                          <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
-                                        </>
-                                      ) : (
-                                        <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
-                                      )}
-                                    </div>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top" className="max-w-[480px] p-3">
+                                          {copiedMetricKey === copyKey ? (
+                                            <p className="text-xs font-semibold text-green-500">Copied!</p>
+                                          ) : (
+                                            <>
+                                              <p className="text-xs font-semibold mb-1.5">{GOAL_METRIC_LABELS[metric]}</p>
+                                              <div className={`${accountNames.length > 6 ? "columns-3" : accountNames.length > 3 ? "columns-2" : ""} gap-x-4 text-xs text-muted-foreground`}>
+                                                {accountNames.map((name) => (
+                                                  <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                ))}
+                                              </div>
+                                            </>
+                                          )}
+                                        </TooltipContent>
+                                      </UiTooltip>
+                                    ) : cellContent}
                                   </td>
                                 );
                               })}
@@ -1648,23 +1692,64 @@ function TeamTab({
                                     const hasGoal = (metric !== 'wins' || winsHasGoal) && goal > 0;
                                     const pct = hasGoal ? (actual / goal) * 100 : 0;
                                     const barPct = Math.min(pct, 100);
+                                    const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+                                    const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
+                                    const copyKey = `${m.id}::${metric}`;
+
+                                    const formerCellContent = (
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        {hasGoal ? (
+                                          <>
+                                            <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
+                                            <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                              <div
+                                                className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                                style={{ width: `${barPct}%` }}
+                                              />
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <span className="text-xs text-muted-foreground tabular-nums">{actual}</span>
+                                        )}
+                                      </div>
+                                    );
+
                                     return (
                                       <td key={metric} className="py-2 px-2">
-                                        <div className="flex flex-col items-center gap-0.5">
-                                          {hasGoal ? (
-                                            <>
-                                              <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
-                                              <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                                <div
-                                                  className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
-                                                  style={{ width: `${barPct}%` }}
-                                                />
+                                        {hasAcctNames && accountNames.length > 0 ? (
+                                          <UiTooltip
+                                            open={forceOpenKey === copyKey ? true : undefined}
+                                            onOpenChange={(open) => { if (!open && forceOpenKey === copyKey && copiedMetricKey !== copyKey) setForceOpenKey(null); }}
+                                          >
+                                            <TooltipTrigger asChild>
+                                              <div
+                                                className="cursor-pointer"
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(accountNames.join(", "));
+                                                  setCopiedMetricKey(copyKey);
+                                                  setForceOpenKey(copyKey);
+                                                  setTimeout(() => setCopiedMetricKey(null), 1000);
+                                                }}
+                                              >
+                                                {formerCellContent}
                                               </div>
-                                            </>
-                                          ) : (
-                                            <span className="text-xs text-muted-foreground tabular-nums">{actual}</span>
-                                          )}
-                                        </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-[480px] p-3">
+                                              {copiedMetricKey === copyKey ? (
+                                                <p className="text-xs font-semibold text-green-500">Copied!</p>
+                                              ) : (
+                                                <>
+                                                  <p className="text-xs font-semibold mb-1.5">{GOAL_METRIC_LABELS[metric]}</p>
+                                                  <div className={`${accountNames.length > 6 ? "columns-3" : accountNames.length > 3 ? "columns-2" : ""} gap-x-4 text-xs text-muted-foreground`}>
+                                                    {accountNames.map((name) => (
+                                                      <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                    ))}
+                                                  </div>
+                                                </>
+                                              )}
+                                            </TooltipContent>
+                                          </UiTooltip>
+                                        ) : formerCellContent}
                                       </td>
                                     );
                                   })}
