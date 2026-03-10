@@ -96,11 +96,11 @@
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
 
-**Rationale:** The Team Availability section grouped members by the month they become available and displayed which project they were finishing. However, it only stored a single project name per month, so when multiple projects ended in the same month only the first one was shown (e.g., "Finishing Guest Pro" instead of "Finishing Guest Pro & Other Project").
+**Rationale:** The Team Availability section grouped members by the month they become available and displayed which project they were finishing. However, it only stored a single project name per month, so when multiple projects ended in the same month only the first one was shown (e.g., "Finishing Toast Growth Platform" instead of "Finishing Toast Growth Platform & Other Project").
 
 **Changes:**
 - Changed the monthly grouping data structure from a single `teamName: string` to `teamNames: Set<string>` so every distinct project finishing in that month is collected.
-- Updated the display to render all finishing project names, joined with commas and "&" for the last item (e.g., "Finishing **Guest Pro** & **Project X**").
+- Updated the display to render all finishing project names, joined with commas and "&" for the last item (e.g., "Finishing **Toast Growth Platform** & **Project X**").
 
 ---
 
@@ -688,7 +688,7 @@
 **Rationale:** Mission & Purpose of Test was stored in a single-row global `mission` table, so every project/team shared the same value. When a manager entered or submitted a mission on one pilot, it appeared on all pilots. Each project has a different purpose and needs its own independent mission statement.
 
 **Changes:**
-- Applied a Supabase migration adding `mission_purpose` (text) and `mission_submitted` (boolean) columns to the `teams` table. Migrated the existing Guest Pro mission content to that team's row.
+- Applied a Supabase migration adding `mission_purpose` (text) and `mission_submitted` (boolean) columns to the `teams` table. Migrated the existing Toast Growth Platform mission content to that team's row.
 - Updated `DbTeam` in `database.types.ts` to include the new `mission_purpose` and `mission_submitted` fields.
 - Added `missionPurpose` and `missionSubmitted` to the `Team` interface in `TeamsContext.tsx`, mapped them in `assembleTeams`, and included them in the `updateTeam` diff-and-persist logic so changes auto-save to Supabase.
 - Updated `addTeam` to initialize new teams with `missionPurpose: ""` and `missionSubmitted: false`.
@@ -971,9 +971,9 @@
 - Updated `removeMember` to close the open history record when a member is soft-deleted.
 - Added `MemberTeamHistoryEntry` interface and `getTeamMembersForMonth()` exported helper that resolves the correct roster for any team/month combination by checking which history entries overlap with that month's date range.
 - `TeamsProvider` now loads `member_team_history` from Supabase on every data refresh and exposes `memberTeamHistory` and `allMembersById` (a map of all members across all teams) through the context.
-- Updated the TAM section, Goals section, and `TeamTab` component in `Index.tsx` to use `getTeamMembersForMonth()` so that viewing a past month shows the historical member count and correct TAM average (e.g. Guest Pro in February shows 2 members when Will Andrews was still there, not 1).
+- Updated the TAM section, Goals section, and `TeamTab` component in `Index.tsx` to use `getTeamMembersForMonth()` so that viewing a past month shows the historical member count and correct TAM average (e.g. Toast Growth Platform in February shows 2 members when Will Andrews was still there, not 1).
 - Updated `TeamQuotaCard` in `Quota.tsx` to use `getTeamMembersForMonth()` for the same historical accuracy on the Quota page.
-- Manually updated `member_team_history` rows in Supabase with correct start dates for all current members and recorded Will Andrews' move from Guest Pro to Sterno on March 1.
+- Manually updated `member_team_history` rows in Supabase with correct start dates for all current members and recorded Will Andrews' move from Toast Growth Platform to Sterno on March 1.
 ---
 
 ## 2026-03-02 (Help page — "How to Use GTMx Pilots")
@@ -1263,12 +1263,12 @@
 
 ### Location – Database (`public.weekly_funnels` table in Supabase)
 
-**Rationale:** Historic TAM values were missing for several project teams, leaving weekly funnel data blank from the week of 9/29/2025 onward (and from 6/30/2025 for Guest Pro). These needed to be manually populated so historical reporting and funnel metrics reflect accurate TAM figures.
+**Rationale:** Historic TAM values were missing for several project teams, leaving weekly funnel data blank from the week of 9/29/2025 onward (and from 6/30/2025 for Toast Growth Platform). These needed to be manually populated so historical reporting and funnel metrics reflect accurate TAM figures.
 
 **Changes:**
 - **Project Sterno** (3 members: Morgan Weeks, Ross Armstrong, Will Andrews): Inserted 61 new `weekly_funnels` rows with TAM = 433 per member (1300 / 3) for weeks 2025-09-29 through 2026-02-23. Five pre-existing rows already had TAM = 433 and were left unchanged.
 - **Project Mad Max** (3 members: Carly King, Shane Hughes, Zoe Lang): Inserted 60 new `weekly_funnels` rows with TAM = 600 per member (1800 / 3) for weeks 2025-09-29 through 2026-02-23. Six pre-existing rows already had TAM = 600 and were left unchanged.
-- **Project Guest Pro** (1 member: Lo Picton): Inserted 20 new `weekly_funnels` rows with TAM = 2400 (2400 / 1) for weeks 2025-09-29 through 2026-02-23. Two pre-existing rows were updated from TAM = 4000 to TAM = 2400 for consistency. Additionally, inserted 13 new rows with TAM = 2400 for the earlier range of weeks 2025-06-30 through 2025-09-22.
+- **Project Toast Growth Platform** (1 member: Lo Picton): Inserted 20 new `weekly_funnels` rows with TAM = 2400 (2400 / 1) for weeks 2025-09-29 through 2026-02-23. Two pre-existing rows were updated from TAM = 4000 to TAM = 2400 for consistency. Additionally, inserted 13 new rows with TAM = 2400 for the earlier range of weeks 2025-06-30 through 2025-09-22.
 ---
 
 ## 2026-02-25 (Superhex Realtime Sync)
@@ -1711,7 +1711,7 @@
 **Rationale:** The Call→Connect and Demo→Win percentage numbers in the team header conversion-rate boxes were styled with `text-accent`, which was invisible or nearly invisible against the dark blue header background. Changing them to match the header text color ensures all four conversion metrics are legible at a glance.
 
 **Changes:**
-- Changed the percentage `<p>` element for Call→Connect from `text-accent` to `text-secondary-foreground` so it matches the team name ("Guest Pro") color.
+- Changed the percentage `<p>` element for Call→Connect from `text-accent` to `text-secondary-foreground` so it matches the team name ("Toast Growth Platform") color.
 - Changed the percentage `<p>` element for Demo→Win from `text-accent` to `text-secondary-foreground` for the same reason.
 - TAM→Call and Connect→Demo percentages remain `text-primary` (orange) as before — no change needed.
 - Change applies to all pilot/project pages via the shared `TeamTab` component.
@@ -1793,7 +1793,7 @@
 **Rationale:** The app treated Pilots as a single-page tab switcher at `/` with no deep-linking. Selecting a pilot or scrolling to a section had no URL representation, so links couldn't be shared or bookmarked. Moving to URL-driven routing (`/Pilots/:pilotId`) and adding anchor IDs to section headers enables deep-linking to any pilot + section combination.
 
 **Changes:**
-- Added `pilotNameToSlug` utility that derives a URL segment from the (editable) pilot name (e.g. "Mad Max" -> "Mad_Max", "Guest Pro" -> "Guest_Pro").
+- Added `pilotNameToSlug` utility that derives a URL segment from the (editable) pilot name (e.g. "Mad Max" -> "Mad_Max", "Toast Growth Platform" -> "Toast_Growth_Platform").
 - `/` now redirects to `/Pilots`. Both `/Pilots` and `/Pilots/:pilotId` render the same Index component; `/Pilots` defaults to the first pilot (Mad Max).
 - Replaced `activeTab` local state with a value derived from the URL via `useParams`. Selecting a tab now calls `useNavigate` to update the address bar.
 - Nav "Pilots" link updated to `/Pilots` and highlights on any `/Pilots/*` path.
