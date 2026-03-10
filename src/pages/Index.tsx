@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
@@ -1571,7 +1571,7 @@ function TeamTab({
                                 <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
                                   {GOAL_METRIC_LABELS[metric]}
                                   {isTeamScope && (
-                                    <span className="block text-[8px] font-bold text-primary/60 normal-case tracking-normal">(team)</span>
+                                    <span className="block text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
                                   )}
                                 </th>
                               );
@@ -2358,9 +2358,36 @@ function TeamTab({
   );
 }
 
+const GOAL_METRIC_TO_CHART_LABEL: Record<GoalMetric, string> = {
+  calls: "Call",
+  ops: "Ops",
+  demos: "Demo",
+  wins: "Win",
+  feedback: "Feedback",
+  activity: "Activity",
+};
+
+function getDefaultMetrics(team: Team): Set<string> {
+  const defaults = new Set<string>(["Win"]);
+  for (const [metric, enabled] of Object.entries(team.enabledGoals)) {
+    if (enabled) {
+      const label = GOAL_METRIC_TO_CHART_LABEL[metric as GoalMetric];
+      if (label) defaults.add(label);
+    }
+  }
+  for (const [metric, rules] of Object.entries(team.acceleratorConfig)) {
+    if (rules?.some((r) => r.enabled)) {
+      const label = GOAL_METRIC_TO_CHART_LABEL[metric as GoalMetric];
+      if (label) defaults.add(label);
+    }
+  }
+  return defaults;
+}
+
 function WeekOverWeekView({ team }: { team: Team }) {
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
-  const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set(["Call", "Connect", "Demo", "Win"]));
+  const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(() => getDefaultMetrics(team));
+  useEffect(() => { setSelectedMetrics(getDefaultMetrics(team)); }, [team.id]);
   const chartColors = useChartColors();
   const members = team.members;
   const weeks = getTeamWeekKeys(team.startDate, team.endDate);

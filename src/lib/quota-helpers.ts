@@ -85,9 +85,6 @@ export function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMet
   const scope = team.goalScopeConfig?.[metric] ?? 'individual';
 
   if (scope === 'team') {
-    if (member.level && team.teamGoalsByLevel?.[metric]?.[member.level] != null) {
-      return team.teamGoalsByLevel[metric][member.level]!;
-    }
     return team.teamGoals?.[metric] || 0;
   }
 

@@ -955,14 +955,18 @@ const Settings = () => {
                               </span>
                             </div>
                           ))}
+                          <div className="w-16 text-center flex items-center justify-center border-l border-border/50">
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Total</span>
+                          </div>
                         </div>
                         {GOAL_METRICS.map((metric) => {
                           const enabled = editEnabledGoals[metric];
+                          const isTeamScope = enabled && editGoalScopeConfig[metric] === 'team';
                           return (
                             <div key={metric} className="flex h-8">
                               {MEMBER_LEVELS.map((lvl) => (
                                 <div key={lvl} className="w-16 flex items-center justify-center">
-                                  {enabled ? (
+                                  {enabled && !isTeamScope ? (
                                     <Input
                                       type="number"
                                       min={0}
@@ -981,6 +985,22 @@ const Settings = () => {
                                   )}
                                 </div>
                               ))}
+                              <div className="w-16 flex items-center justify-center border-l border-border/50">
+                                {isTeamScope ? (
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={editTeamGoals[metric] || ""}
+                                    onChange={(e) => {
+                                      const num = Math.max(0, parseInt(e.target.value) || 0);
+                                      setEditTeamGoals((prev) => ({ ...prev, [metric]: num }));
+                                    }}
+                                    className="h-6 w-14 bg-background border-primary/30 text-foreground text-[10px] text-center p-0"
+                                  />
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">—</span>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

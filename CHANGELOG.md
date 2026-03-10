@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-10 (Index — Dynamic Default Metrics for Funnel Overview Chart)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** The Funnel Overview chart's default selected metrics were hardcoded to Call, Connect, Demo, and Win regardless of the team's configuration. This meant teams that only tracked certain goals still saw irrelevant metrics pre-selected, and teams with accelerators on specific metrics had to manually toggle them on every visit. The defaults should reflect each team's actual goal and accelerator setup.
+
+**Changes:**
+- Added a `GOAL_METRIC_TO_CHART_LABEL` mapping that translates GoalMetric keys (`calls`, `ops`, etc.) to chart display labels (`"Call"`, `"Ops"`, etc.).
+- Added a `getDefaultMetrics(team)` helper that builds the default selected metric set by: always including "Win", adding any metric where `team.enabledGoals` is `true`, and adding any metric where `team.acceleratorConfig` has at least one enabled rule.
+- Replaced the hardcoded `useState` initializer (`new Set(["Call", "Connect", "Demo", "Win"])`) with a lazy initializer that calls `getDefaultMetrics(team)`.
+- Added a `useEffect` keyed on `team.id` so that switching between teams resets the chart to the new team's defaults.
+- Users can still manually toggle metrics on/off after the defaults are applied. "TAM" and "Connect" (which have no corresponding goal metric) are only shown if manually toggled on.
+
+---
+
+## 2026-03-10 (Settings / Quota / Index — TOTAL Column for Team-Scoped Goals)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), Quota Page (`src/pages/Quota.tsx`), Index Page (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** Team-scoped goals were confusing because per-level values (e.g., Rep = 35, Senior = 35) were each independently compared against the whole team's combined output — meaning a team total of just 35 already put everyone at 100%. There was no way to express "the whole team needs X collectively." A TOTAL column makes this intent explicit and changes evaluation so all members share a single collective target.
+
+**Changes:**
+- Added a "TOTAL" column to the right of LEAD in the Monthly Goals grid in Settings. It appears with a left border separator and is only editable when a metric is set to TEAM scope.
+- When a metric is TEAM-scoped, the per-level columns (ADR through Lead) now show dashes and are disabled — only the TOTAL input is active.
+- The TOTAL input reads/writes to `editTeamGoals[metric]`, which already persists via existing DB columns (`team_goal_calls`, `team_goal_feedback`, etc.) — no migration needed.
+- Simplified `getEffectiveGoal` in `quota-helpers.ts` for team-scoped metrics: it now always returns `teamGoals[metric]` (the TOTAL value), ignoring per-level goals entirely. All members see the same quota % (`team_sum / TOTAL`).
+- Updated the metric column header labels on the Quota page and Index page from lowercase "(team)" to uppercase "TEAM" badge styling, matching the member row badge appearance.
+
+---
+
 ## 2026-03-10 (Quota — Sticky Member Column on Horizontal Scroll)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)
