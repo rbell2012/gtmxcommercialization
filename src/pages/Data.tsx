@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
-import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign, ChevronsUpDown, Download } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign, ChevronsUpDown, Download, FileChartColumn } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -566,8 +566,9 @@ export default function Data() {
   return (
     <div className="min-h-screen bg-background px-4 py-8 md:px-8">
       <div className="mx-auto max-w-6xl space-y-8">
-        <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+        <div className="mb-8 flex items-center gap-3">
+          <FileChartColumn className="h-8 w-8 text-primary" />
+          <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
             Data &amp; Findings
           </h1>
         </div>

@@ -256,7 +256,7 @@ const Roadmap = () => {
           <div className="flex items-center gap-3">
             <MapIcon className="h-8 w-8 text-primary" />
             <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
-              <span className="text-gradient-primary">Roadmap</span>
+              Roadmap
             </h1>
           </div>
           <div className="flex items-center gap-2">

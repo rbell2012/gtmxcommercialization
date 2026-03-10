@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-09 (Data & Findings / Roadmap — Consistent Page Header Styling)
+
+### Location — Data & Findings Page (`src/pages/Data.tsx`), Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** The Data & Findings and Roadmap page headers were visually inconsistent with the Quota page. The Data & Findings heading was smaller, lacked an icon, and used a different layout. The Roadmap heading used a gradient color instead of the standard white foreground color. Both were updated to match the Quota page's established style.
+
+**Changes:**
+- Added `FileChartColumn` icon from lucide-react to the Data & Findings page header, matching the icon sizing and color (`h-8 w-8 text-primary`) used on Quota and Roadmap.
+- Updated the Data & Findings `<h1>` from `text-3xl` to `text-4xl md:text-5xl` to match the other pages.
+- Changed the Data & Findings heading wrapper to use `flex items-center gap-3 mb-8` for proper icon-text alignment.
+- Removed the `text-gradient-primary` span from the Roadmap heading so the text renders in `text-foreground` (white), consistent with the Quota page.
+
+---
+
 ## 2026-03-09 (Quota — Account Name Hover Tooltips on Ops/Demos/Wins)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Teams Context (`src/contexts/TeamsContext.tsx`), Index Page (`src/pages/Index.tsx`)
