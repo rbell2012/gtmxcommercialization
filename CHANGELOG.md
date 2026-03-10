@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-10 (Quota — Sticky Member Column on Horizontal Scroll)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** When the Quota page table has many metric columns, the table scrolls horizontally. This caused the Member name column to scroll off-screen, making it impossible to tell which row of data belonged to which team member.
+
+**Changes:**
+- Added `sticky left-0 z-10 bg-card` to the Member column header (`<th>`) so it stays pinned to the left edge during horizontal scrolling.
+- Added `sticky left-0 z-10 bg-card` to each Member row cell (`<td>`) in `MemberQuotaRow` so member names, quota percentages, and accelerator badges remain visible while scrolling through metrics.
+- The `bg-card` background ensures the sticky column has a solid fill and metric columns do not bleed through underneath.
+
+---
+
 ## 2026-03-10 (Quota — Always Show Wins Column)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)

@@ -260,7 +260,7 @@ function TeamQuotaCard({
           <table className="table-fixed text-sm" style={{ width: `${160 + visibleMetrics.length * 140}px` }}>
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[160px]">
+                <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[160px] sticky left-0 z-10 bg-card">
                   Member
                 </th>
                 {visibleMetrics.map((metric) => {
@@ -272,7 +272,7 @@ function TeamQuotaCard({
                     >
                       {GOAL_METRIC_LABELS[metric]}
                       {isTeamScope && (
-                        <span className="block text-[8px] font-bold text-primary/60 normal-case tracking-normal">(team)</span>
+                        <span className="block text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
                       )}
                     </th>
                   );
@@ -415,7 +415,7 @@ function MemberQuotaRow({
 
   return (
     <tr className="border-b border-border/30">
-      <td className="py-3 pr-3 w-[160px]">
+      <td className="py-3 pr-3 w-[160px] sticky left-0 z-10 bg-card">
         <div className="flex flex-col items-start">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground whitespace-nowrap">{member.name}</span>
