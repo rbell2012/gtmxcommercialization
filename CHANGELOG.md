@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-09 (Header Nav — Reordered Navigation Groups)
+
+### Location — App Shell (`src/App.tsx`)
+
+**Rationale:** The navigation header had project names immediately after Home, pushing the global pages (Data & Findings, Quota, Roadmap) further right. Swapping the two groups places the most universally used pages closer to Home for quicker access, with project-specific links grouped together after a divider.
+
+**Changes:**
+- Moved the Data & Findings, Quota, and Roadmap links to appear directly after the first divider following Home.
+- Moved the dynamic project name links (visibleTeams) to appear after a second divider, following Roadmap.
+- No functional changes — only the display order within the `<nav>` was adjusted.
+
+---
+
 ## 2026-03-09 (Help Page — Updated for Archive/Unarchive & Ended Tests)
 
 ### Location — Help Page (`src/pages/Help.tsx`)

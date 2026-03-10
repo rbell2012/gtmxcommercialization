@@ -15,6 +15,7 @@ interface TeamBasic {
   name: string;
   start_date: string | null;
   end_date: string | null;
+  is_active: boolean;
 }
 
 interface MemberBasic {
@@ -273,7 +274,7 @@ export default function Data() {
         supabase.from("superhex").select("*").limit(50000),
         supabase.from("members").select("id, name"),
         supabase.from("member_team_history").select("*"),
-        supabase.from("teams").select("id, name, start_date, end_date").is("archived_at", null).order("sort_order"),
+        supabase.from("teams").select("id, name, start_date, end_date, is_active").is("archived_at", null).order("sort_order"),
         supabase.from("revx_impact_values").select("*"),
       ]);
       setMetricsData((metricsRes.data ?? []) as DbSuperhex[]);
@@ -600,7 +601,7 @@ export default function Data() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Projects</SelectItem>
-                    {teams.map((t) => (
+                    {teams.filter((t) => t.is_active).map((t) => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
                   </SelectContent>

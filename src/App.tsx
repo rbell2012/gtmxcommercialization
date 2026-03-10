@@ -34,22 +34,6 @@ function Nav() {
         Home
       </Link>
       <span className="h-4 w-px bg-border shrink-0" />
-      {visibleTeams.map((team, i) => {
-        const slug = pilotNameToSlug(team.name);
-        const isCurrent = location.pathname === `/${slug}`;
-        return (
-          <Link
-            key={team.id}
-            to={`/${slug}`}
-            className={`text-sm font-medium whitespace-nowrap transition-colors ${
-              isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {team.name}
-          </Link>
-        );
-      })}
-      <span className="h-4 w-px bg-border shrink-0" />
       <Link
         to="/data"
         className={`text-sm font-medium whitespace-nowrap transition-colors ${
@@ -75,6 +59,22 @@ function Nav() {
         <MapIcon className="h-3.5 w-3.5" />
         Roadmap
       </Link>
+      <span className="h-4 w-px bg-border shrink-0" />
+      {visibleTeams.map((team, i) => {
+        const slug = pilotNameToSlug(team.name);
+        const isCurrent = location.pathname === `/${slug}`;
+        return (
+          <Link
+            key={team.id}
+            to={`/${slug}`}
+            className={`text-sm font-medium whitespace-nowrap transition-colors ${
+              isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {team.name}
+          </Link>
+        );
+      })}
       <div className="ml-auto flex items-center gap-2">
         <Link
           to="/help"
