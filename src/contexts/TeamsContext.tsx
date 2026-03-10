@@ -413,6 +413,20 @@ function assembleTeams(
 
 // ── context ──
 
+export interface ArchivedTeam {
+  id: string;
+  name: string;
+  owner: string;
+  archivedAt: string;
+}
+
+export interface ArchivedMember {
+  id: string;
+  name: string;
+  level: MemberLevel | null;
+  archivedAt: string;
+}
+
 interface TeamsContextType {
   teams: Team[];
   setTeams: React.Dispatch<React.SetStateAction<Team[]>>;
@@ -422,6 +436,13 @@ interface TeamsContextType {
   teamGoalsHistory: TeamGoalsHistoryEntry[];
   memberGoalsHistory: MemberGoalsHistoryEntry[];
   allMembersById: Map<string, TeamMember>;
+  archivedTeams: ArchivedTeam[];
+  loadArchivedTeams: () => Promise<void>;
+  unarchiveTeam: (teamId: string) => Promise<void>;
+  archivedMembers: ArchivedMember[];
+  loadArchivedMembers: () => Promise<void>;
+  archiveMember: (memberId: string) => void;
+  unarchiveMember: (memberId: string) => Promise<void>;
   updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
   addTeam: (name: string, owner?: string, startDate?: string | null, endDate?: string | null) => void;
   removeTeam: (teamId: string) => void;
@@ -486,13 +507,15 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [teamGoalsHistory, setTeamGoalsHistory] = useState<TeamGoalsHistoryEntry[]>([]);
   const [memberGoalsHistory, setMemberGoalsHistory] = useState<MemberGoalsHistoryEntry[]>([]);
   const [allMembersById, setAllMembersById] = useState<Map<string, TeamMember>>(new Map());
+  const [archivedTeams, setArchivedTeams] = useState<ArchivedTeam[]>([]);
+  const [archivedMembers, setArchivedMembers] = useState<ArchivedMember[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ── load all data & merge event-table metrics into funnels ──
   const loadAll = useCallback(async () => {
     const [tRes, mRes, fRes, wRes, actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows_raw, hRes, tghRes, mghRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
-      supabase.from("members").select("*"),
+      supabase.from("members").select("*").is("archived_at", null),
       supabase.from("weekly_funnels").select("*"),
       supabase.from("win_entries").select("*"),
       fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid"),
@@ -1122,6 +1145,72 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     dbMutate(supabase.from("teams").update({ archived_at: new Date().toISOString() }).eq("id", teamId), "archive team");
   }, []);
 
+  const loadArchivedTeams = useCallback(async () => {
+    const { data } = await supabase
+      .from("teams")
+      .select("id, name, owner, archived_at")
+      .not("archived_at", "is", null)
+      .order("archived_at", { ascending: false });
+    if (data) {
+      setArchivedTeams(
+        data.map((t) => ({ id: t.id, name: t.name, owner: t.owner, archivedAt: t.archived_at! }))
+      );
+    }
+  }, []);
+
+  const unarchiveTeam = useCallback(async (teamId: string) => {
+    await supabase.from("teams").update({ archived_at: null }).eq("id", teamId);
+
+    const { data: dbTeam } = await supabase.from("teams").select("*").eq("id", teamId).single();
+    if (!dbTeam) return;
+
+    const t = dbTeam as DbTeam;
+    const restoredTeam: Team = {
+      id: t.id,
+      name: t.name,
+      owner: t.owner,
+      leadRep: t.lead_rep,
+      sortOrder: t.sort_order,
+      isActive: t.is_active,
+      startDate: t.start_date,
+      endDate: t.end_date,
+      totalTam: t.total_tam ?? 0,
+      tamSubmitted: t.tam_submitted ?? false,
+      missionPurpose: t.mission_purpose ?? "",
+      missionSubmitted: t.mission_submitted ?? false,
+      missionLastEdit: t.mission_last_edit ?? null,
+      executiveSponsor: t.executive_sponsor ?? "",
+      executiveProxy: t.executive_proxy ?? "",
+      revenueLever: t.revenue_lever ?? "",
+      businessGoal: t.business_goal ?? "",
+      whatWeAreTesting: t.what_we_are_testing ?? "",
+      goalsParity: t.goals_parity ?? false,
+      teamGoals: {
+        calls: t.team_goal_calls ?? 0,
+        ops: t.team_goal_ops ?? 0,
+        demos: t.team_goal_demos ?? 0,
+        wins: t.team_goal_wins ?? 0,
+        feedback: t.team_goal_feedback ?? 0,
+        activity: t.team_goal_activity ?? 0,
+      },
+      enabledGoals: {
+        calls: t.goal_enabled_calls ?? false,
+        ops: t.goal_enabled_ops ?? false,
+        demos: t.goal_enabled_demos ?? false,
+        wins: t.goal_enabled_wins ?? false,
+        feedback: t.goal_enabled_feedback ?? false,
+        activity: t.goal_enabled_activity ?? false,
+      },
+      acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
+      teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
+      goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
+      members: [],
+    };
+
+    setTeams((prev) => [...prev, restoredTeam]);
+    setArchivedTeams((prev) => prev.filter((a) => a.id !== teamId));
+  }, []);
+
   const reorderTeams = useCallback((orderedIds: string[]) => {
     setTeams((prev) => {
       const byId = new Map(prev.map((t) => [t.id, t]));
@@ -1269,18 +1358,68 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const removeMember = useCallback((memberId: string) => {
+  const archiveMember = useCallback((memberId: string) => {
+    const now = new Date().toISOString();
     setUnassignedMembers((prev) => prev.filter((m) => m.id !== memberId));
     setTeams((prev) =>
       prev.map((t) => ({
         ...t,
-        members: t.members.map((m) =>
-          m.id === memberId ? { ...m, isActive: false } : m
-        ),
+        members: t.members.filter((m) => m.id !== memberId),
       }))
     );
-    dbMutate(supabase.from("members").update({ is_active: false }).eq("id", memberId), "deactivate member");
-    dbMutate(supabase.from("member_team_history").update({ ended_at: new Date().toISOString() }).eq("member_id", memberId).is("ended_at", null), "close member history");
+    setAllMembersById((prev) => {
+      const next = new Map(prev);
+      next.delete(memberId);
+      return next;
+    });
+    dbMutate(supabase.from("members").update({ archived_at: now, team_id: null }).eq("id", memberId), "archive member");
+    dbMutate(supabase.from("member_team_history").update({ ended_at: now }).eq("member_id", memberId).is("ended_at", null), "close member history");
+  }, []);
+
+  const removeMember = archiveMember;
+
+  const loadArchivedMembers = useCallback(async () => {
+    const { data } = await supabase
+      .from("members")
+      .select("id, name, level, archived_at")
+      .not("archived_at", "is", null)
+      .order("archived_at", { ascending: false });
+    if (data) {
+      setArchivedMembers(
+        data.map((m) => ({
+          id: m.id,
+          name: m.name,
+          level: (m.level as MemberLevel) ?? null,
+          archivedAt: m.archived_at!,
+        }))
+      );
+    }
+  }, []);
+
+  const unarchiveMember = useCallback(async (memberId: string) => {
+    await supabase.from("members").update({ archived_at: null }).eq("id", memberId);
+
+    const { data: dbMember } = await supabase.from("members").select("*").eq("id", memberId).single();
+    if (!dbMember) return;
+
+    const row = dbMember as DbMember;
+    const { data: funnels } = await supabase.from("weekly_funnels").select("*").eq("member_id", memberId);
+    const { data: wins } = await supabase.from("win_entries").select("*").eq("member_id", memberId);
+
+    const member = dbMemberToApp(
+      row,
+      (funnels ?? []) as DbWeeklyFunnel[],
+      (wins ?? []) as DbWinEntry[],
+    );
+
+    setUnassignedMembers((prev) => [...prev, member]);
+    setAllMembersById((prev) => {
+      const next = new Map(prev);
+      next.set(member.id, member);
+      return next;
+    });
+    setArchivedMembers((prev) => prev.filter((m) => m.id !== memberId));
+    dbMutate(supabase.from("member_team_history").insert({ member_id: memberId, team_id: null }), "create unassigned history for unarchived member");
   }, []);
 
   const updateHistoricalRoster = useCallback((teamId: string, referenceDate: Date, memberIds: string[]) => {
@@ -1392,6 +1531,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         teamGoalsHistory,
         memberGoalsHistory,
         allMembersById,
+        archivedTeams,
+        loadArchivedTeams,
+        unarchiveTeam,
+        archivedMembers,
+        loadArchivedMembers,
+        archiveMember,
+        unarchiveMember,
         updateTeam,
         addTeam,
         removeTeam,

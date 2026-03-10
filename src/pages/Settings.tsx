@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical } from "lucide-react";
+import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -74,13 +74,19 @@ const Settings = () => {
     createMember,
     assignMember,
     unassignMember,
-    removeMember,
+    archiveMember,
     updateMember,
     teamGoalsHistory,
     memberTeamHistory,
     allMembersById,
     upsertTeamGoalsHistory,
     updateHistoricalRoster,
+    archivedTeams,
+    loadArchivedTeams,
+    unarchiveTeam,
+    archivedMembers,
+    loadArchivedMembers,
+    unarchiveMember,
   } = useTeams();
   const { toast } = useToast();
 
@@ -143,6 +149,28 @@ const Settings = () => {
   const [editTeamMembersInitial, setEditTeamMembersInitial] = useState<string[]>([]);
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
+
+  const [endedExpanded, setEndedExpanded] = useState(false);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [unarchiveTeamId, setUnarchiveTeamId] = useState<string | null>(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const endedTeams = teams.filter((t) => !t.isActive && t.endDate && t.endDate < today);
+
+  useEffect(() => {
+    if (archivedExpanded) loadArchivedTeams();
+  }, [archivedExpanded, loadArchivedTeams]);
+
+  const confirmUnarchiveTeam = async () => {
+    if (!unarchiveTeamId) return;
+    const team = archivedTeams.find((t) => t.id === unarchiveTeamId);
+    await unarchiveTeam(unarchiveTeamId);
+    toast({
+      title: "Team restored",
+      description: `${team?.name} has been unarchived.`,
+    });
+    setUnarchiveTeamId(null);
+  };
 
   const [nameSort, setNameSort] = useState<"asc" | "desc" | null>(null);
 
@@ -318,10 +346,32 @@ const Settings = () => {
     }
   };
 
-  const handleDeleteMember = (memberId: string) => {
-    const member = allMembers.find((m) => m.id === memberId);
-    removeMember(memberId);
-    toast({ title: "Member removed", description: `${member?.name} has been removed.` });
+  const [archiveMemberId, setArchiveMemberId] = useState<string | null>(null);
+
+  const confirmArchiveMember = () => {
+    if (!archiveMemberId) return;
+    const member = allMembers.find((m) => m.id === archiveMemberId);
+    archiveMember(archiveMemberId);
+    toast({ title: "Member archived", description: `${member?.name} has been archived.` });
+    setArchiveMemberId(null);
+  };
+
+  const [archivedMembersExpanded, setArchivedMembersExpanded] = useState(false);
+  const [unarchiveMemberId, setUnarchiveMemberId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (archivedMembersExpanded) loadArchivedMembers();
+  }, [archivedMembersExpanded, loadArchivedMembers]);
+
+  const confirmUnarchiveMember = async () => {
+    if (!unarchiveMemberId) return;
+    const member = archivedMembers.find((m) => m.id === unarchiveMemberId);
+    await unarchiveMember(unarchiveMemberId);
+    toast({
+      title: "Member restored",
+      description: `${member?.name} has been unarchived.`,
+    });
+    setUnarchiveMemberId(null);
   };
 
   return (
@@ -1080,6 +1130,139 @@ const Settings = () => {
           </AlertDialog>
         </div>
 
+        {/* Ended Tests Section */}
+        {endedTeams.length > 0 && (
+          <div className="mb-4 mt-4">
+            <button
+              onClick={() => setEndedExpanded((v) => !v)}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {endedExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <span className="font-medium">Ended Tests</span>
+            </button>
+
+            {endedExpanded && (
+              <div className="mt-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {endedTeams.map((team) => (
+                    <Card key={team.id} className="border-border bg-card/50 opacity-70">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="font-display text-base text-foreground">{team.name}</CardTitle>
+                          <div className="flex items-center gap-1">
+                            <Switch
+                              checked={team.isActive}
+                              onCheckedChange={(checked) => toggleTeamActive(team.id, checked)}
+                              className="scale-75"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeleteTeamId(team.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-0.5 text-sm">
+                          <p className="text-muted-foreground">
+                            Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
+                          </p>
+                          {formatDateRange(team.startDate, team.endDate) && (
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                {formatDateRange(team.startDate, team.endDate)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Archived Teams Section */}
+        <div className="mb-8 mt-4">
+          <button
+            onClick={() => setArchivedExpanded((v) => !v)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {archivedExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <span className="font-medium">Archived Teams</span>
+          </button>
+
+          {archivedExpanded && (
+            <div className="mt-3">
+              {archivedTeams.length === 0 ? (
+                <p className="text-sm text-muted-foreground pl-6">No archived teams.</p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {archivedTeams.map((team) => (
+                    <Card key={team.id} className="border-border bg-card/50 opacity-70">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="font-display text-base text-foreground">{team.name}</CardTitle>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-primary"
+                            onClick={() => setUnarchiveTeamId(team.id)}
+                          >
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            Restore
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-0.5 text-sm">
+                          <p className="text-muted-foreground">
+                            Owner: <span className="text-foreground font-medium">{team.owner || "—"}</span>
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            Archived {new Date(team.archivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <AlertDialog open={!!unarchiveTeamId} onOpenChange={(open) => !open && setUnarchiveTeamId(null)}>
+            <AlertDialogContent className="bg-card border-border">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display text-foreground">Restore team?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will unarchive{" "}
+                  <span className="font-semibold text-foreground">
+                    {archivedTeams.find((t) => t.id === unarchiveTeamId)?.name}
+                  </span>
+                  . The team will be restored with no members — you can reassign members afterwards.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmUnarchiveTeam}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Restore
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+
         <Separator className="my-8" />
 
         {/* Members Section */}
@@ -1230,10 +1413,11 @@ const Settings = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteMember(m.id)}
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-amber-500"
+                          onClick={() => setArchiveMemberId(m.id)}
+                          title="Archive member"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Archive className="h-3.5 w-3.5" />
                         </Button>
                       </td>
                     </tr>
@@ -1242,6 +1426,110 @@ const Settings = () => {
               </table>
             </div>
           )}
+
+          <AlertDialog open={!!archiveMemberId} onOpenChange={(open) => !open && setArchiveMemberId(null)}>
+            <AlertDialogContent className="bg-card border-border">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display text-foreground">Archive member?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will archive{" "}
+                  <span className="font-semibold text-foreground">
+                    {allMembers.find((m) => m.id === archiveMemberId)?.name}
+                  </span>
+                  . They will be removed from their team and hidden from active views. You can restore them at any time.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmArchiveMember}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Archive
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+
+        {/* Archived Members Section */}
+        <div className="mb-8 mt-4">
+          <button
+            onClick={() => setArchivedMembersExpanded((v) => !v)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {archivedMembersExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <span className="font-medium">Archived Members</span>
+          </button>
+
+          {archivedMembersExpanded && (
+            <div className="mt-3">
+              {archivedMembers.length === 0 ? (
+                <p className="text-sm text-muted-foreground pl-6">No archived members.</p>
+              ) : (
+                <div className="rounded-lg border border-border bg-card/50 opacity-70 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Name</th>
+                        <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Level</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Archived</th>
+                        <th className="text-center py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archivedMembers.map((m) => (
+                        <tr key={m.id} className="border-b border-border/50 last:border-0">
+                          <td className="py-3 px-4 font-medium text-foreground">{m.name}</td>
+                          <td className="py-3 px-4 text-center text-muted-foreground text-xs">
+                            {m.level ? MEMBER_LEVEL_LABELS[m.level] : "—"}
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground text-xs">
+                            {new Date(m.archivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-primary"
+                              onClick={() => setUnarchiveMemberId(m.id)}
+                            >
+                              <ArchiveRestore className="h-3.5 w-3.5" />
+                              Restore
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          <AlertDialog open={!!unarchiveMemberId} onOpenChange={(open) => !open && setUnarchiveMemberId(null)}>
+            <AlertDialogContent className="bg-card border-border">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display text-foreground">Restore member?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will unarchive{" "}
+                  <span className="font-semibold text-foreground">
+                    {archivedMembers.find((m) => m.id === unarchiveMemberId)?.name}
+                  </span>
+                  . They will be added to the unassigned pool — you can assign them to a team afterwards.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={confirmUnarchiveMember}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Restore
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

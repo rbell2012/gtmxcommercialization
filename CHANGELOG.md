@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-09 (Members — Archive/Unarchive Instead of Delete)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Supabase Migration
+
+**Rationale:** Members should never be fully deleted — historical data (funnels, wins, team history) must be preserved. Introducing an archive/unarchive mechanism allows members to be hidden from active views while retaining all their data and enabling restoration at any time.
+
+**Changes:**
+- Applied a Supabase migration adding an `archived_at timestamptz` column to the `members` table.
+- Updated `DbMember` type to include the new `archived_at` field.
+- Added `ArchivedMember` interface and `archivedMembers` state to `TeamsContext`.
+- Added `archiveMember()` — sets `archived_at`, unassigns from team, removes from active lists, and closes team history. `removeMember` is now an alias for `archiveMember`.
+- Added `unarchiveMember()` — clears `archived_at`, reloads member data (funnels, wins), adds them to the unassigned pool, and opens a new team history entry.
+- Added `loadArchivedMembers()` for on-demand fetching of archived members.
+- The main members query now filters with `archived_at IS NULL` so archived members never appear in active views.
+- Replaced the trash/delete button on the Settings members table with an archive icon and confirmation dialog explaining the action is reversible.
+- Added a collapsible "Archived Members" section on Settings (matching the existing "Archived Teams" pattern) with a table showing name, level, archive date, and a "Restore" button with confirmation dialog.
+
+---
+
 ## 2026-03-09 (Roadmap — Active/Inactive Divider & Alternating Row Colors)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
