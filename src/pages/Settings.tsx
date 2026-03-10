@@ -455,9 +455,15 @@ const Settings = () => {
                         type="date"
                         value={newTeamStartDate}
                         onChange={(e) => {
-                          setNewTeamStartDate(e.target.value);
-                          if (e.target.value && !newTeamEndDate) {
-                            setNewTeamEndDate(addMonths(e.target.value, 9));
+                          const val = e.target.value;
+                          setNewTeamStartDate(val);
+                          if (val) {
+                            const year = new Date(val + "T00:00:00").getFullYear();
+                            if (year >= 2000) {
+                              setNewTeamEndDate(addMonths(val, 9));
+                            }
+                          } else {
+                            setNewTeamEndDate("");
                           }
                         }}
                         className="bg-secondary/20 border-border text-foreground"
@@ -612,9 +618,15 @@ const Settings = () => {
                       type="date"
                       value={editTeamStartDate}
                       onChange={(e) => {
-                        setEditTeamStartDate(e.target.value);
-                        if (e.target.value && !editTeamEndDate) {
-                          setEditTeamEndDate(addMonths(e.target.value, 9));
+                        const val = e.target.value;
+                        setEditTeamStartDate(val);
+                        if (val) {
+                          const year = new Date(val + "T00:00:00").getFullYear();
+                          if (year >= 2000) {
+                            setEditTeamEndDate(addMonths(val, 9));
+                          }
+                        } else {
+                          setEditTeamEndDate("");
                         }
                       }}
                       className="bg-secondary/20 border-border text-foreground"

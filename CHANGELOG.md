@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-10 (Settings — Fix Team Date Picker Year Bug)
+
+### Location — Settings Page (`src/pages/Settings.tsx`)
+
+**Rationale:** When manually typing a start date in the Create Team or Edit Team dialogs, the browser fires onChange events for each keystroke as the year is entered. Intermediate year values like "0002" were being passed to the 9-month end date calculation, producing nonsensical end dates (e.g., "10/26/0002"). Because the old logic only auto-set the end date when it was empty, the bad value persisted even after the user finished typing the correct year.
+
+**Changes:**
+- Updated the Create Team start date onChange handler to validate the year is >= 2000 before computing the 9-month end date window, preventing intermediate typing values from producing bad dates.
+- Changed the logic to always recalculate the end date when a valid start date is entered, so finishing typing the correct year properly updates the end date.
+- Added clearing of the end date when the start date is removed.
+- Applied the same fix to the Edit Team dialog's start date handler for consistency.
+
+---
+
 ## 2026-03-10 (Help Page / Changelog — Rename "Guest Pro" to "Toast Growth Platform")
 
 ### Location — Help Page (`src/pages/Help.tsx`), Changelog (`CHANGELOG.md`)
