@@ -472,16 +472,18 @@ const Roadmap = () => {
 
               {/* Upcoming Availability grouped by month */}
               {(() => {
-                const grouped = new Map<string, { names: string[]; teamName: string }>();
+                const grouped = new Map<string, { names: string[]; teamNames: Set<string> }>();
                 for (const entry of upcomingAvailability) {
                   const monthKey = formatAvailability(entry.availableDate);
                   if (!grouped.has(monthKey)) {
-                    grouped.set(monthKey, { names: [], teamName: entry.teamName });
+                    grouped.set(monthKey, { names: [], teamNames: new Set<string>() });
                   }
-                  grouped.get(monthKey)!.names.push(entry.name);
+                  const group = grouped.get(monthKey)!;
+                  group.names.push(entry.name);
+                  group.teamNames.add(entry.teamName);
                 }
 
-                return Array.from(grouped.entries()).map(([monthLabel, { names, teamName }]) => (
+                return Array.from(grouped.entries()).map(([monthLabel, { names, teamNames }]) => (
                   <Card key={monthLabel} className="border-border">
                     <CardContent className="p-4">
                       <div className="flex items-center gap-2 mb-3">
@@ -491,7 +493,13 @@ const Roadmap = () => {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mb-2">
-                        Finishing <span className="font-medium text-foreground">{teamName}</span>
+                        Finishing{" "}
+                        {Array.from(teamNames).map((tn, i) => (
+                          <span key={tn}>
+                            {i > 0 && (i === teamNames.size - 1 ? " & " : ", ")}
+                            <span className="font-medium text-foreground">{tn}</span>
+                          </span>
+                        ))}
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {names.map((name) => (

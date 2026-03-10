@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-09 (Roadmap — Show All Finishing Projects in Team Availability)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** The Team Availability section grouped members by the month they become available and displayed which project they were finishing. However, it only stored a single project name per month, so when multiple projects ended in the same month only the first one was shown (e.g., "Finishing Guest Pro" instead of "Finishing Guest Pro & Other Project").
+
+**Changes:**
+- Changed the monthly grouping data structure from a single `teamName: string` to `teamNames: Set<string>` so every distinct project finishing in that month is collected.
+- Updated the display to render all finishing project names, joined with commas and "&" for the last item (e.g., "Finishing **Guest Pro** & **Project X**").
+
+---
+
 ## 2026-03-09 (Data — Active Projects Only in Deal Averages)
 
 ### Location — Data & Findings Page (`src/pages/Data.tsx`)
