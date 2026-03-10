@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-10 (Help Page / Changelog — Rename "Guest Pro" to "Toast Growth Platform")
+
+### Location — Help Page (`src/pages/Help.tsx`), Changelog (`CHANGELOG.md`)
+
+**Rationale:** The pilot formerly known as "Guest Pro" has been rebranded to "Toast Growth Platform." All references throughout the codebase needed to be updated to reflect the new name.
+
+**Changes:**
+- Renamed 2 occurrences of "Guest Pro" to "Toast Growth Platform" in `src/pages/Help.tsx` (TAM calculation description and blank-rep-name default notes).
+- Renamed 10 occurrences of "Guest Pro" to "Toast Growth Platform" across `CHANGELOG.md` in various historical entries.
+- Updated 1 slug example in `CHANGELOG.md` from `"Guest_Pro"` to `"Toast_Growth_Platform"` to match the new pilot name.
+
+---
+
 ## 2026-03-10 (Help Page — Account Name Tooltips Documentation)
 
 ### Location — Help Page (`src/pages/Help.tsx`)
