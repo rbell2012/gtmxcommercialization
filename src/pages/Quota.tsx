@@ -232,7 +232,12 @@ function TeamQuotaCard({
   const activeMembers = getTeamMembersForMonth(rawTeam, referenceDate, memberTeamHistory, allMembersById)
     .map((m) => getHistoricalMember(m, referenceDate, memberGoalsHistory));
   const daysLeft = getBusinessDaysRemaining(team.endDate, referenceDate);
-  const visibleMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m]);
+  const baseMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m] && m !== 'wins' && m !== 'feedback');
+  const visibleMetrics: GoalMetric[] = [
+    ...baseMetrics,
+    'wins',
+    ...(team.enabledGoals.feedback ? ['feedback' as GoalMetric] : []),
+  ];
 
   return (
     <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
@@ -476,7 +481,9 @@ function MemberQuotaRow({
         const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
         const accountNames = hasAccountNames ? getScopedAccountNames(team, member, metric, referenceDate) : [];
 
-        const cellContent = (
+        const hasGoal = (metric !== 'wins' || team.enabledGoals.wins) && goal > 0;
+
+        const cellContent = hasGoal ? (
           <div className="flex flex-col items-center gap-1">
             <span className="text-xs font-semibold text-foreground tabular-nums">
               {current} <span className="text-muted-foreground font-normal">/</span> {goal}
@@ -498,6 +505,10 @@ function MemberQuotaRow({
                 <span className="font-semibold text-foreground">{formatPerDay(needed, daysLeft)}</span>/day
               </span>
             </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-xs font-semibold text-foreground tabular-nums">{current}</span>
           </div>
         );
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-10 (Quota — Always Show Wins Column)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** The Wins column on the Quota page was only visible when the wins goal was explicitly enabled in Settings. On the project pages, wins always displays — showing just the raw count when no goal is set. This change makes the Quota page consistent with that behavior so users can always see win totals at a glance.
+
+**Changes:**
+- Updated `visibleMetrics` in `TeamQuotaCard` to always include the `wins` metric, regardless of whether a wins goal is enabled, matching the project page pattern.
+- Added a `hasGoal` check in `MemberQuotaRow` so that when wins has no goal configured, the cell displays just the raw win count instead of the full progress bar / "need X" / "X/day" layout.
+- Wins column is positioned after other enabled metrics and before feedback, consistent with the project page column ordering.
+
+---
+
 ## 2026-03-10 (Settings — Fix Team Date Picker Year Bug)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`)
