@@ -38,9 +38,6 @@ import {
 const PROJECT_COLORS = [
   { bg: "bg-primary/10", border: "border-l-primary", text: "text-primary" },
   { bg: "bg-accent/10", border: "border-l-accent", text: "text-accent" },
-  { bg: "bg-chart-3/10", border: "border-l-[hsl(var(--chart-3))]", text: "text-[hsl(var(--chart-3))]" },
-  { bg: "bg-chart-4/10", border: "border-l-[hsl(var(--chart-4))]", text: "text-[hsl(var(--chart-4))]" },
-  { bg: "bg-chart-5/10", border: "border-l-[hsl(var(--chart-5))]", text: "text-[hsl(var(--chart-5))]" },
 ];
 
 function getProjectColor(index: number) {
@@ -177,6 +174,14 @@ const Roadmap = () => {
 
     return { orderedTeamIds, projectLookup };
   }, [projectsByMonth, allTeams]);
+
+  const firstInactiveIdx = useMemo(() => {
+    const teamsById = new Map(allTeams.map((t) => [t.id, t]));
+    const idx = orderedTeamIds.findIndex((id) => !teamsById.get(id)?.isActive);
+    return idx === -1 ? -1 : idx;
+  }, [orderedTeamIds, allTeams]);
+
+  const hasDivider = firstInactiveIdx > 0 && firstInactiveIdx < orderedTeamIds.length;
 
   const today = new Date();
 
@@ -322,7 +327,7 @@ const Roadmap = () => {
             className="grid gap-x-4 gap-y-2"
             style={{
               gridTemplateColumns: `repeat(${MONTHS_VISIBLE}, minmax(0, 1fr))`,
-              gridTemplateRows: `auto repeat(${orderedTeamIds.length}, auto)`,
+              gridTemplateRows: `auto repeat(${orderedTeamIds.length + (hasDivider ? 1 : 0)}, auto)`,
             }}
           >
             {/* Row 1: Month headers */}
@@ -344,9 +349,19 @@ const Roadmap = () => {
               );
             })}
 
+            {/* Divider between active and inactive */}
+            {hasDivider && (
+              <div
+                key="active-inactive-divider"
+                className="border-t border-border"
+                style={{ gridColumn: `1 / -1`, gridRow: firstInactiveIdx + 2 }}
+              />
+            )}
+
             {/* Project cells: one per (team, month) */}
-            {orderedTeamIds.map((teamId, rowIdx) =>
-              months.map((month, colIdx) => {
+            {orderedTeamIds.map((teamId, rowIdx) => {
+              const adjustedRow = rowIdx + 2 + (hasDivider && rowIdx >= firstInactiveIdx ? 1 : 0);
+              return months.map((month, colIdx) => {
                 const monthKey = format(month, "yyyy-MM");
                 const proj = projectLookup[monthKey]?.[teamId];
 
@@ -354,12 +369,12 @@ const Roadmap = () => {
                   return (
                     <div
                       key={`${teamId}-${monthKey}`}
-                      style={{ gridColumn: colIdx + 1, gridRow: rowIdx + 2 }}
+                      style={{ gridColumn: colIdx + 1, gridRow: adjustedRow }}
                     />
                   );
                 }
 
-                const color = getProjectColor(proj.colorIndex);
+                const color = getProjectColor(rowIdx);
                 const activeMembers = proj.team.members.filter((m) => m.isActive);
                 const slug = pilotNameToSlug(proj.team.name);
                 const path = `/${slug}`;
@@ -369,7 +384,7 @@ const Roadmap = () => {
                   <Card
                     key={`${teamId}-${monthKey}`}
                     className={`border-l-4 ${color.border} ${color.bg} cursor-pointer transition-all hover:shadow-md ${isInactive ? "opacity-60" : ""}`}
-                    style={{ gridColumn: colIdx + 1, gridRow: rowIdx + 2 }}
+                    style={{ gridColumn: colIdx + 1, gridRow: adjustedRow }}
                     onClick={() => navigate(path)}
                   >
                     <CardContent className="p-2.5 space-y-1">
@@ -416,8 +431,8 @@ const Roadmap = () => {
                     </CardContent>
                   </Card>
                 );
-              })
-            )}
+              });
+            })}
           </div>
         )}
 

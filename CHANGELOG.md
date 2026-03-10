@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-09 (Roadmap — Active/Inactive Divider & Alternating Row Colors)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** The Roadmap grid listed active and inactive projects with no visual separation, making it hard to distinguish at a glance which projects are live. Additionally, the 5-color palette used for row styling caused visually similar colors (e.g., chart-3/chart-5 both green-ish, accent/chart-4 both orange-ish) to appear on adjacent rows, breaking the intended alternating pattern.
+
+**Changes:**
+- Added a solid horizontal divider line between the last active project row and the first inactive project row in the month grid.
+- Computed the active/inactive split point (`firstInactiveIdx`) and conditionally rendered a full-width `border-t` element spanning all grid columns at the appropriate row.
+- Adjusted grid row assignments so inactive project cells are offset by one row to accommodate the divider.
+- Changed row color assignment from the team's index in the full `allTeams` array to the team's visual row position (`rowIdx`) in the grid, ensuring colors follow the visible order.
+- Reduced `PROJECT_COLORS` from 5 entries to 2 (primary blue and accent orange) so rows cleanly alternate between two distinct, visually distinguishable colors.
+
+---
+
 ## 2026-03-09 (Routing — Rename /Pilots to Project-Name Slugs)
 
 ### Location — App-wide (`src/App.tsx`, `src/pages/Index.tsx`, `src/pages/Home.tsx`, `src/pages/Roadmap.tsx`, `src/pages/Help.tsx`)
