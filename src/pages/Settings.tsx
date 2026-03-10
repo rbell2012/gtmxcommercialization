@@ -70,6 +70,7 @@ const Settings = () => {
     removeTeam,
     updateTeam,
     reorderTeams,
+    reorderMembers,
     toggleTeamActive,
     createMember,
     assignMember,
@@ -119,6 +120,38 @@ const Settings = () => {
     toast({ title: "Team order updated" });
     dragItem.current = null;
     dragOverItem.current = null;
+  };
+
+  const dragMember = useRef<string | null>(null);
+  const dragOverMember = useRef<string | null>(null);
+
+  const handleMemberDragStart = (memberId: string) => {
+    dragMember.current = memberId;
+  };
+
+  const handleMemberDragOver = (e: React.DragEvent, memberId: string) => {
+    e.preventDefault();
+    dragOverMember.current = memberId;
+  };
+
+  const handleMemberDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragMember.current || !dragOverMember.current || dragMember.current === dragOverMember.current) {
+      dragMember.current = null;
+      dragOverMember.current = null;
+      return;
+    }
+    const currentOrder = allMembers.map((m) => m.id);
+    const dragIdx = currentOrder.indexOf(dragMember.current);
+    const dropIdx = currentOrder.indexOf(dragOverMember.current);
+    if (dragIdx === -1 || dropIdx === -1) return;
+    currentOrder.splice(dragIdx, 1);
+    currentOrder.splice(dropIdx, 0, dragMember.current);
+    reorderMembers(currentOrder);
+    setNameSort(null);
+    toast({ title: "Member order updated" });
+    dragMember.current = null;
+    dragOverMember.current = null;
   };
 
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
@@ -328,7 +361,7 @@ const Settings = () => {
           ? a.name.localeCompare(b.name)
           : b.name.localeCompare(a.name)
       )
-    : allMembersUnsorted;
+    : [...allMembersUnsorted].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const cycleNameSort = () => {
     setNameSort((prev) => (prev === null ? "asc" : prev === "asc" ? "desc" : null));
@@ -1308,6 +1341,7 @@ const Settings = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50">
+                    <th className="w-8 py-3 px-2" />
                     <th
                       className="text-left py-3 px-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground transition-colors"
                       onClick={cycleNameSort}
@@ -1339,7 +1373,15 @@ const Settings = () => {
                     <tr
                       key={m.id}
                       className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+                      draggable
+                      onDragStart={() => handleMemberDragStart(m.id)}
+                      onDragOver={(e) => handleMemberDragOver(e, m.id)}
+                      onDrop={handleMemberDrop}
+                      onDragEnd={() => { dragMember.current = null; dragOverMember.current = null; }}
                     >
+                      <td className="py-3 px-2 w-8">
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing" />
+                      </td>
                       <td className="py-3 px-4 font-medium text-foreground">
                         {editingMemberId === m.id && editingField === "name" ? (
                           <div className="flex items-center gap-1">

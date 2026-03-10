@@ -463,11 +463,13 @@ const Index = () => {
     if (!newName.trim()) return;
     const memberId = crypto.randomUUID();
     const goals: MemberGoals = { ...DEFAULT_GOALS };
+    const allExisting = allTeams.flatMap((t) => t.members);
+    const nextOrder = allExisting.length > 0 ? Math.max(...allExisting.map((m) => m.sortOrder)) + 1 : 0;
     updateTeam(activeTab, (team) => ({
       ...team,
       members: [
         ...team.members,
-        { id: memberId, name: newName.trim(), level: null, goals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, isActive: true, touchedAccountsByTeam: {}, touchedTam: 0 },
+        { id: memberId, name: newName.trim(), level: null, goals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 },
       ],
     }));
     dbMutate(
@@ -478,7 +480,7 @@ const Index = () => {
           goal_calls: goals.calls, goal_ops: goals.ops,
           goal_demos: goals.demos, goal_wins: goals.wins,
           goal_feedback: goals.feedback, goal_activity: goals.activity,
-          team_id: activeTab, ducks_earned: 0, is_active: true,
+          team_id: activeTab, ducks_earned: 0, is_active: true, sort_order: nextOrder,
         }),
       "add member",
     );

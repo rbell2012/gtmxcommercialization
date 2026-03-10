@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-09 (Settings / All Pages — Drag-and-Drop Member Reordering)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), All Project Pages (`src/pages/Index.tsx`, `src/pages/Quota.tsx`, `src/pages/Roadmap.tsx`)
+
+**Rationale:** Members had no custom ordering — they appeared in insertion order or alphabetically. Users needed the ability to drag-and-drop members into a preferred order (mirroring the existing project/team reorder feature) and have that order persist across all pages.
+
+**Changes:**
+- Added `sort_order` integer column to the `members` table in Supabase with a migration that backfills existing rows by `created_at` order.
+- Added `sort_order` to `DbMember` type and `sortOrder` to the `TeamMember` interface.
+- Updated `dbMemberToApp` and `assembleTeams` to map and sort members by `sort_order`.
+- Added `reorderMembers` function to `TeamsContext` that updates local state (teams, unassigned, allMembersById) and persists new `sort_order` values to Supabase.
+- Added native HTML5 drag-and-drop to the Settings members table with `GripVertical` grip handles, matching the existing team drag pattern.
+- The Settings members table now sorts by `sortOrder` by default; clicking the Name header still toggles alphabetical sort, and dragging resets back to custom order.
+- Updated `createMember` (in both TeamsContext and Index.tsx) to assign the next available `sort_order`.
+- Updated `getTeamMembersForMonth` to sort historical roster results by `sortOrder`.
+
+---
+
 ## 2026-03-09 (Roadmap — Show All Finishing Projects in Team Availability)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)

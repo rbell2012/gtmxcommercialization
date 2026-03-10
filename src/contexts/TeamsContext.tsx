@@ -114,7 +114,9 @@ export interface TeamMember {
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
   monthlyMetrics: Record<string, FunnelData>;
+  metricAccountNames: Record<string, Partial<Record<GoalMetric, string[]>>>;
   isActive: boolean;
+  sortOrder: number;
   touchedAccountsByTeam: Record<string, number>;
   touchedTam: number;
 }
@@ -282,7 +284,8 @@ export function getTeamMembersForMonth(
 
   return Array.from(memberIds)
     .map((id) => allMembersById.get(id))
-    .filter((m): m is TeamMember => m != null);
+    .filter((m): m is TeamMember => m != null)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 function getFirstActivityDate(row: { first_activity_date?: string | null; first_call_date?: string | null; first_connect_date?: string | null; first_demo_date?: string | null; last_activity_date?: string | null }): string | null {
@@ -326,6 +329,7 @@ function dbMemberToApp(
     },
     ducksEarned: row.ducks_earned,
     isActive: row.is_active,
+    sortOrder: row.sort_order ?? 0,
     wins: wins.map((w) => ({
       id: w.id,
       restaurant: w.restaurant,
@@ -334,6 +338,7 @@ function dbMemberToApp(
     })),
     funnelByWeek,
     monthlyMetrics: {},
+    metricAccountNames: {},
     touchedAccountsByTeam: {},
     touchedTam: 0,
   };
@@ -358,6 +363,8 @@ function assembleTeams(
     arr.push(w);
     winsByMember.set(w.member_id, arr);
   }
+
+  const sortedDbMembers = [...dbMembers].sort((a, b) => a.sort_order - b.sort_order);
 
   const toAppMember = (m: DbMember) =>
     dbMemberToApp(m, funnelsByMember.get(m.id) ?? [], winsByMember.get(m.id) ?? []);
@@ -403,10 +410,10 @@ function assembleTeams(
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
-      members: dbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
+      members: sortedDbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
-  const unassigned = dbMembers.filter((m) => m.team_id === null && m.is_active).map(toAppMember);
+  const unassigned = sortedDbMembers.filter((m) => m.team_id === null && m.is_active).map(toAppMember);
 
   return { teams, unassigned };
 }
@@ -447,6 +454,7 @@ interface TeamsContextType {
   addTeam: (name: string, owner?: string, startDate?: string | null, endDate?: string | null) => void;
   removeTeam: (teamId: string) => void;
   reorderTeams: (orderedIds: string[]) => void;
+  reorderMembers: (orderedIds: string[]) => void;
   toggleTeamActive: (teamId: string, isActive: boolean) => void;
   createMember: (name: string, goals?: Partial<MemberGoals>) => TeamMember;
   updateMember: (memberId: string, updates: { name?: string; goals?: Partial<MemberGoals>; level?: MemberLevel | null }) => void;
@@ -521,9 +529,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid"),
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
-      fetchAllRows("metrics_demos", "rep_name, demo_date"),
-      fetchAllRows("metrics_ops", "rep_name, op_date, op_created_date"),
-      fetchAllRows("metrics_wins", "rep_name, win_date"),
+      fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
+      fetchAllRows("metrics_ops", "rep_name, op_date, op_created_date, opportunity_name"),
+      fetchAllRows("metrics_wins", "rep_name, win_date, account_name"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
       fetchAllRows("metrics_tam", "rep_name, tam"),
@@ -588,6 +596,27 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const opsByMonth = aggregateByMonth(opsRows, "op_created_date");
     const winsByMonth = aggregateByMonth(winsRows, "win_date");
     const feedbackByMonth = aggregateByMonth(fbRows, "feedback_date");
+
+    type AggNames = Map<string, Map<string, Set<string>>>;
+    const aggregateNamesBy = (rows: Record<string, unknown>[], dateField: string, nameField: string, keyFn: (d: string) => string): AggNames => {
+      const result: AggNames = new Map();
+      for (const row of rows) {
+        const dateVal = row[dateField] as string | null;
+        const nameVal = row[nameField] as string | null;
+        if (!dateVal || !nameVal) continue;
+        const repKey = (row.rep_name as string).toLowerCase().trim();
+        const key = keyFn(dateVal);
+        if (!result.has(repKey)) result.set(repKey, new Map());
+        const repMap = result.get(repKey)!;
+        if (!repMap.has(key)) repMap.set(key, new Set());
+        repMap.get(key)!.add(nameVal);
+      }
+      return result;
+    };
+
+    const opsNamesByMonth = aggregateNamesBy(opsRows, "op_created_date", "opportunity_name", dateToMonthKey);
+    const demosNamesByMonth = aggregateNamesBy(demoRows, "demo_date", "account_name", dateToMonthKey);
+    const winsNamesByMonth = aggregateNamesBy(winsRows, "win_date", "account_name", dateToMonthKey);
 
     // Collect all (rep, weekKey) pairs across all event tables
     const allRepWeeks = new Map<string, Set<string>>();
@@ -717,6 +746,22 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }
 
       member.monthlyMetrics = monthly;
+
+      const namesByMonth: Record<string, Partial<Record<GoalMetric, string[]>>> = {};
+      const nameSources: { key: GoalMetric; agg: AggNames }[] = [
+        { key: "ops", agg: opsNamesByMonth },
+        { key: "demos", agg: demosNamesByMonth },
+        { key: "wins", agg: winsNamesByMonth },
+      ];
+      for (const { key, agg } of nameSources) {
+        const repNames = agg.get(repKey);
+        if (!repNames) continue;
+        for (const [mk, names] of repNames) {
+          if (!namesByMonth[mk]) namesByMonth[mk] = {};
+          namesByMonth[mk][key] = Array.from(names).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+        }
+      }
+      member.metricAccountNames = namesByMonth;
     }
 
     // Derive touched accounts per rep per team from two sources:
@@ -1227,6 +1272,30 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const reorderMembers = useCallback((orderedIds: string[]) => {
+    const orderMap = new Map(orderedIds.map((id, i) => [id, i]));
+    const reorderArr = <T extends { id: string; sortOrder: number }>(arr: T[]): T[] =>
+      arr.map((m) => ({ ...m, sortOrder: orderMap.get(m.id) ?? m.sortOrder }))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    setTeams((prev) =>
+      prev.map((t) => ({ ...t, members: reorderArr(t.members) }))
+    );
+    setUnassignedMembers((prev) => reorderArr(prev));
+    setAllMembersById((prev) => {
+      const next = new Map(prev);
+      for (const [id, order] of orderMap) {
+        const m = next.get(id);
+        if (m) next.set(id, { ...m, sortOrder: order });
+      }
+      return next;
+    });
+
+    for (const [id, order] of orderMap) {
+      dbMutate(supabase.from("members").update({ sort_order: order }).eq("id", id), "reorder member");
+    }
+  }, []);
+
   const toggleTeamActive = useCallback((teamId: string, isActive: boolean) => {
     setTeams((prev) =>
       prev.map((t) => (t.id === teamId ? { ...t, isActive } : t))
@@ -1237,17 +1306,19 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const createMember = useCallback((name: string, goals?: Partial<MemberGoals>): TeamMember => {
     const id = crypto.randomUUID();
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
-    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, isActive: true, touchedAccountsByTeam: {}, touchedTam: 0 };
+    const allExisting = [...teams.flatMap((t) => t.members), ...unassignedMembers];
+    const nextOrder = allExisting.length > 0 ? Math.max(...allExisting.map((m) => m.sortOrder)) + 1 : 0;
+    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 };
     setUnassignedMembers((prev) => [...prev, member]);
     dbMutate(
       supabase
         .from("members")
-        .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true }),
+        .insert({ id, name, ...memberGoalsToDbInsert(memberGoals), team_id: null, ducks_earned: 0, is_active: true, sort_order: nextOrder }),
       "create member",
     );
     dbMutate(supabase.from("member_team_history").insert({ member_id: id, team_id: null }), "create member history");
     return member;
-  }, []);
+  }, [teams, unassignedMembers]);
 
   const updateMember = useCallback((memberId: string, updates: { name?: string; goals?: Partial<MemberGoals>; level?: MemberLevel | null }) => {
     const dbUpdates: Record<string, unknown> = {};
@@ -1542,6 +1613,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         addTeam,
         removeTeam,
         reorderTeams,
+        reorderMembers,
         toggleTeamActive,
         createMember,
         updateMember,

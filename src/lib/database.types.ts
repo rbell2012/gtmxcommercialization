@@ -51,6 +51,7 @@ export interface DbMember {
   ducks_earned: number;
   is_active: boolean;
   level: string | null;
+  sort_order: number;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
