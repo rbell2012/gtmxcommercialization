@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-11 (Settings / Index / Quota — Relief Month Goals Feature)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), Index Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Supabase Migrations
+
+**Rationale:** Teams needed a way to mark certain months as "relief" for individual reps, setting their quota base to 100% without requiring manual goal adjustments. This supports scenarios like onboarding months, PTO, or organizational transitions where a rep shouldn't be penalized. Accelerators should still stack on top of the relief base so reps who exceed thresholds are recognized. When parity is enabled, all reps should automatically receive relief.
+
+**Changes:**
+- Added `relief_month_members` (jsonb array of member IDs) column to both `teams` and `team_goals_history` tables via migration (`20260311100000_add_relief_month_members.sql`), applied to Supabase.
+- Added `relief_month_members: string[]` to `DbTeam` and `DbTeamGoalsHistory` TypeScript interfaces.
+- Added `reliefMonthMembers: string[]` to `Team` and `TeamGoalsHistoryEntry` app types; wired through all DB-to-app mappings (`assembleTeams`, history mapping, unarchive), `updateTeam` (change detection, DB persist, history snapshot), `upsertTeamGoalsHistory`, and `getHistoricalTeam` overlay.
+- Added `isMemberOnRelief(team, member)` helper in `quota-helpers.ts`.
+- Updated `computeQuota` and `computeQuotaBreakdown` so relief sets the **base** quota to 100%, then accelerator rules still iterate and apply on top (capped at 200%). Previously accelerators were bypassed entirely for relief members.
+- Added "Relief Month" section in Settings Edit Team modal (inside the Monthly Goals card, before Accelerator): a toggle switch that, when enabled, shows checkboxes for each team member. When parity is on, all members are auto-selected and checkboxes are disabled. Toggling parity on while relief is active auto-expands to all members. State loads from history entries for past-month editing.
+- Index page Monthly Goals table: members on relief show a green "Relief" badge next to their name, progress bars fill green at 100%, and percentage displays 100%. When no goals are configured but relief is active, the "Configure goals in Settings" placeholder is bypassed in favor of a simplified table showing member name, relief badge, quota %, progress bar, and accelerator tier indicators (lock icons with tooltips).
+- Quota page: members on relief show a green "Relief" badge, quota text renders in green, progress bars fill green. The breakdown tooltip shows "Relief month → 100.0%" as the base line followed by any triggered accelerator steps and the final total. Accelerator tier indicators display normally for relief members.
+
+---
+
 ## 2026-03-11 (Project Pages / Data Page — Win Stage Qualification and Date Tracking)
 
 ### Location — TeamsContext (`src/contexts/TeamsContext.tsx`), Data Page (`src/pages/Data.tsx`), Metrics Helpers (`src/lib/metrics-helpers.ts`), Database Types (`src/lib/database.types.ts`), Supabase Migrations

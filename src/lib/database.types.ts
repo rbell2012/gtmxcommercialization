@@ -25,6 +25,7 @@ export interface DbTeam {
   accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   goal_scope_config: Record<string, unknown> | null;
+  relief_month_members: string[];
   mission_purpose: string;
   mission_submitted: boolean;
   mission_last_edit: string | null;
@@ -229,6 +230,7 @@ export interface DbTeamGoalsHistory {
   accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   goal_scope_config: Record<string, unknown>;
+  relief_month_members: string[];
   created_at: string;
 }
 

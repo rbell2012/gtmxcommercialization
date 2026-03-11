@@ -180,6 +180,7 @@ const Settings = () => {
   const [settingsNextExpanded, setSettingsNextExpanded] = useState(false);
   const [editTeamMembers, setEditTeamMembers] = useState<string[]>([]);
   const [editTeamMembersInitial, setEditTeamMembersInitial] = useState<string[]>([]);
+  const [editReliefMonthMembers, setEditReliefMonthMembers] = useState<string[]>([]);
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -288,6 +289,7 @@ const Settings = () => {
     setEditAcceleratorConfig({ ...team.acceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+    setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
     setSelectedEditMonth(null);
     const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
     setEditTeamMembers(currentRoster);
@@ -314,6 +316,7 @@ const Settings = () => {
         acceleratorConfig: { ...editAcceleratorConfig },
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
+        reliefMonthMembers: [...editReliefMonthMembers],
       });
       updateHistoricalRoster(editTeamId, selectedEditMonth, editTeamMembers);
       const label = selectedEditMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
@@ -332,6 +335,7 @@ const Settings = () => {
         acceleratorConfig: { ...editAcceleratorConfig },
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
+        reliefMonthMembers: [...editReliefMonthMembers],
       }));
 
       const added = editTeamMembers.filter((id) => !editTeamMembersInitial.includes(id));
@@ -666,6 +670,7 @@ const Settings = () => {
                         setEditAcceleratorConfig({ ...team.acceleratorConfig });
                         setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
                         setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                        setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
                         const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
                         setEditTeamMembers(currentRoster);
                         setEditTeamMembersInitial(currentRoster);
@@ -683,6 +688,7 @@ const Settings = () => {
                       setEditAcceleratorConfig({ ...entry.acceleratorConfig });
                       setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(entry.teamGoalsByLevel)));
                       setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...entry.goalScopeConfig });
+                      setEditReliefMonthMembers([...(entry.reliefMonthMembers ?? [])]);
                     } else if (team) {
                       setEditTeamParity(team.goalsParity);
                       setEditTeamGoals({ ...team.teamGoals });
@@ -690,6 +696,7 @@ const Settings = () => {
                       setEditAcceleratorConfig({ ...team.acceleratorConfig });
                       setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
                       setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+                      setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
                     }
                     if (team) {
                       const histMembers = getTeamMembersForMonth(team, d, memberTeamHistory, allMembersById).map((m) => m.id);
@@ -895,7 +902,12 @@ const Settings = () => {
                       <label className="text-xs font-medium text-muted-foreground">Parity</label>
                       <Switch
                         checked={editTeamParity}
-                        onCheckedChange={setEditTeamParity}
+                        onCheckedChange={(checked) => {
+                          setEditTeamParity(checked);
+                          if (checked && editReliefMonthMembers.length > 0) {
+                            setEditReliefMonthMembers(editTeamMembers);
+                          }
+                        }}
                         className="scale-75"
                       />
                     </div>
@@ -1008,6 +1020,68 @@ const Settings = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* ── Relief Month ── */}
+                {(() => {
+                  const reliefEnabled = editReliefMonthMembers.length > 0;
+                  const rosterMembers = editTeamMembers
+                    .map((id) => allMembersById.get(id))
+                    .filter(Boolean) as import("@/contexts/TeamsContext").TeamMember[];
+                  const toggleRelief = (enabled: boolean) => {
+                    if (!enabled) {
+                      setEditReliefMonthMembers([]);
+                    } else if (editTeamParity) {
+                      setEditReliefMonthMembers(editTeamMembers);
+                    } else {
+                      setEditReliefMonthMembers(editTeamMembers);
+                    }
+                  };
+                  const effectiveParity = editTeamParity && reliefEnabled;
+                  return (
+                    <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-foreground">Relief Month</h4>
+                        <Switch
+                          checked={reliefEnabled}
+                          onCheckedChange={toggleRelief}
+                          className="scale-75"
+                        />
+                      </div>
+                      {reliefEnabled && (
+                        <>
+                          <p className="text-[10px] text-muted-foreground">
+                            {effectiveParity
+                              ? "Parity is on — all members receive relief (100% quota)."
+                              : "Select which members receive relief (100% quota) this month."}
+                          </p>
+                          <div className="space-y-1">
+                            {rosterMembers.map((m) => {
+                              const checked = editReliefMonthMembers.includes(m.id);
+                              return (
+                                <label key={m.id} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={effectiveParity}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setEditReliefMonthMembers((prev) => [...prev, m.id]);
+                                      } else {
+                                        setEditReliefMonthMembers((prev) => prev.filter((id) => id !== m.id));
+                                      }
+                                    }}
+                                    className="h-3 w-3 rounded border-border accent-primary"
+                                  />
+                                  <span className="text-xs text-foreground">{m.name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* ── Accelerator ── */}
                 {(() => {

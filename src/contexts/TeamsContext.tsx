@@ -158,6 +158,7 @@ export interface Team {
   acceleratorConfig: AcceleratorConfig;
   teamGoalsByLevel: TeamGoalsByLevel;
   goalScopeConfig: GoalScopeConfig;
+  reliefMonthMembers: string[];
   members: TeamMember[];
 }
 
@@ -183,6 +184,7 @@ export interface TeamGoalsHistoryEntry {
   acceleratorConfig: AcceleratorConfig;
   teamGoalsByLevel: TeamGoalsByLevel;
   goalScopeConfig: GoalScopeConfig;
+  reliefMonthMembers: string[];
 }
 
 export interface MemberGoalsHistoryEntry {
@@ -226,6 +228,7 @@ export function getHistoricalTeam(
     acceleratorConfig: entry.acceleratorConfig,
     teamGoalsByLevel: entry.teamGoalsByLevel,
     goalScopeConfig: entry.goalScopeConfig,
+    reliefMonthMembers: entry.reliefMonthMembers,
   };
 }
 
@@ -411,6 +414,7 @@ function assembleTeams(
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
+      reliefMonthMembers: (t.relief_month_members as string[]) ?? [],
       members: sortedDbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -469,6 +473,7 @@ interface TeamsContextType {
     acceleratorConfig: AcceleratorConfig;
     teamGoalsByLevel: TeamGoalsByLevel;
     goalScopeConfig: GoalScopeConfig;
+    reliefMonthMembers: string[];
   }) => void;
   updateHistoricalRoster: (teamId: string, referenceDate: Date, memberIds: string[]) => void;
   loading: boolean;
@@ -891,6 +896,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       acceleratorConfig: (h.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (h.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (h.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
+      reliefMonthMembers: (h.relief_month_members as string[]) ?? [],
     }));
 
     const memberGoalsHistoryEntries: MemberGoalsHistoryEntry[] = ((mghRes.data ?? []) as DbMemberGoalsHistory[]).map((h) => ({
@@ -982,6 +988,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     acceleratorConfig: AcceleratorConfig;
     teamGoalsByLevel: TeamGoalsByLevel;
     goalScopeConfig: GoalScopeConfig;
+    reliefMonthMembers: string[];
   }) => {
     dbMutate(
       supabase
@@ -995,6 +1002,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           accelerator_config: goals.acceleratorConfig,
           team_goals_by_level: goals.teamGoalsByLevel,
           goal_scope_config: goals.goalScopeConfig,
+          relief_month_members: goals.reliefMonthMembers,
         }, { onConflict: "team_id,month" }),
       "upsert team goals history",
     );
@@ -1027,7 +1035,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
           JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
           JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
-          JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig)
+          JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig) ||
+          JSON.stringify(old.reliefMonthMembers) !== JSON.stringify(updated.reliefMonthMembers)
         );
 
         if (
@@ -1086,6 +1095,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 accelerator_config: updated.acceleratorConfig,
                 team_goals_by_level: updated.teamGoalsByLevel,
                 goal_scope_config: updated.goalScopeConfig,
+                relief_month_members: updated.reliefMonthMembers,
               })
               .eq("id", teamId),
             "update team",
@@ -1106,6 +1116,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 accelerator_config: updated.acceleratorConfig,
                 team_goals_by_level: updated.teamGoalsByLevel,
                 goal_scope_config: updated.goalScopeConfig,
+                relief_month_members: updated.reliefMonthMembers,
               }, { onConflict: "team_id,month" }),
             "snapshot team goals history",
           );
@@ -1121,6 +1132,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               acceleratorConfig: { ...updated.acceleratorConfig },
               teamGoalsByLevel: { ...updated.teamGoalsByLevel },
               goalScopeConfig: { ...updated.goalScopeConfig },
+              reliefMonthMembers: [...updated.reliefMonthMembers],
             };
             if (idx >= 0) {
               const next = [...prev];
@@ -1175,6 +1187,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           acceleratorConfig: {},
           teamGoalsByLevel: { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
           goalScopeConfig: { ...DEFAULT_GOAL_SCOPE_CONFIG },
+          reliefMonthMembers: [],
           members: [],
         };
         dbMutate(
@@ -1268,6 +1281,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
+      reliefMonthMembers: (t.relief_month_members as string[]) ?? [],
       members: [],
     };
 

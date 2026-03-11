@@ -15,7 +15,7 @@ import {
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
-import { getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
+import { getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, isMemberOnRelief, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -331,29 +331,38 @@ function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
   );
 }
 
-function QuotaBreakdownTooltip({ breakdown }: { breakdown: QuotaBreakdown }) {
+function QuotaBreakdownTooltip({ breakdown, isRelief }: { breakdown: QuotaBreakdown; isRelief?: boolean }) {
   return (
     <div className="text-xs leading-relaxed">
       <p className="font-semibold mb-1.5">Quota Breakdown</p>
-      <div className="space-y-0.5">
-        {breakdown.metricRatios.map((r) => (
-          <div key={r.metric} className="flex justify-between gap-4 text-muted-foreground">
-            <span>{GOAL_METRIC_LABELS[r.metric]}</span>
-            <span>
-              <span className="font-semibold text-foreground">{r.current}</span>
-              {" / "}
-              <span className="font-semibold text-foreground">{r.goal}</span>
-              {" = "}
-              <span className="font-semibold text-foreground">{r.pct.toFixed(1)}%</span>
-            </span>
+      {isRelief ? (
+        <div className="flex justify-between gap-4 text-muted-foreground">
+          <span>Relief month</span>
+          <span className="font-semibold text-green-500">100.0%</span>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-0.5">
+            {breakdown.metricRatios.map((r) => (
+              <div key={r.metric} className="flex justify-between gap-4 text-muted-foreground">
+                <span>{GOAL_METRIC_LABELS[r.metric]}</span>
+                <span>
+                  <span className="font-semibold text-foreground">{r.current}</span>
+                  {" / "}
+                  <span className="font-semibold text-foreground">{r.goal}</span>
+                  {" = "}
+                  <span className="font-semibold text-foreground">{r.pct.toFixed(1)}%</span>
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="my-1.5 border-t border-border" />
-      <div className="flex justify-between gap-4 text-muted-foreground">
-        <span>Base avg</span>
-        <span className="font-semibold text-foreground">{breakdown.baseQuota.toFixed(1)}%</span>
-      </div>
+          <div className="my-1.5 border-t border-border" />
+          <div className="flex justify-between gap-4 text-muted-foreground">
+            <span>Base avg</span>
+            <span className="font-semibold text-foreground">{breakdown.baseQuota.toFixed(1)}%</span>
+          </div>
+        </>
+      )}
       {breakdown.acceleratorSteps.length > 0 && (
         <>
           {breakdown.acceleratorSteps.map((step, i) => {
@@ -406,6 +415,7 @@ function MemberQuotaRow({
 }) {
   const [copiedMetric, setCopiedMetric] = useState<string | null>(null);
   const [forceOpenMetric, setForceOpenMetric] = useState<string | null>(null);
+  const onRelief = isMemberOnRelief(team, member);
   const quotaPct = computeQuota(team, member, referenceDate);
   const quotaBreakdown = computeQuotaBreakdown(team, member, referenceDate);
   const triggeredCount = countTriggeredAccelerators(team, member, referenceDate);
@@ -419,6 +429,9 @@ function MemberQuotaRow({
         <div className="flex flex-col items-start">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-foreground whitespace-nowrap">{member.name}</span>
+            {onRelief && (
+              <span className="text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 bg-green-500/15 border border-green-500/40 text-green-500">Relief</span>
+            )}
             {member.ducksEarned > 0 && (
               <span className="flex items-center">
                 {[...Array(member.ducksEarned)].map((_, j) => (
@@ -430,14 +443,14 @@ function MemberQuotaRow({
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                className={`text-xs font-bold tabular-nums mt-0.5 cursor-help ${quotaColorClass}`}
-                style={quotaColor ? { color: quotaColor } : undefined}
+                className={`text-xs font-bold tabular-nums mt-0.5 cursor-help ${onRelief ? 'text-green-500' : quotaColorClass}`}
+                style={!onRelief && quotaColor ? { color: quotaColor } : undefined}
               >
                 {Math.min(quotaPct, 200).toFixed(0)}% Quota
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="max-w-[280px]">
-              <QuotaBreakdownTooltip breakdown={quotaBreakdown} />
+              <QuotaBreakdownTooltip breakdown={quotaBreakdown} isRelief={onRelief} />
             </TooltipContent>
           </Tooltip>
           {triggeredCount > 0 && (
@@ -476,8 +489,8 @@ function MemberQuotaRow({
         const goal = getEffectiveGoal(team, member, metric);
         const current = getScopedMetricTotal(team, member, metric, referenceDate);
         const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
-        const needed = Math.max(0, goal - current);
-        const pct = goal > 0 ? Math.min((current / goal) * 100, 100) : 0;
+        const needed = onRelief ? 0 : Math.max(0, goal - current);
+        const pct = onRelief ? 100 : (goal > 0 ? Math.min((current / goal) * 100, 100) : 0);
         const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
         const accountNames = hasAccountNames ? getScopedAccountNames(team, member, metric, referenceDate) : [];
 
@@ -493,7 +506,7 @@ function MemberQuotaRow({
             )}
             <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
               <div
-                className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                className={`h-full rounded-full transition-all duration-500 ease-out ${onRelief ? 'bg-green-500' : METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
