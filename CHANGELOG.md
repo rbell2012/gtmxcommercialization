@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-11 (Global — Performance Optimization & Code Splitting)
+
+### Location — App Shell (`src/App.tsx`), Vite Config (`vite.config.ts`), HTML Entry (`index.html`), Global CSS (`src/index.css`), TeamsContext (`src/contexts/TeamsContext.tsx`), Data Page (`src/pages/Data.tsx`), Index Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Dependencies (`package.json`)
+
+**Rationale:** The app shipped a single 1.2 MB JS bundle with all pages and vendor libraries loaded upfront, render-blocking Google Fonts in CSS, 5 unused npm packages, duplicate Supabase data fetching between TeamsContext and the Data page, and no component memoization — all of which slowed initial page load and caused unnecessary re-renders.
+
+**Changes:**
+- Converted all 8 page imports in App.tsx from static to `React.lazy()` dynamic imports and wrapped routes in `<Suspense>` with a loading fallback, splitting the single bundle into per-page chunks (initial load dropped from 1.2 MB to ~156 KB).
+- Added `build.rollupOptions.output.manualChunks` to vite.config.ts to separate recharts (~383 KB), @radix-ui (~266 KB), and @supabase/supabase-js (~174 KB) into dedicated vendor chunks loaded on demand.
+- Moved Google Fonts from a render-blocking CSS `@import` in index.css to `<link rel="preconnect">` and `<link rel="stylesheet">` tags in index.html for faster font discovery and non-blocking CSS parsing.
+- Removed 5 unused npm dependencies: embla-carousel-react, react-day-picker, react-resizable-panels, cmdk, and vaul. Deleted the unused src/App.css file.
+- Wrapped the TeamsContext provider value object in `useMemo` to prevent all context consumers from re-rendering on every provider render.
+- Configured the existing (but default) React Query `QueryClient` with `staleTime: 5 min`, `retry: 1`, and `refetchOnWindowFocus: false`.
+- Deduplicated data fetching on the Data page — replaced 3 duplicate Supabase queries (members, teams, member_team_history) with derived values from TeamsContext. Added `loadArchivedMembers()` on mount and merged archived members into the members list so historical attribution for archived reps is preserved.
+- Wrapped `TeamTab` (Index page) and `MemberQuotaRow` (Quota page) in `React.memo`. Stabilized `toggleSection`, `handleBarClick`, and `addRole` callbacks with `useCallback`.
+- Fixed a pre-existing bug where refreshing a pilot page (e.g. `/Mad_Max`) redirected to `/home` because the redirect `useEffect` in Index.tsx fired before TeamsContext finished loading. Added a `teamsLoading` guard so the redirect only runs once teams are available.
+
+---
+
 ## 2026-03-11 (Quota — Wider Quota Breakdown Tooltip)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)

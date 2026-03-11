@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
@@ -1664,40 +1664,47 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     ]);
   }, [memberTeamHistory]);
 
+  const contextValue = useMemo(() => ({
+    teams,
+    setTeams,
+    unassignedMembers,
+    setUnassignedMembers,
+    memberTeamHistory,
+    teamGoalsHistory,
+    memberGoalsHistory,
+    allMembersById,
+    archivedTeams,
+    loadArchivedTeams,
+    unarchiveTeam,
+    archivedMembers,
+    loadArchivedMembers,
+    archiveMember,
+    unarchiveMember,
+    updateTeam,
+    addTeam,
+    removeTeam,
+    reorderTeams,
+    reorderMembers,
+    toggleTeamActive,
+    createMember,
+    updateMember,
+    assignMember,
+    unassignMember,
+    removeMember,
+    upsertTeamGoalsHistory,
+    updateHistoricalRoster,
+    loading,
+  }), [
+    teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
+    allMembersById, archivedTeams, archivedMembers, loading,
+    loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
+    updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,
+    createMember, updateMember, assignMember, unassignMember, removeMember,
+    upsertTeamGoalsHistory, updateHistoricalRoster,
+  ]);
+
   return (
-    <TeamsContext.Provider
-      value={{
-        teams,
-        setTeams,
-        unassignedMembers,
-        setUnassignedMembers,
-        memberTeamHistory,
-        teamGoalsHistory,
-        memberGoalsHistory,
-        allMembersById,
-        archivedTeams,
-        loadArchivedTeams,
-        unarchiveTeam,
-        archivedMembers,
-        loadArchivedMembers,
-        archiveMember,
-        unarchiveMember,
-        updateTeam,
-        addTeam,
-        removeTeam,
-        reorderTeams,
-        reorderMembers,
-        toggleTeamActive,
-        createMember,
-        updateMember,
-        assignMember,
-        unassignMember,
-        removeMember,
-        upsertTeamGoalsHistory,
-        updateHistoricalRoster,
-        loading,
-      }}
-    >
+    <TeamsContext.Provider value={contextValue}>
       {children}
     </TeamsContext.Provider>
   );

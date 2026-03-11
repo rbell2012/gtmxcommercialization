@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -5,18 +6,27 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from "react-router-dom";
 import { HelpCircle, Settings, Home as HomeIcon, Map as MapIcon, FileChartColumn, Target } from "lucide-react";
 import { ThemeProvider } from "next-themes";
-import Home from "./pages/Home";
-import Index from "./pages/Index";
-import Data from "./pages/Data";
-import Quota from "./pages/Quota";
-import Roadmap from "./pages/Roadmap";
-import Help from "./pages/Help";
-import SettingsPage from "./pages/Settings";
-import NotFound from "./pages/NotFound";
 import { TeamsProvider, useTeams, pilotNameToSlug } from "./contexts/TeamsContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
-const queryClient = new QueryClient();
+const Home = lazy(() => import("./pages/Home"));
+const Index = lazy(() => import("./pages/Index"));
+const Data = lazy(() => import("./pages/Data"));
+const Quota = lazy(() => import("./pages/Quota"));
+const Roadmap = lazy(() => import("./pages/Roadmap"));
+const Help = lazy(() => import("./pages/Help"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function Nav() {
   const location = useLocation();
@@ -111,17 +121,19 @@ const App = () => (
         <TeamsProvider>
           <BrowserRouter>
             <Nav />
-            <Routes>
-              <Route path="/" element={<Navigate to="/home" replace />} />
-              <Route path="/home" element={<Home />} />
-              <Route path="/:pilotId" element={<Index />} />
-              <Route path="/data" element={<Data />} />
-              <Route path="/quota" element={<Quota />} />
-              <Route path="/roadmap" element={<Roadmap />} />
-              <Route path="/help" element={<Help />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<div className="flex items-center justify-center h-[60vh] text-muted-foreground">Loading…</div>}>
+              <Routes>
+                <Route path="/" element={<Navigate to="/home" replace />} />
+                <Route path="/home" element={<Home />} />
+                <Route path="/:pilotId" element={<Index />} />
+                <Route path="/data" element={<Data />} />
+                <Route path="/quota" element={<Quota />} />
+                <Route path="/roadmap" element={<Roadmap />} />
+                <Route path="/help" element={<Help />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TeamsProvider>
       </TooltipProvider>

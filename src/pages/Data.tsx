@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
+import { useTeams } from "@/contexts/TeamsContext";
 import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign, ChevronsUpDown, Download, FileChartColumn } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -248,12 +249,31 @@ export default function Data() {
   const [editingRevxTeam, setEditingRevxTeam] = useState<string | null>(null);
   const [revxSaving, setRevxSaving] = useState<Set<string>>(new Set());
 
+  const { teams: ctxTeams, allMembersById, memberTeamHistory, archivedMembers, loadArchivedMembers, loading: ctxLoading } = useTeams();
+
+  const teams = useMemo<TeamBasic[]>(() =>
+    ctxTeams.map((t) => ({ id: t.id, name: t.name, start_date: t.startDate, end_date: t.endDate, is_active: t.isActive })),
+    [ctxTeams],
+  );
+
+  const members = useMemo<MemberBasic[]>(() => {
+    const active = Array.from(allMembersById.values()).map((m) => ({ id: m.id, name: m.name }));
+    const activeIds = new Set(active.map((m) => m.id));
+    const archived = archivedMembers
+      .filter((m) => !activeIds.has(m.id))
+      .map((m) => ({ id: m.id, name: m.name }));
+    return [...active, ...archived];
+  }, [allMembersById, archivedMembers]);
+
+  const teamHistory = useMemo<DbMemberTeamHistory[]>(() =>
+    memberTeamHistory.map((h) => ({ id: h.id, member_id: h.memberId, team_id: h.teamId, started_at: h.startedAt, ended_at: h.endedAt })),
+    [memberTeamHistory],
+  );
+
   const [metricsData, setMetricsData] = useState<DbSuperhex[]>([]);
-  const [members, setMembers] = useState<MemberBasic[]>([]);
-  const [teamHistory, setTeamHistory] = useState<DbMemberTeamHistory[]>([]);
-  const [teams, setTeams] = useState<TeamBasic[]>([]);
   const [selectedTeam, setSelectedTeam] = useState("all");
-  const [loading, setLoading] = useState(true);
+  const [localLoading, setLocalLoading] = useState(true);
+  const loading = ctxLoading || localLoading;
 
   const [testTimeMode, setTestTimeMode] = useState<"month" | "week">("month");
   const [testTimeValue, setTestTimeValue] = useState<string>("");
@@ -271,20 +291,14 @@ export default function Data() {
     });
 
   useEffect(() => {
+    loadArchivedMembers();
     async function load() {
-      const [metricsRes, membersRes, historyRes, teamsRes, revxRes] = await Promise.all([
+      const [metricsRes, revxRes] = await Promise.all([
         supabase.from("superhex").select("*").limit(50000),
-        supabase.from("members").select("id, name"),
-        supabase.from("member_team_history").select("*"),
-        supabase.from("teams").select("id, name, start_date, end_date, is_active").is("archived_at", null).order("sort_order"),
         supabase.from("revx_impact_values").select("*"),
       ]);
       setMetricsData((metricsRes.data ?? []) as DbSuperhex[]);
-      setMembers((membersRes.data ?? []) as MemberBasic[]);
-      setTeamHistory((historyRes.data ?? []) as DbMemberTeamHistory[]);
-      setTeams((teamsRes.data ?? []) as TeamBasic[]);
 
-      // Seed revx values from Supabase, overriding any stale localStorage data
       const dbRevx = (revxRes.data ?? []) as DbRevxImpactValue[];
       if (dbRevx.length > 0) {
         const fromDb: Record<string, string> = {};
@@ -298,7 +312,7 @@ export default function Data() {
         });
       }
 
-      setLoading(false);
+      setLocalLoading(false);
     }
     load();
   }, []);

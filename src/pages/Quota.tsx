@@ -1,4 +1,4 @@
-import { useState, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
+import { useState, useMemo, memo, Component, type ReactNode, type ErrorInfo } from "react";
 import { Target, Calendar, LockOpen, Lock } from "lucide-react";
 import {
   useTeams,
@@ -432,7 +432,7 @@ function QuotaBreakdownTooltip({ breakdown, isRelief }: { breakdown: QuotaBreakd
   );
 }
 
-function MemberQuotaRow({
+const MemberQuotaRow = memo(function MemberQuotaRow({
   team,
   member,
   daysLeft,
@@ -598,7 +598,7 @@ function MemberQuotaRow({
       })}
     </tr>
   );
-}
+});
 
 class QuotaErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };

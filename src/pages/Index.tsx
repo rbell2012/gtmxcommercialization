@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
@@ -274,7 +274,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, loading: teamsLoading } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -287,12 +287,12 @@ const Index = () => {
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
-  const toggleSection = (key: string) =>
+  const toggleSection = useCallback((key: string) =>
     setCollapsedSections((prev) => {
       const next = { ...prev, [key]: !prev[key] };
       try { localStorage.setItem("collapsed-sections", JSON.stringify(next)); } catch {}
       return next;
-    });
+    }), []);
 
   const resolvedTeam = pilotId
     ? teams.find((t) => pilotNameToSlug(t.name) === pilotId) ?? teams[0]
@@ -316,11 +316,12 @@ const Index = () => {
   const referenceDate = selectedMonth ?? undefined;
 
   useEffect(() => {
+    if (teamsLoading) return;
     if (pilotId && !teams.find((t) => pilotNameToSlug(t.name) === pilotId)) {
       const firstSlug = teams[0] ? pilotNameToSlug(teams[0].name) : "home";
       navigate(`/${firstSlug}`, { replace: true });
     }
-  }, [pilotId, teams, navigate]);
+  }, [pilotId, teams, teamsLoading, navigate]);
 
   useEffect(() => {
     if (location.hash) {
@@ -420,12 +421,12 @@ const Index = () => {
     updateTeam(activeTeam.id, (t) => ({ ...t, endDate: newEnd }));
   };
 
-  const addRole = () => {
+  const addRole = useCallback(() => {
     if (!newRoleName.trim() || allRoles.includes(newRoleName.trim())) return;
     addCustomRole(newRoleName.trim());
     setNewRoleName("");
     setAddRoleOpen(false);
-  };
+  }, [newRoleName, allRoles, addCustomRole]);
 
   const addWin = () => {
     if (!selectedMember || !restaurantName.trim()) return;
@@ -513,10 +514,10 @@ const Index = () => {
     setAddMemberOpen(false);
   };
 
-  const handleBarClick = (data: any) => {
+  const handleBarClick = useCallback((data: any) => {
     const member = activeTeam?.members.find((m) => m.name === data.name);
     if (member) setDetailMember(member);
-  };
+  }, [activeTeam]);
 
   return (
     <div className="min-h-screen bg-background px-4 py-8 md:px-8">
@@ -1228,7 +1229,7 @@ const Index = () => {
   );
 };
 
-function TeamTab({
+const TeamTab = memo(function TeamTab({
   team,
   onAddMemberClick,
   selectedMember,
@@ -1640,7 +1641,7 @@ function TeamTab({
                                           <span className="text-xs font-semibold text-foreground tabular-nums">{currentValue}</span>
                                           <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                                             <div
-                                              className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                              className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : "progress-bar-orange"}`}
                                               style={{ width: `${barPct}%` }}
                                             />
                                           </div>
@@ -2495,7 +2496,7 @@ function TeamTab({
       <div id="gtmx-impact" className="scroll-mt-16" />
     </div>
   );
-}
+});
 
 const GOAL_METRIC_TO_CHART_LABEL: Record<GoalMetric, string> = {
   calls: "Call",
