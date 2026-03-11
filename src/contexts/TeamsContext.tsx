@@ -33,6 +33,18 @@ export interface AcceleratorRule {
 
 export type AcceleratorConfig = Partial<Record<GoalMetric, AcceleratorRule[]>>;
 
+export type AcceleratorMode = 'basic' | 'logic';
+
+export interface BasicAcceleratorMetricConfig {
+  enabled: boolean;
+  minValue: number;
+  minPct: number;
+  maxValue: number;
+  scope?: GoalScope;
+}
+
+export type BasicAcceleratorConfig = Partial<Record<GoalMetric, BasicAcceleratorMetricConfig>>;
+
 export const MEMBER_LEVELS = ['adr', 'bdr', 'rep', 'senior', 'principal', 'lead'] as const;
 export type MemberLevel = (typeof MEMBER_LEVELS)[number];
 
@@ -156,6 +168,8 @@ export interface Team {
   teamGoals: MemberGoals;
   enabledGoals: EnabledGoals;
   acceleratorConfig: AcceleratorConfig;
+  acceleratorMode: AcceleratorMode;
+  basicAcceleratorConfig: BasicAcceleratorConfig;
   teamGoalsByLevel: TeamGoalsByLevel;
   goalScopeConfig: GoalScopeConfig;
   reliefMonthMembers: string[];
@@ -182,6 +196,8 @@ export interface TeamGoalsHistoryEntry {
   teamGoals: MemberGoals;
   enabledGoals: EnabledGoals;
   acceleratorConfig: AcceleratorConfig;
+  acceleratorMode: AcceleratorMode;
+  basicAcceleratorConfig: BasicAcceleratorConfig;
   teamGoalsByLevel: TeamGoalsByLevel;
   goalScopeConfig: GoalScopeConfig;
   reliefMonthMembers: string[];
@@ -226,6 +242,8 @@ export function getHistoricalTeam(
     teamGoals: entry.teamGoals,
     enabledGoals: entry.enabledGoals,
     acceleratorConfig: entry.acceleratorConfig,
+    acceleratorMode: entry.acceleratorMode,
+    basicAcceleratorConfig: entry.basicAcceleratorConfig,
     teamGoalsByLevel: entry.teamGoalsByLevel,
     goalScopeConfig: entry.goalScopeConfig,
     reliefMonthMembers: entry.reliefMonthMembers,
@@ -412,6 +430,8 @@ function assembleTeams(
         activity: t.goal_enabled_activity ?? false,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
+      acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
+      basicAcceleratorConfig: (t.basic_accelerator_config as BasicAcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       reliefMonthMembers: (t.relief_month_members as string[]) ?? [],
@@ -471,6 +491,8 @@ interface TeamsContextType {
     teamGoals: MemberGoals;
     enabledGoals: EnabledGoals;
     acceleratorConfig: AcceleratorConfig;
+    acceleratorMode: AcceleratorMode;
+    basicAcceleratorConfig: BasicAcceleratorConfig;
     teamGoalsByLevel: TeamGoalsByLevel;
     goalScopeConfig: GoalScopeConfig;
     reliefMonthMembers: string[];
@@ -894,6 +916,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       teamGoals: (h.team_goals as MemberGoals) ?? { ...DEFAULT_GOALS },
       enabledGoals: (h.enabled_goals as EnabledGoals) ?? { ...DEFAULT_ENABLED_GOALS },
       acceleratorConfig: (h.accelerator_config as AcceleratorConfig) ?? {},
+      acceleratorMode: (h.accelerator_mode as AcceleratorMode) ?? 'basic',
+      basicAcceleratorConfig: (h.basic_accelerator_config as BasicAcceleratorConfig) ?? {},
       teamGoalsByLevel: (h.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (h.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       reliefMonthMembers: (h.relief_month_members as string[]) ?? [],
@@ -986,6 +1010,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     teamGoals: MemberGoals;
     enabledGoals: EnabledGoals;
     acceleratorConfig: AcceleratorConfig;
+    acceleratorMode: AcceleratorMode;
+    basicAcceleratorConfig: BasicAcceleratorConfig;
     teamGoalsByLevel: TeamGoalsByLevel;
     goalScopeConfig: GoalScopeConfig;
     reliefMonthMembers: string[];
@@ -1000,6 +1026,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           team_goals: goals.teamGoals,
           enabled_goals: goals.enabledGoals,
           accelerator_config: goals.acceleratorConfig,
+          accelerator_mode: goals.acceleratorMode,
+          basic_accelerator_config: goals.basicAcceleratorConfig,
           team_goals_by_level: goals.teamGoalsByLevel,
           goal_scope_config: goals.goalScopeConfig,
           relief_month_members: goals.reliefMonthMembers,
@@ -1034,6 +1062,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
           JSON.stringify(old.enabledGoals) !== JSON.stringify(updated.enabledGoals) ||
           JSON.stringify(old.acceleratorConfig) !== JSON.stringify(updated.acceleratorConfig) ||
+          old.acceleratorMode !== updated.acceleratorMode ||
+          JSON.stringify(old.basicAcceleratorConfig) !== JSON.stringify(updated.basicAcceleratorConfig) ||
           JSON.stringify(old.teamGoalsByLevel) !== JSON.stringify(updated.teamGoalsByLevel) ||
           JSON.stringify(old.goalScopeConfig) !== JSON.stringify(updated.goalScopeConfig) ||
           JSON.stringify(old.reliefMonthMembers) !== JSON.stringify(updated.reliefMonthMembers)
@@ -1093,6 +1123,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 goal_enabled_feedback: updated.enabledGoals.feedback,
                 goal_enabled_activity: updated.enabledGoals.activity,
                 accelerator_config: updated.acceleratorConfig,
+                accelerator_mode: updated.acceleratorMode,
+                basic_accelerator_config: updated.basicAcceleratorConfig,
                 team_goals_by_level: updated.teamGoalsByLevel,
                 goal_scope_config: updated.goalScopeConfig,
                 relief_month_members: updated.reliefMonthMembers,
@@ -1114,6 +1146,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 team_goals: updated.teamGoals,
                 enabled_goals: updated.enabledGoals,
                 accelerator_config: updated.acceleratorConfig,
+                accelerator_mode: updated.acceleratorMode,
+                basic_accelerator_config: updated.basicAcceleratorConfig,
                 team_goals_by_level: updated.teamGoalsByLevel,
                 goal_scope_config: updated.goalScopeConfig,
                 relief_month_members: updated.reliefMonthMembers,
@@ -1130,6 +1164,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
               teamGoals: { ...updated.teamGoals },
               enabledGoals: { ...updated.enabledGoals },
               acceleratorConfig: { ...updated.acceleratorConfig },
+              acceleratorMode: updated.acceleratorMode,
+              basicAcceleratorConfig: { ...updated.basicAcceleratorConfig },
               teamGoalsByLevel: { ...updated.teamGoalsByLevel },
               goalScopeConfig: { ...updated.goalScopeConfig },
               reliefMonthMembers: [...updated.reliefMonthMembers],
@@ -1185,6 +1221,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },
           acceleratorConfig: {},
+          acceleratorMode: 'basic',
+          basicAcceleratorConfig: {},
           teamGoalsByLevel: { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
           goalScopeConfig: { ...DEFAULT_GOAL_SCOPE_CONFIG },
           reliefMonthMembers: [],
@@ -1279,6 +1317,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         activity: t.goal_enabled_activity ?? false,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
+      acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
+      basicAcceleratorConfig: (t.basic_accelerator_config as BasicAcceleratorConfig) ?? {},
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       reliefMonthMembers: (t.relief_month_members as string[]) ?? [],

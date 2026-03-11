@@ -15,7 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -1561,88 +1561,112 @@ function TeamTab({
                     <a href="/settings" className="text-primary underline hover:text-primary/80">Settings</a>
                   </p>
                 ) : noGoalsConfigured && hasReliefMembers ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border">
-                          <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
-                          <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">Quota</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {goalMembers.map((m) => {
-                          const onRelief = isMemberOnRelief(team, m);
-                          const quotaPct = computeQuota(team, m, referenceDate);
-                          const triggeredCount = countTriggeredAccelerators(team, m, referenceDate);
-                          const triggeredDetails = getTriggeredAcceleratorDetails(team, m, referenceDate);
-                          return (
-                            <tr key={m.id} className="border-b border-border/30">
-                              <td className="py-3 pr-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-foreground whitespace-nowrap">{m.name}</span>
-                                  {onRelief && (
-                                    <span className="text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 bg-green-500/15 border border-green-500/40 text-green-500">Relief</span>
-                                  )}
-                                  {m.ducksEarned > 0 && (
-                                    <span className="flex items-center">
-                                      {[...Array(m.ducksEarned)].map((_, j) => (
-                                        <span key={j} className="text-xs">🦆</span>
-                                      ))}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="py-3 px-2">
-                                <div className="flex flex-col items-center gap-1">
-                                  <span className={`text-xs font-bold tabular-nums ${onRelief ? "text-green-400" : "text-foreground"}`}>
-                                    {Math.min(quotaPct, 200).toFixed(0)}%
-                                  </span>
-                                  <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-500 ease-out ${onRelief ? "bg-green-500" : "progress-bar-orange"}`}
-                                      style={{ width: `${Math.min(quotaPct, 100)}%` }}
-                                    />
-                                  </div>
-                                  {triggeredCount > 0 && (
-                                    <div className="flex items-center gap-1 mt-0.5">
-                                      {Array.from({ length: Math.min(triggeredCount, 3) }, (_, i) => {
-                                        const tier = i + 1;
-                                        const isMax = tier === 3;
-                                        const detail = triggeredDetails[i];
-                                        return (
-                                          <UiTooltip key={tier}>
-                                            <TooltipTrigger asChild>
-                                              <span className="inline-flex items-center gap-px text-xs font-bold cursor-help text-primary">
-                                                {isMax ? (
-                                                  <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
-                                                ) : (
-                                                  <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
-                                                )}
-                                              </span>
-                                            </TooltipTrigger>
-                                            {detail && (
-                                              <TooltipContent side="top" className="max-w-[240px]">
-                                                <div className="text-xs leading-relaxed">
-                                                  <p className="font-semibold mb-1">{GOAL_METRIC_LABELS[detail.metric]} Accelerator</p>
-                                                  <p className="text-muted-foreground">
-                                                    {GOAL_METRIC_LABELS[detail.metric]} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
-                                                  </p>
-                                                </div>
-                                              </TooltipContent>
-                                            )}
-                                          </UiTooltip>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
+                  (() => {
+                    const accelMetrics = GOAL_METRICS.filter((metric) => {
+                      if ((team.acceleratorMode ?? 'basic') === 'basic') {
+                        return (team.basicAcceleratorConfig ?? {})[metric]?.enabled;
+                      }
+                      const rules = (team.acceleratorConfig ?? {})[metric];
+                      return rules && Array.isArray(rules) && rules.some((r) => r?.enabled);
+                    });
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-border">
+                              <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
+                              {accelMetrics.map((metric) => (
+                                <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
+                                  {GOAL_METRIC_LABELS[metric]}
+                                </th>
+                              ))}
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          </thead>
+                          <tbody>
+                            {goalMembers.map((m) => {
+                              const onRelief = isMemberOnRelief(team, m);
+                              return (
+                                <tr key={m.id} className="border-b border-border/30">
+                                  <td className="py-3 pr-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium text-foreground whitespace-nowrap">{m.name}</span>
+                                      {onRelief && (
+                                        <span className="text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 bg-green-500/15 border border-green-500/40 text-green-500">Relief</span>
+                                      )}
+                                      {m.ducksEarned > 0 && (
+                                        <span className="flex items-center">
+                                          {[...Array(m.ducksEarned)].map((_, j) => (
+                                            <span key={j} className="text-xs">🦆</span>
+                                          ))}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  {accelMetrics.map((metric, metricIdx) => {
+                                    const progress = getAcceleratorProgress(team, m, metric, referenceDate);
+                                    if (!progress) return <td key={metric} className="py-3 px-2" />;
+                                    const { currentValue, triggeredRules, nextRule, needed, totalRules } = progress;
+                                    const allTriggered = triggeredRules.length === totalRules;
+                                    const barPct = nextRule
+                                      ? Math.min((currentValue / (nextRule.conditionValue1 + 1)) * 100, 100)
+                                      : 100;
+                                    return (
+                                      <td key={metric} className="py-3 px-2">
+                                        <div className="flex flex-col items-center gap-1">
+                                          <span className="text-xs font-semibold text-foreground tabular-nums">{currentValue}</span>
+                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
+                                              style={{ width: `${barPct}%` }}
+                                            />
+                                          </div>
+                                          {!allTriggered && needed > 0 && (
+                                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                                              need <span className="font-semibold text-foreground">{needed}</span>
+                                            </span>
+                                          )}
+                                          {triggeredRules.length > 0 && (
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              {triggeredRules.map((detail, i) => {
+                                                const tier = i + 1;
+                                                const isMax = tier === totalRules;
+                                                return (
+                                                  <UiTooltip key={i}>
+                                                    <TooltipTrigger asChild>
+                                                      <span className="inline-flex items-center gap-px text-xs font-bold cursor-help text-primary">
+                                                        {isMax ? (
+                                                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                                                        ) : (
+                                                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                                                        )}
+                                                      </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-[240px]">
+                                                      <div className="text-xs leading-relaxed">
+                                                        <p className="font-semibold mb-1">{GOAL_METRIC_LABELS[detail.metric]} Accelerator</p>
+                                                        <p className="text-muted-foreground">
+                                                          {GOAL_METRIC_LABELS[detail.metric]} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+                                                          {" "}({detail.rule.conditionOperator} {detail.rule.conditionValue1})
+                                                        </p>
+                                                      </div>
+                                                    </TooltipContent>
+                                                  </UiTooltip>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()
                 ) : (
                   <>
                     <div className="overflow-x-auto">
@@ -2466,10 +2490,19 @@ function getDefaultMetrics(team: Team): Set<string> {
       if (label) defaults.add(label);
     }
   }
-  for (const [metric, rules] of Object.entries(team.acceleratorConfig)) {
-    if (rules?.some((r) => r.enabled)) {
-      const label = GOAL_METRIC_TO_CHART_LABEL[metric as GoalMetric];
-      if (label) defaults.add(label);
+  if ((team.acceleratorMode ?? 'basic') === 'basic') {
+    for (const [metric, cfg] of Object.entries(team.basicAcceleratorConfig ?? {})) {
+      if (cfg?.enabled) {
+        const label = GOAL_METRIC_TO_CHART_LABEL[metric as GoalMetric];
+        if (label) defaults.add(label);
+      }
+    }
+  } else {
+    for (const [metric, rules] of Object.entries(team.acceleratorConfig)) {
+      if (rules?.some((r) => r.enabled)) {
+        const label = GOAL_METRIC_TO_CHART_LABEL[metric as GoalMetric];
+        if (label) defaults.add(label);
+      }
     }
   }
   return defaults;

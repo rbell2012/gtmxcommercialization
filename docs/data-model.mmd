@@ -1,0 +1,420 @@
+erDiagram
+    %% ═══════════════════════════════════════════
+    %% GTMx Commercialization — Data Model
+    %% ═══════════════════════════════════════════
+
+    %% ────────── CORE DOMAIN ──────────
+
+    teams {
+        uuid id PK
+        text name
+        text owner
+        text lead_rep
+        int sort_order
+        bool is_active
+        date start_date
+        date end_date
+        int total_tam
+        bool tam_submitted
+        bool goals_parity
+        int team_goal_calls
+        int team_goal_ops
+        int team_goal_demos
+        int team_goal_wins
+        int team_goal_feedback
+        int team_goal_activity
+        bool goal_enabled_calls
+        bool goal_enabled_ops
+        bool goal_enabled_demos
+        bool goal_enabled_wins
+        bool goal_enabled_feedback
+        bool goal_enabled_activity
+        jsonb accelerator_config
+        text accelerator_mode
+        jsonb basic_accelerator_config
+        jsonb team_goals_by_level
+        jsonb goal_scope_config
+        text mission_purpose
+        bool mission_submitted
+        timestamptz mission_last_edit
+        text executive_sponsor
+        text executive_proxy
+        text revenue_lever
+        text business_goal
+        text what_we_are_testing
+        timestamptz archived_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    members {
+        uuid id PK
+        uuid team_id FK
+        text name
+        int goal_calls
+        int goal_ops
+        int goal_demos
+        int goal_wins
+        int goal_feedback
+        int goal_activity
+        int ducks_earned
+        bool is_active
+        text level
+        int sort_order
+        timestamptz archived_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    weekly_funnels {
+        uuid id PK
+        uuid member_id FK
+        text week_key
+        text role
+        int tam
+        int calls
+        int connects
+        int ops
+        int demos
+        int wins
+        int feedback
+        int activity
+        bool submitted
+        timestamptz submitted_at
+    }
+
+    win_entries {
+        uuid id PK
+        uuid member_id FK
+        text restaurant
+        text story
+        date date
+        timestamptz created_at
+    }
+
+    %% ────────── SETTINGS / CONFIG ──────────
+
+    test_phases {
+        uuid id PK
+        text month
+        text label
+        int progress
+        int sort_order
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    mission {
+        uuid id PK
+        text content
+        bool submitted
+        timestamptz updated_at
+    }
+
+    tam_config {
+        uuid id PK
+        int total_tam
+        bool submitted
+        timestamptz updated_at
+    }
+
+    custom_roles {
+        uuid id PK
+        text name UK
+        timestamptz created_at
+    }
+
+    team_phase_labels {
+        uuid id PK
+        uuid team_id FK
+        int month_index
+        text label
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    team_phase_priorities {
+        uuid id PK
+        uuid team_id FK
+        int month_index
+        text priority
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    findings {
+        uuid id PK
+        text content
+        timestamptz created_at
+    }
+
+    %% ────────── EXTERNAL METRICS (by rep_name) ──────────
+
+    superhex {
+        uuid id PK
+        text salesforce_accountid
+        text account_name
+        text rep_name
+        int total_activities
+        date first_activity_date
+        date last_activity_date
+        int total_calls
+        date first_call_date
+        date last_call_date
+        int total_connects
+        date first_connect_date
+        text chorus_link
+        date chorus_date
+        int total_demos
+        date first_demo_date
+        text op_name
+        date op_date
+        text op_stage
+        bool is_won
+        date win_date
+        text feedback
+        date feedback_date
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_tam {
+        uuid id PK
+        text source
+        text rep_name
+        int tam
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_demos {
+        uuid id PK
+        date demo_date
+        text demo_source
+        text salesforce_accountid
+        text rep_name
+        text account_name
+        text subject
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_ops {
+        uuid id PK
+        date op_date
+        text opportunity_name
+        text opportunity_stage
+        text salesforce_accountid
+        text rep_name
+        text gtmx_team
+        text account_prospecting_notes
+        text opportunity_type
+        date op_created_date
+        date win_stage_date
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_wins {
+        uuid id PK
+        date win_date
+        text account_name
+        text salesforce_accountid
+        text rep_name
+        text opportunity_name
+        text opportunity_stage
+        text gtmx_team
+        text account_prospecting_notes
+        text opportunity_type
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_feedback {
+        uuid id PK
+        date feedback_date
+        text rep_name
+        text account_name
+        text source
+        text feedback
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_activity {
+        uuid id PK
+        date activity_date
+        text salesforce_accountid
+        text rep_name
+        text activity_type
+        text subject
+        text status
+        text activity_outcome
+        text activity_source
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_calls {
+        uuid id PK
+        date call_date
+        text salesforce_accountid
+        text rep_name
+        text call_type
+        text subject
+        text status
+        text call_outcome
+        text call_source
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_connects {
+        uuid id PK
+        date connect_date
+        text salesforce_accountid
+        text rep_name
+        text connect_type
+        text subject
+        text status
+        text connect_outcome
+        text connect_source
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_chorus {
+        uuid id PK
+        text account_name
+        text salesforce_accountid
+        text comments
+        text chorus_link
+        text rep_name
+        date chorus_date
+        int rn
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% ────────── HISTORY / AUDIT ──────────
+
+    member_team_history {
+        uuid id PK
+        uuid member_id FK
+        uuid team_id FK
+        timestamptz started_at
+        timestamptz ended_at
+    }
+
+    team_goals_history {
+        uuid id PK
+        uuid team_id FK
+        text month
+        bool goals_parity
+        jsonb team_goals
+        jsonb enabled_goals
+        jsonb accelerator_config
+        text accelerator_mode
+        jsonb basic_accelerator_config
+        jsonb team_goals_by_level
+        jsonb goal_scope_config
+        timestamptz created_at
+    }
+
+    member_goals_history {
+        uuid id PK
+        uuid member_id FK
+        text month
+        jsonb goals
+        text level
+        timestamptz created_at
+    }
+
+    funnel_edit_log {
+        uuid id PK
+        uuid member_id FK
+        text week_key
+        text edited_by
+        timestamptz edited_at
+    }
+
+    audit_log {
+        uuid id PK
+        text table_name
+        text record_id
+        text action
+        jsonb old_data
+        jsonb new_data
+        timestamptz changed_at
+    }
+
+    %% ────────── IMPACT / FUTURE ──────────
+
+    revx_impact_values {
+        uuid id PK
+        uuid team_id FK
+        numeric value_per_win
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    activation_adoption_entries {
+        uuid id PK
+        uuid member_id FK
+        uuid team_id FK
+        text metric_name
+        numeric metric_value
+        text week_key
+        text notes
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    gtmx_impact_entries {
+        uuid id PK
+        uuid team_id FK
+        text metric_name
+        numeric metric_value
+        text period
+        text notes
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% ═══════════════════════════════════════════
+    %% RELATIONSHIPS
+    %% ═══════════════════════════════════════════
+
+    %% Core: teams → members → funnels / wins
+    teams ||--o{ members : "has"
+    members ||--o{ weekly_funnels : "logs weekly"
+    members ||--o{ win_entries : "records"
+
+    %% Team-scoped config
+    teams ||--o{ team_phase_labels : "labels phases"
+    teams ||--o{ team_phase_priorities : "prioritizes phases"
+    teams ||--o| revx_impact_values : "has impact value"
+
+    %% History tracking
+    members ||--o{ member_team_history : "tracked in"
+    teams ||--o{ member_team_history : "had member"
+    teams ||--o{ team_goals_history : "snapshot goals"
+    members ||--o{ member_goals_history : "snapshot goals"
+    members ||--o{ funnel_edit_log : "edits tracked"
+
+    %% Future tables
+    members ||--o{ activation_adoption_entries : "activation"
+    teams ||--o{ activation_adoption_entries : "adoption"
+    teams ||--o{ gtmx_impact_entries : "impact"
+
+    %% External metrics (linked by rep_name, no FK)
+    members }o..o{ superhex : "rep_name"
+    members }o..o{ metrics_tam : "rep_name"
+    members }o..o{ metrics_demos : "rep_name"
+    members }o..o{ metrics_ops : "rep_name"
+    members }o..o{ metrics_wins : "rep_name"
+    members }o..o{ metrics_feedback : "rep_name"
+    members }o..o{ metrics_activity : "rep_name"
+    members }o..o{ metrics_calls : "rep_name"
+    members }o..o{ metrics_connects : "rep_name"
+    members }o..o{ metrics_chorus : "rep_name"

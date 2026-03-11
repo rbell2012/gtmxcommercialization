@@ -305,7 +305,35 @@ function formatAction(rule: AcceleratorRule): string {
 
 function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
   const label = GOAL_METRIC_LABELS[detail.metric];
-  const scope = detail.rule.scope ?? 'individual';
+
+  if (detail.basicConfig) {
+    const scope = detail.basicConfig.scope ?? 'individual';
+    return (
+      <div className="text-xs leading-relaxed">
+        <div className="flex items-center gap-1.5 mb-1">
+          <p className="font-semibold">{label} Accelerator</p>
+          <span
+            className={`text-[8px] font-bold uppercase tracking-wider rounded px-1 py-px border ${
+              scope === 'team'
+                ? 'bg-primary/15 border-primary/40 text-primary'
+                : 'bg-muted/50 border-border/50 text-muted-foreground'
+            }`}
+          >
+            {scope === 'team' ? 'TEAM' : 'SELF'}
+          </span>
+        </div>
+        <p className="text-muted-foreground">
+          {label} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+          {" "}(range {detail.basicConfig.minValue} – {detail.basicConfig.maxValue})
+        </p>
+        <p className="text-muted-foreground mt-0.5">
+          Effect: <span className="font-semibold text-foreground">+{detail.bonusPct?.toFixed(1)}% to quota</span>
+        </p>
+      </div>
+    );
+  }
+
+  const scope = detail.rule?.scope ?? 'individual';
   return (
     <div className="text-xs leading-relaxed">
       <div className="flex items-center gap-1.5 mb-1">
@@ -322,11 +350,13 @@ function AcceleratorTooltip({ detail }: { detail: TriggeredAccelerator }) {
       </div>
       <p className="text-muted-foreground">
         {label} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
-        {" "}({formatCondition(detail.rule)})
+        {detail.rule && <>{" "}({formatCondition(detail.rule)})</>}
       </p>
-      <p className="text-muted-foreground mt-0.5">
-        Effect: <span className="font-semibold text-foreground">{formatAction(detail.rule)}</span>
-      </p>
+      {detail.rule && (
+        <p className="text-muted-foreground mt-0.5">
+          Effect: <span className="font-semibold text-foreground">{formatAction(detail.rule)}</span>
+        </p>
+      )}
     </div>
   );
 }
@@ -366,23 +396,25 @@ function QuotaBreakdownTooltip({ breakdown, isRelief }: { breakdown: QuotaBreakd
       {breakdown.acceleratorSteps.length > 0 && (
         <>
           {breakdown.acceleratorSteps.map((step, i) => {
-            const ruleScope = step.rule.scope ?? 'individual';
+            const scope = step.basicConfig?.scope ?? step.rule?.scope ?? 'individual';
             return (
               <div key={i} className="flex justify-between gap-4 text-muted-foreground mt-0.5">
                 <span className="flex items-center gap-1">
                   {GOAL_METRIC_LABELS[step.metric]} accel
                   <span
                     className={`text-[7px] font-bold uppercase rounded px-0.5 border leading-tight ${
-                      ruleScope === 'team'
+                      scope === 'team'
                         ? 'bg-primary/15 border-primary/40 text-primary'
                         : 'bg-muted/50 border-border/50 text-muted-foreground'
                     }`}
                   >
-                    {ruleScope === 'team' ? 'TM' : 'SF'}
+                    {scope === 'team' ? 'TM' : 'SF'}
                   </span>
                 </span>
                 <span>
-                  <span className="font-semibold text-foreground">{formatAction(step.rule)}</span>
+                  <span className="font-semibold text-foreground">
+                    {step.rule ? formatAction(step.rule) : `+${step.bonusPct?.toFixed(1)}% to quota`}
+                  </span>
                   {" \u2192 "}
                   <span className="font-semibold text-foreground">{step.quotaAfter.toFixed(1)}%</span>
                 </span>

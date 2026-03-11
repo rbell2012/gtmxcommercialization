@@ -1,4 +1,4 @@
-import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule } from "@/contexts/TeamsContext";
+import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig } from "@/contexts/TeamsContext";
 
 /**
  * Sum a single metric for a calendar month using monthlyMetrics (which
@@ -184,6 +184,25 @@ function applyAction(rule: AcceleratorRule, quota: number): number {
   return quota;
 }
 
+function getBasicAccelMetricTotal(team: Team, member: TeamMember, metric: GoalMetric, config: BasicAcceleratorMetricConfig, referenceDate?: Date): number {
+  const scope = config.scope ?? 'individual';
+  return scope === 'team'
+    ? getTeamMetricTotal(team, metric, referenceDate)
+    : getMemberMetricTotal(member, metric, referenceDate);
+}
+
+/**
+ * Linear interpolation between minPct at minValue and 200% at maxValue.
+ * Below minValue: 0. At or above maxValue: 200.
+ */
+function computeBasicBonus(config: BasicAcceleratorMetricConfig, current: number): number {
+  if (current < config.minValue) return 0;
+  if (current >= config.maxValue) return 200;
+  const range = config.maxValue - config.minValue;
+  if (range <= 0) return config.minPct;
+  return config.minPct + ((current - config.minValue) / range) * (200 - config.minPct);
+}
+
 /**
  * Compute quota %: average (current/goal) across enabled metrics,
  * then apply any active accelerator rules.
@@ -205,15 +224,26 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
     quota = ratios.reduce((sum, r) => sum + r, 0) / ratios.length;
   }
 
-  const accelConfig = team.acceleratorConfig ?? {};
-  for (const metric of GOAL_METRICS) {
-    const rules = accelConfig[metric];
-    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
-    for (const rule of rules) {
-      if (!rule?.enabled) continue;
-      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
-      if (evaluateCondition(rule, current)) {
-        quota = applyAction(rule, quota);
+  const mode = team.acceleratorMode ?? 'basic';
+  if (mode === 'basic') {
+    const basicConfig = team.basicAcceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const cfg = basicConfig[metric];
+      if (!cfg?.enabled) continue;
+      const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
+      quota += computeBasicBonus(cfg, current);
+    }
+  } else {
+    const accelConfig = team.acceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const rules = accelConfig[metric];
+      if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      for (const rule of rules) {
+        if (!rule?.enabled) continue;
+        const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
+        if (evaluateCondition(rule, current)) {
+          quota = applyAction(rule, quota);
+        }
       }
     }
   }
@@ -226,14 +256,25 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
  */
 export function countTriggeredAccelerators(team: Team, member: TeamMember, referenceDate?: Date): number {
   let count = 0;
-  const accelConfig = team.acceleratorConfig ?? {};
-  for (const metric of GOAL_METRICS) {
-    const rules = accelConfig[metric];
-    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
-    for (const rule of rules) {
-      if (!rule?.enabled) continue;
-      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
-      if (evaluateCondition(rule, current)) count++;
+  const mode = team.acceleratorMode ?? 'basic';
+  if (mode === 'basic') {
+    const basicConfig = team.basicAcceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const cfg = basicConfig[metric];
+      if (!cfg?.enabled) continue;
+      const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
+      if (current >= cfg.minValue) count++;
+    }
+  } else {
+    const accelConfig = team.acceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const rules = accelConfig[metric];
+      if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      for (const rule of rules) {
+        if (!rule?.enabled) continue;
+        const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
+        if (evaluateCondition(rule, current)) count++;
+      }
     }
   }
   return count;
@@ -248,7 +289,9 @@ export interface QuotaMetricRatio {
 
 export interface QuotaAcceleratorStep {
   metric: GoalMetric;
-  rule: AcceleratorRule;
+  rule?: AcceleratorRule;
+  basicConfig?: BasicAcceleratorMetricConfig;
+  bonusPct?: number;
   quotaBefore: number;
   quotaAfter: number;
 }
@@ -284,17 +327,33 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
   let quota = baseQuota;
   const acceleratorSteps: QuotaAcceleratorStep[] = [];
 
-  const accelConfig = team.acceleratorConfig ?? {};
-  for (const metric of GOAL_METRICS) {
-    const rules = accelConfig[metric];
-    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
-    for (const rule of rules) {
-      if (!rule?.enabled) continue;
-      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
-      if (evaluateCondition(rule, current)) {
+  const mode = team.acceleratorMode ?? 'basic';
+  if (mode === 'basic') {
+    const basicConfig = team.basicAcceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const cfg = basicConfig[metric];
+      if (!cfg?.enabled) continue;
+      const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
+      const bonus = computeBasicBonus(cfg, current);
+      if (bonus > 0) {
         const before = quota;
-        quota = applyAction(rule, quota);
-        acceleratorSteps.push({ metric, rule, quotaBefore: before, quotaAfter: quota });
+        quota += bonus;
+        acceleratorSteps.push({ metric, basicConfig: cfg, bonusPct: bonus, quotaBefore: before, quotaAfter: quota });
+      }
+    }
+  } else {
+    const accelConfig = team.acceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const rules = accelConfig[metric];
+      if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      for (const rule of rules) {
+        if (!rule?.enabled) continue;
+        const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
+        if (evaluateCondition(rule, current)) {
+          const before = quota;
+          quota = applyAction(rule, quota);
+          acceleratorSteps.push({ metric, rule, quotaBefore: before, quotaAfter: quota });
+        }
       }
     }
   }
@@ -305,22 +364,101 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
 export interface TriggeredAccelerator {
   metric: GoalMetric;
   currentValue: number;
-  rule: AcceleratorRule;
+  rule?: AcceleratorRule;
+  basicConfig?: BasicAcceleratorMetricConfig;
+  bonusPct?: number;
 }
 
 export function getTriggeredAcceleratorDetails(team: Team, member: TeamMember, referenceDate?: Date): TriggeredAccelerator[] {
   const results: TriggeredAccelerator[] = [];
-  const accelConfig = team.acceleratorConfig ?? {};
-  for (const metric of GOAL_METRICS) {
-    const rules = accelConfig[metric];
-    if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
-    for (const rule of rules) {
-      if (!rule?.enabled) continue;
-      const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
-      if (evaluateCondition(rule, current)) {
-        results.push({ metric, currentValue: current, rule });
+  const mode = team.acceleratorMode ?? 'basic';
+  if (mode === 'basic') {
+    const basicConfig = team.basicAcceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const cfg = basicConfig[metric];
+      if (!cfg?.enabled) continue;
+      const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
+      if (current >= cfg.minValue) {
+        const bonus = computeBasicBonus(cfg, current);
+        results.push({ metric, currentValue: current, basicConfig: cfg, bonusPct: bonus });
+      }
+    }
+  } else {
+    const accelConfig = team.acceleratorConfig ?? {};
+    for (const metric of GOAL_METRICS) {
+      const rules = accelConfig[metric];
+      if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      for (const rule of rules) {
+        if (!rule?.enabled) continue;
+        const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
+        if (evaluateCondition(rule, current)) {
+          results.push({ metric, currentValue: current, rule });
+        }
       }
     }
   }
   return results;
+}
+
+export interface AcceleratorProgress {
+  metric: GoalMetric;
+  currentValue: number;
+  triggeredRules: TriggeredAccelerator[];
+  nextRule: AcceleratorRule | null;
+  needed: number;
+  totalRules: number;
+}
+
+/**
+ * For a single metric, return progress through its accelerator tiers:
+ * which rules are triggered, which is next, and how far away it is.
+ * Returns null if the metric has no enabled accelerator rules.
+ */
+export function getAcceleratorProgress(
+  team: Team, member: TeamMember, metric: GoalMetric, referenceDate?: Date,
+): AcceleratorProgress | null {
+  const rules = (team.acceleratorConfig ?? {})[metric];
+  if (!rules || !Array.isArray(rules) || rules.length === 0) return null;
+
+  const enabledRules = rules.filter((r) => r?.enabled);
+  if (enabledRules.length === 0) return null;
+
+  const triggered: TriggeredAccelerator[] = [];
+  let nextRule: AcceleratorRule | null = null;
+
+  for (const rule of enabledRules) {
+    const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
+    if (evaluateCondition(rule, current)) {
+      triggered.push({ metric, currentValue: current, rule });
+    } else if (!nextRule) {
+      nextRule = rule;
+    }
+  }
+
+  const firstRule = enabledRules[0];
+  const currentValue = getAccelMetricTotal(team, member, metric, firstRule, referenceDate);
+
+  let needed = 0;
+  if (nextRule) {
+    switch (nextRule.conditionOperator) {
+      case '>':
+        needed = Math.max(0, nextRule.conditionValue1 + 1 - currentValue);
+        break;
+      case '<':
+        needed = Math.max(0, currentValue - nextRule.conditionValue1 + 1);
+        break;
+      case 'between':
+        needed = Math.max(0, nextRule.conditionValue1 - currentValue);
+        break;
+    }
+  }
+
+  return {
+    metric,
+    currentValue,
+    triggeredRules: triggered,
+    nextRule,
+    needed,
+    totalRules: enabledRules.length,
+  };
 }

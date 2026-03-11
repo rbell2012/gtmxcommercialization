@@ -23,6 +23,8 @@ export interface DbTeam {
   goal_enabled_feedback: boolean;
   goal_enabled_activity: boolean;
   accelerator_config: Record<string, unknown>;
+  accelerator_mode: string;
+  basic_accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   goal_scope_config: Record<string, unknown> | null;
   relief_month_members: string[];
@@ -228,6 +230,8 @@ export interface DbTeamGoalsHistory {
   team_goals: Record<string, unknown>;
   enabled_goals: Record<string, unknown>;
   accelerator_config: Record<string, unknown>;
+  accelerator_mode: string;
+  basic_accelerator_config: Record<string, unknown>;
   team_goals_by_level: Record<string, unknown>;
   goal_scope_config: Record<string, unknown>;
   relief_month_members: string[];

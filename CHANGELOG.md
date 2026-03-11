@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-11 (Index — Relief-Only Table: Per-Metric Accelerator Progress)
+
+### Location — Index Page (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** When relief month is active but no goals are configured, the Monthly Goals section showed a "Quota" column with the quota percentage. Since relief always grants 100% base, this wasn't actionable. Instead, the table should display per-metric accelerator progress so reps can see their current values, which accelerator tiers they've unlocked, and how far they are from the next one.
+
+**Changes:**
+- Added `AcceleratorProgress` interface and `getAcceleratorProgress()` helper to `quota-helpers.ts`. For a given metric, it returns the current value, which rules are triggered, the next untriggered rule, how many more the member needs to reach it, and the total rule count.
+- Replaced the "Quota" column in the relief-only Monthly Goals table (no goals configured + relief members active) with one column per metric that has enabled accelerator rules (e.g., "Wins").
+- Each accelerator metric cell now shows: current value (bold), a progress bar toward the next untriggered threshold (full green if all triggered), "need X" text showing distance to the next tier, and unlock icons for triggered tiers (`LockOpen` + tier number, `Lock` + MAX for the final tier) with tooltips showing rule details.
+- If no accelerator rules exist at all, the table renders member names with relief badges only (no metric columns).
+
+---
+
 ## 2026-03-11 (Settings / Index / Quota — Relief Month Goals Feature)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`), Index Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Supabase Migrations

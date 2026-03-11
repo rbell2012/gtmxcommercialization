@@ -35,6 +35,9 @@ import {
   type EnabledGoals,
   type AcceleratorConfig,
   type AcceleratorRule,
+  type AcceleratorMode,
+  type BasicAcceleratorConfig,
+  type BasicAcceleratorMetricConfig,
   type TeamGoalsByLevel,
   type GoalScopeConfig,
   DEFAULT_GOAL_SCOPE_CONFIG,
@@ -173,6 +176,8 @@ const Settings = () => {
   const [editTeamGoals, setEditTeamGoals] = useState<MemberGoals>({ ...DEFAULT_GOALS });
   const [editEnabledGoals, setEditEnabledGoals] = useState<EnabledGoals>({ ...DEFAULT_ENABLED_GOALS });
   const [editAcceleratorConfig, setEditAcceleratorConfig] = useState<AcceleratorConfig>({});
+  const [editAcceleratorMode, setEditAcceleratorMode] = useState<AcceleratorMode>('basic');
+  const [editBasicAcceleratorConfig, setEditBasicAcceleratorConfig] = useState<BasicAcceleratorConfig>({});
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
@@ -287,6 +292,8 @@ const Settings = () => {
     setEditTeamGoals({ ...team.teamGoals });
     setEditEnabledGoals({ ...team.enabledGoals });
     setEditAcceleratorConfig({ ...team.acceleratorConfig });
+    setEditAcceleratorMode(team.acceleratorMode ?? 'basic');
+    setEditBasicAcceleratorConfig({ ...team.basicAcceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
     setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
@@ -314,6 +321,8 @@ const Settings = () => {
         teamGoals: { ...editTeamGoals },
         enabledGoals: { ...editEnabledGoals },
         acceleratorConfig: { ...editAcceleratorConfig },
+        acceleratorMode: editAcceleratorMode,
+        basicAcceleratorConfig: { ...editBasicAcceleratorConfig },
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
         reliefMonthMembers: [...editReliefMonthMembers],
@@ -333,6 +342,8 @@ const Settings = () => {
         teamGoals: { ...editTeamGoals },
         enabledGoals: { ...editEnabledGoals },
         acceleratorConfig: { ...editAcceleratorConfig },
+        acceleratorMode: editAcceleratorMode,
+        basicAcceleratorConfig: { ...editBasicAcceleratorConfig },
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
         reliefMonthMembers: [...editReliefMonthMembers],
@@ -668,6 +679,8 @@ const Settings = () => {
                         setEditTeamGoals({ ...team.teamGoals });
                         setEditEnabledGoals({ ...team.enabledGoals });
                         setEditAcceleratorConfig({ ...team.acceleratorConfig });
+                        setEditAcceleratorMode(team.acceleratorMode ?? 'basic');
+                        setEditBasicAcceleratorConfig({ ...team.basicAcceleratorConfig });
                         setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
                         setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
                         setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
@@ -686,6 +699,8 @@ const Settings = () => {
                       setEditTeamGoals({ ...entry.teamGoals });
                       setEditEnabledGoals({ ...entry.enabledGoals });
                       setEditAcceleratorConfig({ ...entry.acceleratorConfig });
+                      setEditAcceleratorMode(entry.acceleratorMode ?? 'basic');
+                      setEditBasicAcceleratorConfig({ ...entry.basicAcceleratorConfig });
                       setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(entry.teamGoalsByLevel)));
                       setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...entry.goalScopeConfig });
                       setEditReliefMonthMembers([...(entry.reliefMonthMembers ?? [])]);
@@ -694,6 +709,8 @@ const Settings = () => {
                       setEditTeamGoals({ ...team.teamGoals });
                       setEditEnabledGoals({ ...team.enabledGoals });
                       setEditAcceleratorConfig({ ...team.acceleratorConfig });
+                      setEditAcceleratorMode(team.acceleratorMode ?? 'basic');
+                      setEditBasicAcceleratorConfig({ ...team.basicAcceleratorConfig });
                       setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
                       setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
                       setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
@@ -1117,120 +1134,237 @@ const Settings = () => {
                     setRules(metric, getRules(metric).filter((_, i) => i !== idx));
                   };
 
+                  const getBasicConfig = (metric: GoalMetric): BasicAcceleratorMetricConfig =>
+                    editBasicAcceleratorConfig[metric] ?? { enabled: false, minValue: 0, minPct: 0, maxValue: 0 };
+
+                  const updateBasicConfig = (metric: GoalMetric, updates: Partial<BasicAcceleratorMetricConfig>) => {
+                    setEditBasicAcceleratorConfig((prev) => ({
+                      ...prev,
+                      [metric]: { ...getBasicConfig(metric), ...updates },
+                    }));
+                  };
+
                   return (
                     <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
-                      <h4 className="text-sm font-semibold text-foreground">Accelerator</h4>
-                      <div className="space-y-4">
-                        {GOAL_METRICS.map((metric) => {
-                          const rules = getRules(metric);
-                          return (
-                            <div key={metric} className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-medium text-foreground">
-                                  {GOAL_METRIC_LABELS[metric]}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => addRule(metric)}
-                                  className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
-                                >
-                                  + Add Rule
-                                </button>
-                              </div>
-                              {rules.map((rule, idx) => (
-                                <div key={idx} className="ml-2 flex flex-wrap items-center gap-1.5 text-xs rounded-md bg-background/50 p-1.5 border border-border/30">
-                                  <span className="font-semibold text-muted-foreground">IF</span>
-                                  <span className="font-medium text-foreground">{GOAL_METRIC_LABELS[metric]}</span>
-                                  <select
-                                    value={rule.conditionOperator}
-                                    onChange={(e) => updateRule(metric, idx, { conditionOperator: e.target.value as AcceleratorRule['conditionOperator'] })}
-                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
-                                  >
-                                    <option value=">">&gt;</option>
-                                    <option value="<">&lt;</option>
-                                    <option value="between">between</option>
-                                  </select>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={rule.conditionValue1 || ""}
-                                    onChange={(e) => updateRule(metric, idx, { conditionValue1: Math.max(0, parseInt(e.target.value) || 0) })}
-                                    className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-semibold text-foreground">Accelerator</h4>
+                        <div className="flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditAcceleratorMode('basic')}
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-colors ${
+                              editAcceleratorMode === 'basic'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            Basic
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAcceleratorMode('logic')}
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-colors ${
+                              editAcceleratorMode === 'logic'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            Logic
+                          </button>
+                        </div>
+                      </div>
+
+                      {editAcceleratorMode === 'basic' ? (
+                        <div className="space-y-3">
+                          {GOAL_METRICS.map((metric) => {
+                            const cfg = getBasicConfig(metric);
+                            return (
+                              <div key={metric} className="space-y-1.5">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    checked={cfg.enabled}
+                                    onCheckedChange={(checked) => updateBasicConfig(metric, { enabled: checked })}
+                                    className="scale-75"
                                   />
-                                  {rule.conditionOperator === 'between' && (
-                                    <>
-                                      <span className="text-muted-foreground">and</span>
+                                  <span className="text-xs font-medium text-foreground">{GOAL_METRIC_LABELS[metric]}</span>
+                                </div>
+                                {cfg.enabled && (
+                                  <div className="ml-6 flex flex-wrap items-center gap-2 text-xs rounded-md bg-background/50 p-2 border border-border/30">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-muted-foreground">Min</span>
                                       <Input
                                         type="number"
                                         min={0}
-                                        value={rule.conditionValue2 || ""}
-                                        onChange={(e) => updateRule(metric, idx, { conditionValue2: Math.max(0, parseInt(e.target.value) || 0) })}
+                                        value={cfg.minValue || ""}
+                                        onChange={(e) => updateBasicConfig(metric, { minValue: Math.max(0, parseInt(e.target.value) || 0) })}
+                                        className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                        placeholder="val"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-muted-foreground">Min %</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={200}
+                                        value={cfg.minPct || ""}
+                                        onChange={(e) => updateBasicConfig(metric, { minPct: Math.min(200, Math.max(0, parseInt(e.target.value) || 0)) })}
+                                        className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                        placeholder="%"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-muted-foreground">Max</span>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={cfg.maxValue || ""}
+                                        onChange={(e) => updateBasicConfig(metric, { maxValue: Math.max(0, parseInt(e.target.value) || 0) })}
+                                        className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                        placeholder="val"
+                                      />
+                                    </div>
+                                    <span className="text-muted-foreground">(Max % = 200%)</span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateBasicConfig(metric, {
+                                          scope: (cfg.scope ?? 'individual') === 'individual' ? 'team' : 'individual',
+                                        })
+                                      }
+                                      className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border transition-colors shrink-0 ${
+                                        (cfg.scope ?? 'individual') === 'team'
+                                          ? 'bg-primary/15 border-primary/40 text-primary'
+                                          : 'bg-muted/50 border-border/50 text-muted-foreground'
+                                      }`}
+                                      title={(cfg.scope ?? 'individual') === 'team' ? 'Evaluates against team total' : 'Evaluates against individual rep'}
+                                    >
+                                      {(cfg.scope ?? 'individual') === 'team' ? 'TEAM' : 'SELF'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                          <p className="text-[10px] text-muted-foreground italic">
+                            Linearly scales from Min % at Min value to 200% at Max value, added to quota.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="space-y-4">
+                            {GOAL_METRICS.map((metric) => {
+                              const rules = getRules(metric);
+                              return (
+                                <div key={metric} className="space-y-1.5">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium text-foreground">
+                                      {GOAL_METRIC_LABELS[metric]}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => addRule(metric)}
+                                      className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
+                                    >
+                                      + Add Rule
+                                    </button>
+                                  </div>
+                                  {rules.map((rule, idx) => (
+                                    <div key={idx} className="ml-2 flex flex-wrap items-center gap-1.5 text-xs rounded-md bg-background/50 p-1.5 border border-border/30">
+                                      <span className="font-semibold text-muted-foreground">IF</span>
+                                      <span className="font-medium text-foreground">{GOAL_METRIC_LABELS[metric]}</span>
+                                      <select
+                                        value={rule.conditionOperator}
+                                        onChange={(e) => updateRule(metric, idx, { conditionOperator: e.target.value as AcceleratorRule['conditionOperator'] })}
+                                        className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                      >
+                                        <option value=">">&gt;</option>
+                                        <option value="<">&lt;</option>
+                                        <option value="between">between</option>
+                                      </select>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={rule.conditionValue1 || ""}
+                                        onChange={(e) => updateRule(metric, idx, { conditionValue1: Math.max(0, parseInt(e.target.value) || 0) })}
                                         className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
                                       />
-                                    </>
+                                      {rule.conditionOperator === 'between' && (
+                                        <>
+                                          <span className="text-muted-foreground">and</span>
+                                          <Input
+                                            type="number"
+                                            min={0}
+                                            value={rule.conditionValue2 || ""}
+                                            onChange={(e) => updateRule(metric, idx, { conditionValue2: Math.max(0, parseInt(e.target.value) || 0) })}
+                                            className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                          />
+                                        </>
+                                      )}
+                                      <span className="font-semibold text-muted-foreground">THEN</span>
+                                      <select
+                                        value={rule.actionOperator}
+                                        onChange={(e) => updateRule(metric, idx, { actionOperator: e.target.value as AcceleratorRule['actionOperator'] })}
+                                        className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                      >
+                                        <option value="+">+</option>
+                                        <option value="-">-</option>
+                                        <option value="*">*</option>
+                                      </select>
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={rule.actionValue || ""}
+                                        onChange={(e) => updateRule(metric, idx, { actionValue: Math.max(0, parseFloat(e.target.value) || 0) })}
+                                        className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
+                                      />
+                                      <select
+                                        value={rule.actionUnit}
+                                        onChange={(e) => updateRule(metric, idx, { actionUnit: e.target.value as AcceleratorRule['actionUnit'] })}
+                                        className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
+                                      >
+                                        <option value="%">%</option>
+                                        <option value="#">#</option>
+                                      </select>
+                                      <span className="text-muted-foreground font-medium">to Quota</span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateRule(metric, idx, {
+                                            scope: (rule.scope ?? 'individual') === 'individual' ? 'team' : 'individual',
+                                          })
+                                        }
+                                        className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border transition-colors shrink-0 ${
+                                          (rule.scope ?? 'individual') === 'team'
+                                            ? 'bg-primary/15 border-primary/40 text-primary'
+                                            : 'bg-muted/50 border-border/50 text-muted-foreground'
+                                        }`}
+                                        title={(rule.scope ?? 'individual') === 'team' ? 'Evaluates against team total' : 'Evaluates against individual rep'}
+                                      >
+                                        {(rule.scope ?? 'individual') === 'team' ? 'TEAM' : 'SELF'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeRule(metric, idx)}
+                                        className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+                                        title="Remove rule"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {rules.length === 0 && (
+                                    <p className="ml-2 text-[10px] text-muted-foreground italic">No rules. Click "+ Add Rule" to create one.</p>
                                   )}
-                                  <span className="font-semibold text-muted-foreground">THEN</span>
-                                  <select
-                                    value={rule.actionOperator}
-                                    onChange={(e) => updateRule(metric, idx, { actionOperator: e.target.value as AcceleratorRule['actionOperator'] })}
-                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
-                                  >
-                                    <option value="+">+</option>
-                                    <option value="-">-</option>
-                                    <option value="*">*</option>
-                                  </select>
-                                  <Input
-                                    type="number"
-                                    min={0}
-                                    value={rule.actionValue || ""}
-                                    onChange={(e) => updateRule(metric, idx, { actionValue: Math.max(0, parseFloat(e.target.value) || 0) })}
-                                    className="h-6 w-14 bg-background border-border/50 text-foreground text-xs text-center p-0"
-                                  />
-                                  <select
-                                    value={rule.actionUnit}
-                                    onChange={(e) => updateRule(metric, idx, { actionUnit: e.target.value as AcceleratorRule['actionUnit'] })}
-                                    className="h-6 rounded border border-border bg-background px-1 text-xs text-foreground"
-                                  >
-                                    <option value="%">%</option>
-                                    <option value="#">#</option>
-                                  </select>
-                                  <span className="text-muted-foreground font-medium">to Quota</span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      updateRule(metric, idx, {
-                                        scope: (rule.scope ?? 'individual') === 'individual' ? 'team' : 'individual',
-                                      })
-                                    }
-                                    className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border transition-colors shrink-0 ${
-                                      (rule.scope ?? 'individual') === 'team'
-                                        ? 'bg-primary/15 border-primary/40 text-primary'
-                                        : 'bg-muted/50 border-border/50 text-muted-foreground'
-                                    }`}
-                                    title={(rule.scope ?? 'individual') === 'team' ? 'Evaluates against team total' : 'Evaluates against individual rep'}
-                                  >
-                                    {(rule.scope ?? 'individual') === 'team' ? 'TEAM' : 'SELF'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => removeRule(metric, idx)}
-                                    className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
-                                    title="Remove rule"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
                                 </div>
-                              ))}
-                              {rules.length === 0 && (
-                                <p className="ml-2 text-[10px] text-muted-foreground italic">No rules. Click "+ Add Rule" to create one.</p>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground italic">
-                        Rules stack — all matching rules for a metric are applied in order to the Quota.
-                      </p>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-muted-foreground italic">
+                            Rules stack — all matching rules for a metric are applied in order to the Quota.
+                          </p>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
