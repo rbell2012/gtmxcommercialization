@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-11 (Index — Adjustable Funnel Overview Chart Date Range)
+
+### Location — Index Page (`src/pages/Index.tsx`)
+
+**Rationale:** The Funnel Overview chart always displayed every week from the team's start date to the present, which made it hard to focus on recent trends for long-running projects. Users needed a way to zoom into a shorter window (e.g. the last 4 or 12 weeks) and have that preference persist across all projects without reconfiguring each time.
+
+**Changes:**
+- Added `CHART_RANGE_OPTIONS` constant with five presets: 4 Weeks, 8 Weeks, 12 Weeks, 6 Months, and All.
+- Added `readChartRange()` and `saveChartRange()` helpers that persist the selected range in `localStorage` under the key `"funnel-chart-range"`, so the preference carries across all teams/projects for the same user.
+- Added `chartRange` state to `WeekOverWeekView`, initialized lazily from localStorage with a default of "All" (preserving existing behavior).
+- The full week list from `getTeamWeekKeys()` is now sliced to the last N entries based on the selected range. All downstream data (chart lines, player overlays, conversion-rate calculations) automatically respect the filter since they derive from the `weeks` array.
+- Added a styled `<select>` dropdown in the chart header bar, positioned to the left of the metric toggle pills, matching the existing muted/rounded-pill styling.
+
+---
+
 ## 2026-03-11 (Index — Relief-Only Table: Per-Metric Accelerator Progress)
 
 ### Location — Index Page (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)

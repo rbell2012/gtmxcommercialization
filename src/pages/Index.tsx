@@ -109,6 +109,30 @@ function getTeamWeekKeys(startDate: string | null, endDate: string | null): { ke
   return weeks;
 }
 
+const CHART_RANGE_OPTIONS = [
+  { value: "4w", label: "4 Weeks" },
+  { value: "8w", label: "8 Weeks" },
+  { value: "12w", label: "12 Weeks" },
+  { value: "26w", label: "6 Months" },
+  { value: "all", label: "All" },
+] as const;
+
+type ChartRange = (typeof CHART_RANGE_OPTIONS)[number]["value"];
+
+const CHART_RANGE_STORAGE_KEY = "funnel-chart-range";
+
+function readChartRange(): ChartRange {
+  try {
+    const v = localStorage.getItem(CHART_RANGE_STORAGE_KEY);
+    if (v && CHART_RANGE_OPTIONS.some((o) => o.value === v)) return v as ChartRange;
+  } catch { /* SSR / private browsing */ }
+  return "all";
+}
+
+function saveChartRange(v: ChartRange) {
+  try { localStorage.setItem(CHART_RANGE_STORAGE_KEY, v); } catch { /* noop */ }
+}
+
 function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
   return m.funnelByWeek?.[weekKey] ?? { ...emptyFunnel };
 }
@@ -2511,10 +2535,17 @@ function getDefaultMetrics(team: Team): Set<string> {
 function WeekOverWeekView({ team }: { team: Team }) {
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(() => getDefaultMetrics(team));
+  const [chartRange, setChartRange] = useState<ChartRange>(readChartRange);
   useEffect(() => { setSelectedMetrics(getDefaultMetrics(team)); }, [team.id]);
   const chartColors = useChartColors();
   const members = team.members;
-  const weeks = getTeamWeekKeys(team.startDate, team.endDate);
+
+  const allWeeks = getTeamWeekKeys(team.startDate, team.endDate);
+  const maxWeeks = chartRange === "all" ? allWeeks.length : parseInt(chartRange);
+  const weeks = allWeeks.slice(-maxWeeks);
+
+  const handleRangeChange = (v: ChartRange) => { setChartRange(v); saveChartRange(v); };
+
   const currentWeek = getCurrentWeekKey();
 
   const METRIC_COLORS: Record<string, string> = {
@@ -2625,7 +2656,17 @@ function WeekOverWeekView({ team }: { team: Team }) {
         <h2 className="font-display text-lg font-semibold text-foreground">
           {team.name} — Funnel Overview
         </h2>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={chartRange}
+            onChange={(e) => handleRangeChange(e.target.value as ChartRange)}
+            className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground outline-none transition-colors hover:bg-muted/80 focus:ring-1 focus:ring-primary"
+          >
+            {CHART_RANGE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <div className="flex flex-wrap gap-1">
           {metricKeys.map(({ label }) => {
             const isActive = selectedMetrics.has(label);
             return (
@@ -2643,6 +2684,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
               </button>
             );
           })}
+          </div>
         </div>
       </div>
       <div className="h-72">
