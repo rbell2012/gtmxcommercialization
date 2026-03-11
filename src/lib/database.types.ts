@@ -191,6 +191,7 @@ export interface DbMetricsOps {
   account_prospecting_notes: string | null;
   opportunity_type: string | null;
   op_created_date: string | null;
+  win_stage_date: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-11 (Project Pages / Data Page — Win Stage Qualification and Date Tracking)
+
+### Location — TeamsContext (`src/contexts/TeamsContext.tsx`), Data Page (`src/pages/Data.tsx`), Metrics Helpers (`src/lib/metrics-helpers.ts`), Database Types (`src/lib/database.types.ts`), Supabase Migrations
+
+**Rationale:** Wins were being counted regardless of opportunity stage, but they should only qualify based on stage thresholds that depend on opportunity type: "Existing Business (Upsell)" requires stage 14+, "New Business" requires stage 16+, and rows with both stage and type null count as legacy wins. Additionally, wins were bucketed by `win_date` which reflects the original close date, not when the opportunity actually reached a qualifying stage — causing wins to appear in the wrong month. The Data page raw event data also showed all wins unfiltered, creating a mismatch with funnel counts.
+
+**Changes:**
+- Added `win_stage_date` column to `metrics_ops` table via migration (`20260310100000_add_win_stage_date.sql`) to record when an opportunity first reaches a win-qualifying stage.
+- Created a Postgres trigger `set_win_stage_date()` that auto-stamps `win_stage_date = CURRENT_DATE` on qualifying inserts/updates, with type-aware thresholds (14+ for upsell, 16+ for new business, immediate for null/null).
+- Backfilled existing qualifying rows with `win_stage_date = op_date`.
+- Hardened the trigger via a second migration (`20260311000000_protect_win_stage_date.sql`) to preserve `OLD.win_stage_date` on UPDATE, protecting against pipeline upserts that don't carry the column forward.
+- Created shared helper `isWinStage(stage, opportunityType)` in `src/lib/metrics-helpers.ts` with the full qualification logic, plus a permissive `isSuperhexWinStage(opStage)` variant for superhex rows that lack opportunity type.
+- Updated `TeamsContext.tsx` to fetch `opportunity_stage` and `opportunity_type` from `metrics_wins`, filter to only qualified wins before aggregation, and bucket wins by `win_stage_date` (looked up from `metrics_ops` by ID) instead of `win_date` so wins count for the month they first qualified.
+- Updated `Data.tsx` deal averages to filter superhex wins through `isSuperhexWinStage`, and filtered the raw event data wins bucket through `isWinStage` so summary counts, detailed rows, and CSV exports all reflect only qualifying wins.
+- Added `win_stage_date` to `DbMetricsOps` TypeScript interface.
+
+---
+
 ## 2026-03-10 (Index — Dynamic Default Metrics for Funnel Overview Chart)
 
 ### Location — Project Page (`src/pages/Index.tsx`)

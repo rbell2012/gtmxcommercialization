@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { DbSuperhex, DbMemberTeamHistory, DbRevxImpactValue } from "@/lib/database.types";
+import { isSuperhexWinStage, isWinStage } from "@/lib/metrics-helpers";
 
 interface TeamBasic {
   id: string;
@@ -55,8 +56,9 @@ function computeDealCycleStats(rows: DbSuperhex[]): DealCycleStats {
   const activitiesForWin: number[] = [];
 
   for (const row of rows) {
-    if (row.first_call_date && row.win_date) {
-      dealCycleDays.push(daysBetween(row.first_call_date, row.win_date));
+    const qualifiedWin = row.win_date && isSuperhexWinStage(row.op_stage);
+    if (row.first_call_date && qualifiedWin) {
+      dealCycleDays.push(daysBetween(row.first_call_date, row.win_date!));
     }
     if (row.first_call_date && row.first_connect_date) {
       callToConnectDays.push(daysBetween(row.first_call_date, row.first_connect_date));
@@ -64,13 +66,13 @@ function computeDealCycleStats(rows: DbSuperhex[]): DealCycleStats {
     if (row.first_connect_date && row.first_demo_date) {
       connectToDemoDays.push(daysBetween(row.first_connect_date, row.first_demo_date));
     }
-    if (row.first_demo_date && row.win_date) {
-      demoToWinDays.push(daysBetween(row.first_demo_date, row.win_date));
+    if (row.first_demo_date && qualifiedWin) {
+      demoToWinDays.push(daysBetween(row.first_demo_date, row.win_date!));
     }
     if (row.first_demo_date) {
       activitiesForDemo.push(row.total_activities ?? 0);
     }
-    if (row.win_date) {
+    if (qualifiedWin) {
       activitiesForWin.push(row.total_activities ?? 0);
     }
   }
@@ -442,10 +444,16 @@ export default function Data() {
   }, [members]);
 
   const filteredTestData = useMemo(() => {
-    if (!testTeamOnly) return testData;
     const out: Record<string, any[]> = {};
     for (const [type, rows] of Object.entries(testData)) {
-      out[type] = rows.filter((r) => memberNameSet.has((r.rep_name as string ?? "").toLowerCase().trim()));
+      let filtered = rows;
+      if (testTeamOnly) {
+        filtered = filtered.filter((r) => memberNameSet.has((r.rep_name as string ?? "").toLowerCase().trim()));
+      }
+      if (type === "wins") {
+        filtered = filtered.filter((r: any) => isWinStage(r.opportunity_stage, r.opportunity_type));
+      }
+      out[type] = filtered;
     }
     return out;
   }, [testData, testTeamOnly, memberNameSet]);
@@ -532,7 +540,7 @@ export default function Data() {
 
   const winsByTeam = new Map<string, number>();
   for (const row of metricsData) {
-    if (row.win_date) {
+    if (row.win_date && isSuperhexWinStage(row.op_stage)) {
       const teamId = mapWinToTeam(row, membersByName, historyByMember);
       if (teamId) {
         winsByTeam.set(teamId, (winsByTeam.get(teamId) ?? 0) + 1);

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, ty
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
+import { isWinStage } from "@/lib/metrics-helpers";
 
 // ── Goal metrics system ──
 
@@ -530,8 +531,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
       fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
-      fetchAllRows("metrics_ops", "rep_name, op_date, op_created_date, opportunity_name"),
-      fetchAllRows("metrics_wins", "rep_name, win_date, account_name"),
+      fetchAllRows("metrics_ops", "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date"),
+      fetchAllRows("metrics_wins", "id, rep_name, win_date, account_name, opportunity_stage, opportunity_type"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
       fetchAllRows("metrics_tam", "rep_name, tam"),
@@ -581,12 +582,30 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const aggregateByWeek = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToWeekKey);
     const aggregateByMonth = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToMonthKey);
 
+    const qualifiedWinsRows = winsRows.filter((r) =>
+      isWinStage(r.opportunity_stage as string | null, r.opportunity_type as string | null)
+    );
+
+    // Build lookup from metrics_ops id → win_stage_date so wins are bucketed
+    // by the date their stage first qualified, not the original win_date.
+    const winStageDateById = new Map<string, string>();
+    for (const op of opsRows) {
+      const id = op.id as string | null;
+      const wsd = op.win_stage_date as string | null;
+      if (id && wsd) winStageDateById.set(id, wsd);
+    }
+
+    const winsWithEffectiveDate = qualifiedWinsRows.map((r) => {
+      const wsd = winStageDateById.get(r.id as string);
+      return wsd ? { ...r, _effective_date: wsd } : { ...r, _effective_date: r.win_date as string };
+    });
+
     const activityByWeek = aggregateByWeek(actRows, "activity_date");
     const callsByWeek = aggregateByWeek(callRows, "call_date");
     const connectsByWeek = aggregateByWeek(conRows, "connect_date");
     const demosByWeek = aggregateByWeek(demoRows, "demo_date");
     const opsByWeek = aggregateByWeek(opsRows, "op_created_date");
-    const winsByWeek = aggregateByWeek(winsRows, "win_date");
+    const winsByWeek = aggregateByWeek(winsWithEffectiveDate, "_effective_date");
     const feedbackByWeek = aggregateByWeek(fbRows, "feedback_date");
 
     const activityByMonth = aggregateByMonth(actRows, "activity_date");
@@ -594,7 +613,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const connectsByMonth = aggregateByMonth(conRows, "connect_date");
     const demosByMonth = aggregateByMonth(demoRows, "demo_date");
     const opsByMonth = aggregateByMonth(opsRows, "op_created_date");
-    const winsByMonth = aggregateByMonth(winsRows, "win_date");
+    const winsByMonth = aggregateByMonth(winsWithEffectiveDate, "_effective_date");
     const feedbackByMonth = aggregateByMonth(fbRows, "feedback_date");
 
     type AggNames = Map<string, Map<string, Set<string>>>;
@@ -616,7 +635,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     const opsNamesByMonth = aggregateNamesBy(opsRows, "op_created_date", "opportunity_name", dateToMonthKey);
     const demosNamesByMonth = aggregateNamesBy(demoRows, "demo_date", "account_name", dateToMonthKey);
-    const winsNamesByMonth = aggregateNamesBy(winsRows, "win_date", "account_name", dateToMonthKey);
+    const winsNamesByMonth = aggregateNamesBy(winsWithEffectiveDate, "_effective_date", "account_name", dateToMonthKey);
 
     // Collect all (rep, weekKey) pairs across all event tables
     const allRepWeeks = new Map<string, Set<string>>();
