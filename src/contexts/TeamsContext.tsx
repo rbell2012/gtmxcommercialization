@@ -235,7 +235,7 @@ export function getHistoricalTeam(
   }
   const month = toMonthKey(referenceDate);
   const entry = teamGoalsHistory.find((h) => h.teamId === team.id && h.month === month);
-  if (!entry) return team;
+  if (!entry) return { ...team, reliefMonthMembers: [] };
   return {
     ...team,
     goalsParity: entry.goalsParity,

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-03-11 (Settings / Quota / Index — Basic Accelerator Mode)
+
+### Location — Settings Page (`src/pages/Settings.tsx`), Quota Page (`src/pages/Quota.tsx`), Index Page (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Data Model (`docs/data-model.mmd`), Supabase Migrations
+
+**Rationale:** The existing accelerator system (now called "Logic" mode) used granular IF/THEN rules with arbitrary conditions and actions, which was powerful but complex for most use cases. A simpler "Basic" mode was needed as the default, where users configure a minimum metric value and minimum bonus percentage, and the system linearly interpolates up to 200% at a configured maximum value.
+
+**Changes:**
+- Added `AcceleratorMode` type (`'basic' | 'logic'`), `BasicAcceleratorMetricConfig` interface (enabled, minValue, minPct, maxValue, scope), and `BasicAcceleratorConfig` type to TeamsContext.
+- Added `acceleratorMode` and `basicAcceleratorConfig` fields to `Team`, `TeamGoalsHistoryEntry`, `DbTeam`, and `DbTeamGoalsHistory` interfaces.
+- Created Supabase migration (`20260311200000_add_basic_accelerator_mode.sql`) adding `accelerator_mode` (text, default `'basic'`) and `basic_accelerator_config` (jsonb, default `'{}'`) columns to both `teams` and `team_goals_history` tables.
+- Updated all persistence paths in TeamsContext: `loadTeams`, `addTeam`, `updateTeam`, `upsertTeamGoalsHistory`, `getHistoricalTeam`, and the goals-change detection logic.
+- Implemented `computeBasicBonus()` in quota-helpers with linear interpolation: below min value = no bonus; at min value = minPct; between min and max = `minPct + ((current - minValue) / (maxValue - minValue)) * (200 - minPct)`; at or above max value = 200%.
+- Updated `computeQuota`, `computeQuotaBreakdown`, `countTriggeredAccelerators`, and `getTriggeredAcceleratorDetails` to branch on `team.acceleratorMode` — Basic mode iterates enabled metrics in `basicAcceleratorConfig`, Logic mode uses existing rule-based flow unchanged.
+- Added Basic/Logic toggle buttons at the top of the Accelerator section in Settings. Basic mode shows per-metric rows with enable switch, Min Value, Min %, Max Value inputs, and SELF/TEAM scope toggle. Logic mode shows the original rule editor unchanged.
+- Updated `AcceleratorTooltip` and `QuotaBreakdownTooltip` in Quota.tsx to display Basic mode info (range, interpolated bonus) alongside the existing Logic mode formatting.
+- Updated Index.tsx accelerator-metric detection in both the relief-only table and `getDefaultMetrics()` to check Basic mode configs.
+- One-time data migration: set all `team_goals_history` rows for months before 2026-03 to `accelerator_mode = 'logic'` so historical months use the original rule-based accelerators. March 2026 onward defaults to `'basic'`.
+- Updated `docs/data-model.mmd` with the new fields on both `teams` and `team_goals_history` entities.
+
+---
+
 ## 2026-03-11 (Index — Adjustable Funnel Overview Chart Date Range)
 
 ### Location — Index Page (`src/pages/Index.tsx`)
