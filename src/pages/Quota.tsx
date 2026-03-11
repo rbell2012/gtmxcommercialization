@@ -481,7 +481,7 @@ function MemberQuotaRow({
                 {Math.min(quotaPct, 200).toFixed(0)}% Quota
               </span>
             </TooltipTrigger>
-            <TooltipContent side="right" className="max-w-[280px]">
+            <TooltipContent side="right" className="max-w-[340px]">
               <QuotaBreakdownTooltip breakdown={quotaBreakdown} isRelief={onRelief} />
             </TooltipContent>
           </Tooltip>

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-11 (Quota — Wider Quota Breakdown Tooltip)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** The quota breakdown hover tooltip was too narrow (280px), causing text like accelerator bonus lines to wrap onto multiple lines, making it harder to read at a glance.
+
+**Changes:**
+- Increased the `QuotaBreakdownTooltip` `TooltipContent` max-width from `max-w-[280px]` to `max-w-[340px]` so each row fits on a single line.
+
+---
+
 ## 2026-03-11 (Settings / Quota / Index — Basic Accelerator Mode)
 
 ### Location — Settings Page (`src/pages/Settings.tsx`), Quota Page (`src/pages/Quota.tsx`), Index Page (`src/pages/Index.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Data Model (`docs/data-model.mmd`), Supabase Migrations
