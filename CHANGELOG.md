@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-11 (Global — Tooltip Z-Index / Stacking Fix)
+
+### Location — Tooltip Component (`src/components/ui/tooltip.tsx`)
+
+**Rationale:** The Quota Breakdown hover tooltip on the Quota page was rendering behind adjacent table rows because the `TooltipContent` was rendered in-place inside a sticky table cell (`sticky left-0 z-10`), which created a stacking context that trapped the tooltip beneath sibling elements despite its `z-50` class.
+
+**Changes:**
+- Wrapped `TooltipPrimitive.Content` in a `TooltipPrimitive.Portal` inside the shared `TooltipContent` component so all tooltips across the app now render at the document root, escaping any parent stacking contexts and correctly layering above all other elements.
+
+---
+
 ## 2026-03-11 (Global — Performance Optimization & Code Splitting)
 
 ### Location — App Shell (`src/App.tsx`), Vite Config (`vite.config.ts`), HTML Entry (`index.html`), Global CSS (`src/index.css`), TeamsContext (`src/contexts/TeamsContext.tsx`), Data Page (`src/pages/Data.tsx`), Index Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), Dependencies (`package.json`)
