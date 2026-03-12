@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-12 (New Business / Growth Win & Ops Breakdown)
+
+### Location — Project Page (`src/pages/Index.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** Wins and Ops counts in the Monthly Goals section only showed a total number with no visibility into whether they came from New Business or Growth (Existing Business / Upsell). Managers needed a quick breakdown to understand pipeline composition without leaving the project page.
+
+**Changes:**
+- Added `WinTypeCounts` and `WinTypeNames` interfaces to `TeamsContext` for tracking NB vs Growth counts and account names.
+- Added `monthlyWinTypes`, `monthlyWinTypeNames`, `monthlyOpsTypes`, and `monthlyOpsTypeNames` fields to `TeamMember`.
+- Fetches `opportunity_type` from both `metrics_wins` and `metrics_ops` tables; blank or "Existing Business (Upsell)" is classified as Growth, everything else as New Business.
+- Aggregates NB/G counts and account names per rep per month in `loadMetrics`, then populates each member in `loadCore`.
+- Added generalized `getScopedTypeCounts` and `getScopedTypeNames` helpers in `quota-helpers.ts` supporting both `'wins'` and `'ops'` metrics with team/individual scope.
+- Below the wins and ops count in Monthly Goals (goals view, accelerator view, and former members view), displays an inline NB/G breakdown (e.g. `6NB + 4G`). When one type is zero it is omitted (e.g. `4G`).
+- Hover tooltips for wins and ops now group account names under **New Business {Metric}** and **Growth {Metric}** headers instead of a flat list; headers are hidden when the group has no results.
+
+---
+
 ## 2026-03-12 (Data Freshness & Load Performance)
 
 ### Location — Home, Index (Rep Self Overrides), Quota

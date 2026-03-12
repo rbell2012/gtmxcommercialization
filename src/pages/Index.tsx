@@ -15,7 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
@@ -495,7 +495,7 @@ const Index = () => {
       ...team,
       members: [
         ...team.members,
-        { id: memberId, name: newName.trim(), level: null, goals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 },
+        { id: memberId, name: newName.trim(), level: null, goals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, monthlyWinTypes: {}, monthlyWinTypeNames: {}, monthlyOpsTypes: {}, monthlyOpsTypeNames: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 },
       ],
     }));
     dbMutate(
@@ -1639,52 +1639,117 @@ const TeamTab = memo(function TeamTab({
                                     const barPct = nextRule
                                       ? Math.min((currentValue / (nextRule.conditionValue1 + 1)) * 100, 100)
                                       : 100;
+                                    const accelIsTyped = metric === 'wins' || metric === 'ops';
+                                    const accelTypeCounts = accelIsTyped ? getScopedTypeCounts(team, m, metric, referenceDate) : null;
+                                    const accelTypeNames = accelIsTyped ? getScopedTypeNames(team, m, metric, referenceDate) : null;
+                                    const accelHasTypeNames = accelTypeNames && (accelTypeNames.nb.length > 0 || accelTypeNames.growth.length > 0);
+                                    const accelCopyKey = `accel::${m.id}::${metric}`;
+
+                                    const accelCellInner = (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">{currentValue}</span>
+                                        {accelTypeCounts && currentValue > 0 && (
+                                          <span className="text-[9px] text-muted-foreground tabular-nums whitespace-nowrap">
+                                            {accelTypeCounts.nb > 0 && <>{accelTypeCounts.nb}<span className="font-medium">NB</span></>}
+                                            {accelTypeCounts.nb > 0 && accelTypeCounts.growth > 0 && ' + '}
+                                            {accelTypeCounts.growth > 0 && <>{accelTypeCounts.growth}<span className="font-medium">G</span></>}
+                                          </span>
+                                        )}
+                                        <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                          <div
+                                            className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : "progress-bar-orange"}`}
+                                            style={{ width: `${barPct}%` }}
+                                          />
+                                        </div>
+                                        {!allTriggered && needed > 0 && (
+                                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                                            need <span className="font-semibold text-foreground">{needed}</span>
+                                          </span>
+                                        )}
+                                        {triggeredRules.length > 0 && (
+                                          <div className="flex items-center gap-1 mt-0.5">
+                                            {triggeredRules.map((detail, i) => {
+                                              const tier = i + 1;
+                                              const isMax = tier === totalRules;
+                                              return (
+                                                <UiTooltip key={i}>
+                                                  <TooltipTrigger asChild>
+                                                    <span className="inline-flex items-center gap-px text-xs font-bold cursor-help text-primary">
+                                                      {isMax ? (
+                                                        <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                                                      ) : (
+                                                        <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                                                      )}
+                                                    </span>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent side="top" className="max-w-[240px]">
+                                                    <div className="text-xs leading-relaxed">
+                                                      <p className="font-semibold mb-1">{GOAL_METRIC_LABELS[detail.metric]} Accelerator</p>
+                                                      <p className="text-muted-foreground">
+                                                        {GOAL_METRIC_LABELS[detail.metric]} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+                                                        {" "}({detail.rule.conditionOperator} {detail.rule.conditionValue1})
+                                                      </p>
+                                                    </div>
+                                                  </TooltipContent>
+                                                </UiTooltip>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+
                                     return (
                                       <td key={metric} className="py-3 px-2">
-                                        <div className="flex flex-col items-center gap-1">
-                                          <span className="text-xs font-semibold text-foreground tabular-nums">{currentValue}</span>
-                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
-                                            <div
-                                              className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : "progress-bar-orange"}`}
-                                              style={{ width: `${barPct}%` }}
-                                            />
-                                          </div>
-                                          {!allTriggered && needed > 0 && (
-                                            <span className="text-[10px] text-muted-foreground tabular-nums">
-                                              need <span className="font-semibold text-foreground">{needed}</span>
-                                            </span>
-                                          )}
-                                          {triggeredRules.length > 0 && (
-                                            <div className="flex items-center gap-1 mt-0.5">
-                                              {triggeredRules.map((detail, i) => {
-                                                const tier = i + 1;
-                                                const isMax = tier === totalRules;
-                                                return (
-                                                  <UiTooltip key={i}>
-                                                    <TooltipTrigger asChild>
-                                                      <span className="inline-flex items-center gap-px text-xs font-bold cursor-help text-primary">
-                                                        {isMax ? (
-                                                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
-                                                        ) : (
-                                                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
-                                                        )}
-                                                      </span>
-                                                    </TooltipTrigger>
-                                                    <TooltipContent side="top" className="max-w-[240px]">
-                                                      <div className="text-xs leading-relaxed">
-                                                        <p className="font-semibold mb-1">{GOAL_METRIC_LABELS[detail.metric]} Accelerator</p>
-                                                        <p className="text-muted-foreground">
-                                                          {GOAL_METRIC_LABELS[detail.metric]} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
-                                                          {" "}({detail.rule.conditionOperator} {detail.rule.conditionValue1})
-                                                        </p>
+                                        {accelHasTypeNames ? (
+                                          <UiTooltip
+                                            open={forceOpenKey === accelCopyKey ? true : undefined}
+                                            onOpenChange={(open) => { if (!open && forceOpenKey === accelCopyKey && copiedMetricKey !== accelCopyKey) setForceOpenKey(null); }}
+                                          >
+                                            <TooltipTrigger asChild>
+                                              <div
+                                                className="cursor-pointer"
+                                                onClick={() => {
+                                                  const allNames = [...(accelTypeNames?.nb ?? []), ...(accelTypeNames?.growth ?? [])];
+                                                  navigator.clipboard.writeText(allNames.join(", "));
+                                                  setCopiedMetricKey(accelCopyKey);
+                                                  setForceOpenKey(accelCopyKey);
+                                                  setTimeout(() => setCopiedMetricKey(null), 1000);
+                                                }}
+                                              >
+                                                {accelCellInner}
+                                              </div>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top" className="max-w-[480px] p-3">
+                                              {copiedMetricKey === accelCopyKey ? (
+                                                <p className="text-xs font-semibold text-green-500">Copied!</p>
+                                              ) : (
+                                                <div className="text-xs">
+                                                  {accelTypeNames!.nb.length > 0 && (
+                                                    <div className="mb-2">
+                                                      <p className="font-semibold mb-1">New Business {GOAL_METRIC_LABELS[metric]}</p>
+                                                      <div className={`${accelTypeNames!.nb.length > 6 ? "columns-3" : accelTypeNames!.nb.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                        {accelTypeNames!.nb.map((name) => (
+                                                          <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                        ))}
                                                       </div>
-                                                    </TooltipContent>
-                                                  </UiTooltip>
-                                                );
-                                              })}
-                                            </div>
-                                          )}
-                                        </div>
+                                                    </div>
+                                                  )}
+                                                  {accelTypeNames!.growth.length > 0 && (
+                                                    <div>
+                                                      <p className="font-semibold mb-1">Growth {GOAL_METRIC_LABELS[metric]}</p>
+                                                      <div className={`${accelTypeNames!.growth.length > 6 ? "columns-3" : accelTypeNames!.growth.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                        {accelTypeNames!.growth.map((name) => (
+                                                          <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                        ))}
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </TooltipContent>
+                                          </UiTooltip>
+                                        ) : accelCellInner}
                                       </td>
                                     );
                                   })}
@@ -1747,6 +1812,8 @@ const TeamTab = memo(function TeamTab({
                                 const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
                                 const copyKey = `${m.id}::${metric}`;
 
+                                const isTypedMetric = metric === 'wins' || metric === 'ops';
+                                const typeCounts = isTypedMetric ? getScopedTypeCounts(team, m, metric, referenceDate) : null;
                                 const cellContent = (
                                   <div className="flex flex-col items-center gap-1">
                                     {hasGoal ? (
@@ -1754,6 +1821,13 @@ const TeamTab = memo(function TeamTab({
                                         <span className="text-xs font-semibold text-foreground tabular-nums">
                                           {actual} <span className="text-muted-foreground font-normal">/</span> {goal}
                                         </span>
+                                        {typeCounts && actual > 0 && (
+                                          <span className="text-[9px] text-muted-foreground tabular-nums whitespace-nowrap">
+                                            {typeCounts.nb > 0 && <>{typeCounts.nb}<span className="font-medium">NB</span></>}
+                                            {typeCounts.nb > 0 && typeCounts.growth > 0 && ' + '}
+                                            {typeCounts.growth > 0 && <>{typeCounts.growth}<span className="font-medium">G</span></>}
+                                          </span>
+                                        )}
                                         {isTeamScope && (
                                           <span className="text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
                                         )}
@@ -1766,7 +1840,16 @@ const TeamTab = memo(function TeamTab({
                                         <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
                                       </>
                                     ) : (
-                                      <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
+                                      <>
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
+                                        {typeCounts && actual > 0 && (
+                                          <span className="text-[9px] text-muted-foreground tabular-nums whitespace-nowrap">
+                                            {typeCounts.nb > 0 && <>{typeCounts.nb}<span className="font-medium">NB</span></>}
+                                            {typeCounts.nb > 0 && typeCounts.growth > 0 && ' + '}
+                                            {typeCounts.growth > 0 && <>{typeCounts.growth}<span className="font-medium">G</span></>}
+                                          </span>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 );
@@ -1794,7 +1877,33 @@ const TeamTab = memo(function TeamTab({
                                         <TooltipContent side="top" className="max-w-[480px] p-3">
                                           {copiedMetricKey === copyKey ? (
                                             <p className="text-xs font-semibold text-green-500">Copied!</p>
-                                          ) : (
+                                          ) : (metric === 'wins' || metric === 'ops') ? (() => {
+                                            const wtn = getScopedTypeNames(team, m, metric, referenceDate);
+                                            return (
+                                              <div className="text-xs">
+                                                {wtn.nb.length > 0 && (
+                                                  <div className="mb-2">
+                                                    <p className="font-semibold mb-1">New Business {GOAL_METRIC_LABELS[metric]}</p>
+                                                    <div className={`${wtn.nb.length > 6 ? "columns-3" : wtn.nb.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                      {wtn.nb.map((name) => (
+                                                        <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                {wtn.growth.length > 0 && (
+                                                  <div>
+                                                    <p className="font-semibold mb-1">Growth {GOAL_METRIC_LABELS[metric]}</p>
+                                                    <div className={`${wtn.growth.length > 6 ? "columns-3" : wtn.growth.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                      {wtn.growth.map((name) => (
+                                                        <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })() : (
                                             <>
                                               <p className="text-xs font-semibold mb-1.5">{GOAL_METRIC_LABELS[metric]}</p>
                                               <div className={`${accountNames.length > 6 ? "columns-3" : accountNames.length > 3 ? "columns-2" : ""} gap-x-4 text-xs text-muted-foreground`}>
@@ -1840,11 +1949,20 @@ const TeamTab = memo(function TeamTab({
                                     const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
                                     const copyKey = `${m.id}::${metric}`;
 
+                                    const formerIsTyped = metric === 'wins' || metric === 'ops';
+                                    const formerTypeCounts = formerIsTyped ? getScopedTypeCounts(team, m, metric, referenceDate) : null;
                                     const formerCellContent = (
                                       <div className="flex flex-col items-center gap-0.5">
                                         {hasGoal ? (
                                           <>
                                             <span className="text-xs text-muted-foreground tabular-nums">{actual} / {goal}</span>
+                                            {formerTypeCounts && actual > 0 && (
+                                              <span className="text-[9px] text-muted-foreground/70 tabular-nums whitespace-nowrap">
+                                                {formerTypeCounts.nb > 0 && <>{formerTypeCounts.nb}<span className="font-medium">NB</span></>}
+                                                {formerTypeCounts.nb > 0 && formerTypeCounts.growth > 0 && ' + '}
+                                                {formerTypeCounts.growth > 0 && <>{formerTypeCounts.growth}<span className="font-medium">G</span></>}
+                                              </span>
+                                            )}
                                             <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
                                               <div
                                                 className={`h-full rounded-full transition-all duration-500 ease-out ${METRIC_BAR_COLORS[metricIdx % METRIC_BAR_COLORS.length]}`}
@@ -1853,7 +1971,16 @@ const TeamTab = memo(function TeamTab({
                                             </div>
                                           </>
                                         ) : (
-                                          <span className="text-xs text-muted-foreground tabular-nums">{actual}</span>
+                                          <>
+                                            <span className="text-xs text-muted-foreground tabular-nums">{actual}</span>
+                                            {formerTypeCounts && actual > 0 && (
+                                              <span className="text-[9px] text-muted-foreground/70 tabular-nums whitespace-nowrap">
+                                                {formerTypeCounts.nb > 0 && <>{formerTypeCounts.nb}<span className="font-medium">NB</span></>}
+                                                {formerTypeCounts.nb > 0 && formerTypeCounts.growth > 0 && ' + '}
+                                                {formerTypeCounts.growth > 0 && <>{formerTypeCounts.growth}<span className="font-medium">G</span></>}
+                                              </span>
+                                            )}
+                                          </>
                                         )}
                                       </div>
                                     );
@@ -1881,7 +2008,33 @@ const TeamTab = memo(function TeamTab({
                                             <TooltipContent side="top" className="max-w-[480px] p-3">
                                               {copiedMetricKey === copyKey ? (
                                                 <p className="text-xs font-semibold text-green-500">Copied!</p>
-                                              ) : (
+                                              ) : (metric === 'wins' || metric === 'ops') ? (() => {
+                                                const wtn = getScopedTypeNames(team, m, metric, referenceDate);
+                                                return (
+                                                  <div className="text-xs">
+                                                    {wtn.nb.length > 0 && (
+                                                      <div className="mb-2">
+                                                        <p className="font-semibold mb-1">New Business {GOAL_METRIC_LABELS[metric]}</p>
+                                                        <div className={`${wtn.nb.length > 6 ? "columns-3" : wtn.nb.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                          {wtn.nb.map((name) => (
+                                                            <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                    {wtn.growth.length > 0 && (
+                                                      <div>
+                                                        <p className="font-semibold mb-1">Growth {GOAL_METRIC_LABELS[metric]}</p>
+                                                        <div className={`${wtn.growth.length > 6 ? "columns-3" : wtn.growth.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground`}>
+                                                          {wtn.growth.map((name) => (
+                                                            <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })() : (
                                                 <>
                                                   <p className="text-xs font-semibold mb-1.5">{GOAL_METRIC_LABELS[metric]}</p>
                                                   <div className={`${accountNames.length > 6 ? "columns-3" : accountNames.length > 3 ? "columns-2" : ""} gap-x-4 text-xs text-muted-foreground`}>

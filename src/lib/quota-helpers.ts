@@ -1,4 +1,4 @@
-import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig } from "@/contexts/TeamsContext";
+import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames } from "@/contexts/TeamsContext";
 
 /**
  * Sum a single metric for a calendar month using monthlyMetrics (which
@@ -30,6 +30,55 @@ export function getMemberLifetimeMetricTotal(m: TeamMember, metric: GoalMetric):
     (s, f) => s + ((f as any)[metric] || 0), 0
   );
 }
+
+type TypedMetric = 'wins' | 'ops';
+
+function getMemberTypeCounts(m: TeamMember, metric: TypedMetric, referenceDate?: Date): WinTypeCounts {
+  const now = referenceDate ?? new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const source = metric === 'wins' ? m.monthlyWinTypes : m.monthlyOpsTypes;
+  return source?.[monthKey] ?? { nb: 0, growth: 0 };
+}
+
+export function getScopedTypeCounts(team: Team, member: TeamMember, metric: TypedMetric, referenceDate?: Date): WinTypeCounts {
+  const scope = team.goalScopeConfig?.[metric] ?? 'individual';
+  if (scope !== 'team') return getMemberTypeCounts(member, metric, referenceDate);
+  const result: WinTypeCounts = { nb: 0, growth: 0 };
+  for (const m of (team.members ?? []).filter((mm) => mm.isActive)) {
+    const c = getMemberTypeCounts(m, metric, referenceDate);
+    result.nb += c.nb;
+    result.growth += c.growth;
+  }
+  return result;
+}
+
+function getMemberTypeNames(m: TeamMember, metric: TypedMetric, referenceDate?: Date): WinTypeNames {
+  const now = referenceDate ?? new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const source = metric === 'wins' ? m.monthlyWinTypeNames : m.monthlyOpsTypeNames;
+  return source?.[monthKey] ?? { nb: [], growth: [] };
+}
+
+export function getScopedTypeNames(team: Team, member: TeamMember, metric: TypedMetric, referenceDate?: Date): WinTypeNames {
+  const scope = team.goalScopeConfig?.[metric] ?? 'individual';
+  if (scope !== 'team') return getMemberTypeNames(member, metric, referenceDate);
+  const nbSet = new Set<string>();
+  const growthSet = new Set<string>();
+  for (const m of (team.members ?? []).filter((mm) => mm.isActive)) {
+    const n = getMemberTypeNames(m, metric, referenceDate);
+    for (const name of n.nb) nbSet.add(name);
+    for (const name of n.growth) growthSet.add(name);
+  }
+  const sortFn = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+  return { nb: Array.from(nbSet).sort(sortFn), growth: Array.from(growthSet).sort(sortFn) };
+}
+
+/** @deprecated Use getScopedTypeCounts */
+export const getMemberWinTypeCounts = (m: TeamMember, referenceDate?: Date) => getMemberTypeCounts(m, 'wins', referenceDate);
+/** @deprecated Use getScopedTypeCounts */
+export const getScopedWinTypeCounts = (team: Team, member: TeamMember, referenceDate?: Date) => getScopedTypeCounts(team, member, 'wins', referenceDate);
+/** @deprecated Use getScopedTypeNames */
+export const getScopedWinTypeNames = (team: Team, member: TeamMember, referenceDate?: Date) => getScopedTypeNames(team, member, 'wins', referenceDate);
 
 export function getTeamMetricTotal(team: Team, metric: GoalMetric, referenceDate?: Date): number {
   return (team.members ?? [])

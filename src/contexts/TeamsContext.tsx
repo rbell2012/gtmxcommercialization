@@ -118,6 +118,16 @@ export interface WeeklyFunnel extends FunnelData {
   submittedAt?: string;
 }
 
+export interface WinTypeCounts {
+  nb: number;
+  growth: number;
+}
+
+export interface WinTypeNames {
+  nb: string[];
+  growth: string[];
+}
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -127,6 +137,10 @@ export interface TeamMember {
   ducksEarned: number;
   funnelByWeek: Record<string, WeeklyFunnel>;
   monthlyMetrics: Record<string, FunnelData>;
+  monthlyWinTypes: Record<string, WinTypeCounts>;
+  monthlyWinTypeNames: Record<string, WinTypeNames>;
+  monthlyOpsTypes: Record<string, WinTypeCounts>;
+  monthlyOpsTypeNames: Record<string, WinTypeNames>;
   metricAccountNames: Record<string, Partial<Record<GoalMetric, string[]>>>;
   isActive: boolean;
   sortOrder: number;
@@ -350,6 +364,8 @@ function recomputeMonthlyMetrics(
 
 type AggCounts = Map<string, Map<string, number>>;
 type AggNames = Map<string, Map<string, Set<string>>>;
+type WinTypeAgg = Map<string, Map<string, WinTypeCounts>>;
+type WinTypeNamesAgg = Map<string, Map<string, { nb: Set<string>; growth: Set<string> }>>;
 
 interface AggregatedMetricRow {
   metric_type: string;
@@ -363,6 +379,10 @@ interface CachedMetrics {
   byWeek: Record<string, AggCounts>;
   byMonth: Record<string, AggCounts>;
   namesByMonth: Record<string, AggNames>;
+  winTypesByMonth: WinTypeAgg;
+  winTypeNamesByMonth: WinTypeNamesAgg;
+  opsTypesByMonth: WinTypeAgg;
+  opsTypeNamesByMonth: WinTypeNamesAgg;
   opsRows: Record<string, unknown>[];
   actRows: Record<string, unknown>[];
   shRows: Record<string, unknown>[];
@@ -415,6 +435,10 @@ function dbMemberToApp(
     })),
     funnelByWeek,
     monthlyMetrics: {},
+    monthlyWinTypes: {},
+    monthlyWinTypeNames: {},
+    monthlyOpsTypes: {},
+    monthlyOpsTypeNames: {},
     metricAccountNames: {},
     touchedAccountsByTeam: {},
     touchedTam: 0,
@@ -614,7 +638,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
       fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
-      fetchAllRows("metrics_ops", "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date"),
+      fetchAllRows("metrics_ops", "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type"),
       fetchAllRows("metrics_wins", "id, rep_name, win_date, account_name, opportunity_stage, opportunity_type"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
@@ -710,7 +734,63 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       feedback: new Map(),
     };
 
-    const metrics: CachedMetrics = { byWeek, byMonth, namesByMonth, opsRows, actRows, shRows, tamRows };
+    const winTypesByMonth: WinTypeAgg = new Map();
+    const winTypeNamesByMonth: WinTypeNamesAgg = new Map();
+    for (const row of winsWithEffectiveDate) {
+      const dateVal = row._effective_date as string | null;
+      if (!dateVal) continue;
+      const repKey = (row.rep_name as string).toLowerCase().trim();
+      const mk = dateToMonthKey(dateVal);
+      const acctName = row.account_name as string | null;
+      const opType = (row.opportunity_type as string | null) ?? "";
+      const isGrowth = !opType || opType === "Existing Business (Upsell)";
+
+      if (!winTypesByMonth.has(repKey)) winTypesByMonth.set(repKey, new Map());
+      const repCounts = winTypesByMonth.get(repKey)!;
+      if (!repCounts.has(mk)) repCounts.set(mk, { nb: 0, growth: 0 });
+      const counts = repCounts.get(mk)!;
+      if (isGrowth) counts.growth++;
+      else counts.nb++;
+
+      if (acctName) {
+        if (!winTypeNamesByMonth.has(repKey)) winTypeNamesByMonth.set(repKey, new Map());
+        const repNames = winTypeNamesByMonth.get(repKey)!;
+        if (!repNames.has(mk)) repNames.set(mk, { nb: new Set(), growth: new Set() });
+        const sets = repNames.get(mk)!;
+        if (isGrowth) sets.growth.add(acctName);
+        else sets.nb.add(acctName);
+      }
+    }
+
+    const opsTypesByMonth: WinTypeAgg = new Map();
+    const opsTypeNamesByMonth: WinTypeNamesAgg = new Map();
+    for (const row of opsRows) {
+      const dateVal = row.op_created_date as string | null;
+      if (!dateVal) continue;
+      const repKey = (row.rep_name as string).toLowerCase().trim();
+      const mk = dateToMonthKey(dateVal);
+      const opName = row.opportunity_name as string | null;
+      const opType = (row.opportunity_type as string | null) ?? "";
+      const isGrowth = !opType || opType === "Existing Business (Upsell)";
+
+      if (!opsTypesByMonth.has(repKey)) opsTypesByMonth.set(repKey, new Map());
+      const repCounts = opsTypesByMonth.get(repKey)!;
+      if (!repCounts.has(mk)) repCounts.set(mk, { nb: 0, growth: 0 });
+      const counts = repCounts.get(mk)!;
+      if (isGrowth) counts.growth++;
+      else counts.nb++;
+
+      if (opName) {
+        if (!opsTypeNamesByMonth.has(repKey)) opsTypeNamesByMonth.set(repKey, new Map());
+        const repNames = opsTypeNamesByMonth.get(repKey)!;
+        if (!repNames.has(mk)) repNames.set(mk, { nb: new Set(), growth: new Set() });
+        const sets = repNames.get(mk)!;
+        if (isGrowth) sets.growth.add(opName);
+        else sets.nb.add(opName);
+      }
+    }
+
+    const metrics: CachedMetrics = { byWeek, byMonth, namesByMonth, winTypesByMonth, winTypeNamesByMonth, opsTypesByMonth, opsTypeNamesByMonth, opsRows, actRows, shRows, tamRows };
     cachedMetricsRef.current = metrics;
     return metrics;
   }, []);
@@ -730,7 +810,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       supabase.from("member_goals_history").select("*"),
     ]);
 
-    const { byWeek, byMonth, namesByMonth: cachedNames, opsRows, actRows, shRows, tamRows: tamRows_raw } = m;
+    const { byWeek, byMonth, namesByMonth: cachedNames, winTypesByMonth, winTypeNamesByMonth, opsTypesByMonth, opsTypeNamesByMonth, opsRows, actRows, shRows, tamRows: tamRows_raw } = m;
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
     const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
@@ -910,6 +990,50 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         }
       }
       member.metricAccountNames = namesByMonth;
+
+      const repWinTypes = winTypesByMonth.get(repKey);
+      if (repWinTypes) {
+        const wt: Record<string, WinTypeCounts> = {};
+        for (const [mk, counts] of repWinTypes) {
+          wt[mk] = { ...counts };
+        }
+        member.monthlyWinTypes = wt;
+      } else {
+        member.monthlyWinTypes = {};
+      }
+
+      const sortFn = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+
+      const repWinTypeNames = winTypeNamesByMonth.get(repKey);
+      if (repWinTypeNames) {
+        const wtn: Record<string, WinTypeNames> = {};
+        for (const [mk, sets] of repWinTypeNames) {
+          wtn[mk] = { nb: Array.from(sets.nb).sort(sortFn), growth: Array.from(sets.growth).sort(sortFn) };
+        }
+        member.monthlyWinTypeNames = wtn;
+      } else {
+        member.monthlyWinTypeNames = {};
+      }
+
+      const repOpsTypes = opsTypesByMonth.get(repKey);
+      if (repOpsTypes) {
+        const ot: Record<string, WinTypeCounts> = {};
+        for (const [mk, counts] of repOpsTypes) ot[mk] = { ...counts };
+        member.monthlyOpsTypes = ot;
+      } else {
+        member.monthlyOpsTypes = {};
+      }
+
+      const repOpsTypeNames = opsTypeNamesByMonth.get(repKey);
+      if (repOpsTypeNames) {
+        const otn: Record<string, WinTypeNames> = {};
+        for (const [mk, sets] of repOpsTypeNames) {
+          otn[mk] = { nb: Array.from(sets.nb).sort(sortFn), growth: Array.from(sets.growth).sort(sortFn) };
+        }
+        member.monthlyOpsTypeNames = otn;
+      } else {
+        member.monthlyOpsTypeNames = {};
+      }
     }
 
     // Derive touched accounts per rep per team from two sources:
@@ -1521,7 +1645,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const memberGoals: MemberGoals = { ...DEFAULT_GOALS, ...goals };
     const allExisting = [...teams.flatMap((t) => t.members), ...unassignedMembers];
     const nextOrder = allExisting.length > 0 ? Math.max(...allExisting.map((m) => m.sortOrder)) + 1 : 0;
-    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 };
+    const member: TeamMember = { id, name, level: null, goals: memberGoals, wins: [], ducksEarned: 0, funnelByWeek: {}, monthlyMetrics: {}, monthlyWinTypes: {}, monthlyWinTypeNames: {}, monthlyOpsTypes: {}, monthlyOpsTypeNames: {}, metricAccountNames: {}, isActive: true, sortOrder: nextOrder, touchedAccountsByTeam: {}, touchedTam: 0 };
     setUnassignedMembers((prev) => [...prev, member]);
     dbMutate(
       supabase
