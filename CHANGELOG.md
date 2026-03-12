@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-11 (Quota — Fix Accelerators Ignored When No Goals Enabled)
+
+### Location — Quota Helpers (`src/lib/quota-helpers.ts`)
+
+**Rationale:** When a team had no enabled goals but did have accelerator rules configured (e.g. +200% on wins), both `computeQuota` and `computeQuotaBreakdown` returned early with 0% and empty accelerator steps — the accelerator processing code was never reached. This caused the Quota Breakdown tooltip to show "Base avg 0.0% / Final 0.0%" with no accelerator steps, even though the accelerator's condition was met.
+
+**Changes:**
+- Removed the early return in `computeQuota` that bailed with `0` when `enabledMetrics` was empty; replaced it with an `else if` branch that sets `quota = 0` and falls through to the accelerator processing loop.
+- Removed the early return in `computeQuotaBreakdown` that bailed with an empty breakdown when `enabledMetrics` was empty; replaced it with an `else if` branch that sets `metricRatios = []` and `baseQuota = 0` and falls through to the accelerator processing loop.
+- Both functions now correctly evaluate and apply accelerator rules regardless of whether any goals are enabled, so the Quota Breakdown tooltip displays triggered accelerator steps and the correct final quota.
+
+---
+
 ## 2026-03-11 (Global — Tooltip Z-Index / Stacking Fix)
 
 ### Location — Tooltip Component (`src/components/ui/tooltip.tsx`)

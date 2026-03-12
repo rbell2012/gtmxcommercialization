@@ -210,11 +210,12 @@ function computeBasicBonus(config: BasicAcceleratorMetricConfig, current: number
 export function computeQuota(team: Team, member: TeamMember, referenceDate?: Date): number {
   const onRelief = isMemberOnRelief(team, member);
   const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals?.[m]);
-  if (!onRelief && enabledMetrics.length === 0) return 0;
 
   let quota: number;
   if (onRelief) {
     quota = 100;
+  } else if (enabledMetrics.length === 0) {
+    quota = 0;
   } else {
     const ratios = enabledMetrics.map((metric) => {
       const goal = getEffectiveGoal(team, member, metric);
@@ -306,15 +307,15 @@ export interface QuotaBreakdown {
 export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceDate?: Date): QuotaBreakdown {
   const onRelief = isMemberOnRelief(team, member);
   const enabledMetrics = GOAL_METRICS.filter((m) => team.enabledGoals?.[m]);
-  if (!onRelief && enabledMetrics.length === 0) {
-    return { metricRatios: [], baseQuota: 0, acceleratorSteps: [], finalQuota: 0 };
-  }
 
   let metricRatios: QuotaMetricRatio[];
   let baseQuota: number;
   if (onRelief) {
     metricRatios = [];
     baseQuota = 100;
+  } else if (enabledMetrics.length === 0) {
+    metricRatios = [];
+    baseQuota = 0;
   } else {
     metricRatios = enabledMetrics.map((metric) => {
       const goal = getEffectiveGoal(team, member, metric);
