@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-12 (Data Freshness & Load Performance)
+
+### Location — Home, Index (Rep Self Overrides), Quota
+
+**Rationale:** Editing "Rep Self Overrides" values on the Index page wasn't reflected on the Quota page or Home lifetime stats until a full page refresh. The monolithic `loadAll` function also re-fetched all heavy metrics tables on every realtime event, causing unnecessary load times for routine user edits.
+
+**Changes:**
+- Split `loadAll` into `loadMetrics` (heavy external pipeline tables) and `loadCore` (lightweight core tables) in `TeamsContext.tsx`, caching metrics in refs so core-table realtime events skip the expensive re-fetch.
+- Added optimistic `monthlyMetrics` recomputation in `updateTeam` using cached metric-source corrections, so funnelByWeek edits immediately propagate to Quota without a server round-trip.
+- Synced `allMembersById` map inside `updateTeam` to prevent stale historical roster data.
+- Added `onError` rollback callback to `dbMutate` in `supabase-helpers.ts`; on write failure, `reloadAll` restores the UI to the true database state.
+- Debounced `upsertFunnelField` calls in `Index.tsx` by 300ms to avoid intermediate-value writes during rapid typing.
+- Exposed `reloadAll` on the Teams context for error recovery and external use.
+- Routed core-table realtime changes (`teams`, `members`, `weekly_funnels`, `win_entries`) through `debouncedLoadCore` instead of `debouncedLoadAll` for faster refresh.
+- Created `get_aggregated_metrics()` Postgres RPC function in Supabase (deployed but not yet used by client due to PostgREST row limit).
+
+---
+
 ## 2026-03-12 (Roadmap — Availability Row in Timeline Grid)
 
 ### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
