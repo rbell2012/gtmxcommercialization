@@ -183,6 +183,52 @@ const Roadmap = () => {
 
   const hasDivider = firstInactiveIdx > 0 && firstInactiveIdx < orderedTeamIds.length;
 
+  const availableByMonth = useMemo(() => {
+    const result: Record<string, { id: string; name: string }[]> = {};
+
+    const memberTeamRanges = new Map<string, { start: Date; end: Date }[]>();
+    const allActiveMembers = new Map<string, { id: string; name: string }>();
+
+    for (const team of allTeams) {
+      if (!team.startDate || !team.endDate) continue;
+      const tStart = startOfMonth(new Date(team.startDate + "T00:00:00"));
+      const tEnd = endOfMonth(new Date(team.endDate + "T00:00:00"));
+
+      for (const member of team.members.filter((m) => m.isActive)) {
+        allActiveMembers.set(member.id, { id: member.id, name: member.name });
+        if (!memberTeamRanges.has(member.id)) {
+          memberTeamRanges.set(member.id, []);
+        }
+        memberTeamRanges.get(member.id)!.push({ start: tStart, end: tEnd });
+      }
+    }
+
+    for (const m of unassignedMembers.filter((m) => m.isActive)) {
+      allActiveMembers.set(m.id, { id: m.id, name: m.name });
+    }
+
+    for (const month of months) {
+      const monthKey = format(month, "yyyy-MM");
+      const mStart = startOfMonth(month);
+      const mEnd = endOfMonth(month);
+      const available: { id: string; name: string }[] = [];
+
+      for (const [memberId, member] of allActiveMembers) {
+        const ranges = memberTeamRanges.get(memberId) ?? [];
+        const isAssigned = ranges.some(
+          ({ start, end }) => !isAfter(mStart, end) && !isBefore(mEnd, start)
+        );
+        if (!isAssigned) {
+          available.push(member);
+        }
+      }
+
+      result[monthKey] = available;
+    }
+
+    return result;
+  }, [months, allTeams, unassignedMembers]);
+
   const today = new Date();
 
   const { activeCount, availableMembers, totalCount, upcomingAvailability } = useMemo(() => {
@@ -327,7 +373,7 @@ const Roadmap = () => {
             className="grid gap-x-4 gap-y-2"
             style={{
               gridTemplateColumns: `repeat(${MONTHS_VISIBLE}, minmax(0, 1fr))`,
-              gridTemplateRows: `auto repeat(${orderedTeamIds.length + (hasDivider ? 1 : 0)}, auto)`,
+              gridTemplateRows: `auto auto repeat(${orderedTeamIds.length + (hasDivider ? 1 : 0)}, auto)`,
             }}
           >
             {/* Row 1: Month headers */}
@@ -349,18 +395,44 @@ const Roadmap = () => {
               );
             })}
 
+            {/* Row 2: Available members by month */}
+            {months.map((month, colIdx) => {
+              const monthKey = format(month, "yyyy-MM");
+              const available = availableByMonth[monthKey] ?? [];
+              return (
+                <div
+                  key={`avail-${monthKey}`}
+                  className="flex flex-wrap items-center justify-center gap-1"
+                  style={{ gridColumn: colIdx + 1, gridRow: 2 }}
+                >
+                  {available.map((m) => (
+                    <Tooltip key={m.id}>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-green-100 dark:bg-green-900/40 text-[9px] font-medium text-green-700 dark:text-green-300 ring-1 ring-green-300 dark:ring-green-700">
+                          {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        {m.name} — available
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              );
+            })}
+
             {/* Divider between active and inactive */}
             {hasDivider && (
               <div
                 key="active-inactive-divider"
                 className="border-t border-border"
-                style={{ gridColumn: `1 / -1`, gridRow: firstInactiveIdx + 2 }}
+                style={{ gridColumn: `1 / -1`, gridRow: firstInactiveIdx + 3 }}
               />
             )}
 
             {/* Project cells: one per (team, month) */}
             {orderedTeamIds.map((teamId, rowIdx) => {
-              const adjustedRow = rowIdx + 2 + (hasDivider && rowIdx >= firstInactiveIdx ? 1 : 0);
+              const adjustedRow = rowIdx + 3 + (hasDivider && rowIdx >= firstInactiveIdx ? 1 : 0);
               return months.map((month, colIdx) => {
                 const monthKey = format(month, "yyyy-MM");
                 const proj = projectLookup[monthKey]?.[teamId];

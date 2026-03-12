@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-12 (Roadmap — Availability Row in Timeline Grid)
+
+### Location — Roadmap Page (`src/pages/Roadmap.tsx`)
+
+**Rationale:** The roadmap timeline showed which members were assigned to projects each month, but there was no quick way to see who would be unassigned and available for new work in upcoming months. A simple visual indicator was needed between the month headers and the project rows.
+
+**Changes:**
+- Added a new `availableByMonth` useMemo that computes, for each visible month, which active members have no team assignment covering that month (including currently unassigned members and members whose teams end before that month).
+- Inserted a new grid row (row 2) between the month headers and the first project row, rendering green-tinted initials circles for each available member in the corresponding month column, with tooltips showing the member's full name.
+- Updated `gridTemplateRows` from `auto repeat(N, auto)` to `auto auto repeat(N, auto)` to accommodate the new availability row.
+- Shifted all project row indices and the active/inactive divider row index by +1 to account for the inserted row.
+- Styled the availability row to use minimal spacing consistent with the gap between project cards (no extra padding or minimum height).
+
+---
+
 ## 2026-03-11 (Quota — Fix Accelerators Ignored When No Goals Enabled)
 
 ### Location — Quota Helpers (`src/lib/quota-helpers.ts`)
