@@ -314,6 +314,61 @@ function getFirstActivityDate(row: { first_activity_date?: string | null; first_
   return row.first_activity_date || row.first_call_date || row.first_connect_date || row.first_demo_date || row.last_activity_date || null;
 }
 
+type MetricCorrectionMap = Map<string, Record<string, Partial<FunnelData>>>;
+
+function emptyFunnel(): FunnelData {
+  return { tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0, activity: 0 };
+}
+
+function recomputeMonthlyMetrics(
+  member: TeamMember,
+  corrections: Record<string, Partial<FunnelData>> | undefined,
+): Record<string, FunnelData> {
+  const monthly: Record<string, FunnelData> = {};
+  for (const [weekKey, funnel] of Object.entries(member.funnelByWeek)) {
+    const mk = weekKey.substring(0, 7);
+    if (!monthly[mk]) monthly[mk] = emptyFunnel();
+    monthly[mk].tam += funnel.tam;
+    monthly[mk].calls += funnel.calls;
+    monthly[mk].connects += funnel.connects;
+    monthly[mk].ops += funnel.ops;
+    monthly[mk].demos += funnel.demos;
+    monthly[mk].wins += funnel.wins;
+    monthly[mk].feedback += funnel.feedback;
+    monthly[mk].activity += funnel.activity;
+  }
+  if (corrections) {
+    for (const [mk, corr] of Object.entries(corrections)) {
+      if (!monthly[mk]) monthly[mk] = emptyFunnel();
+      for (const [key, val] of Object.entries(corr)) {
+        (monthly[mk] as any)[key] += val;
+      }
+    }
+  }
+  return monthly;
+}
+
+type AggCounts = Map<string, Map<string, number>>;
+type AggNames = Map<string, Map<string, Set<string>>>;
+
+interface AggregatedMetricRow {
+  metric_type: string;
+  rep_name: string;
+  date_value: string;
+  cnt: number;
+  acct_name: string | null;
+}
+
+interface CachedMetrics {
+  byWeek: Record<string, AggCounts>;
+  byMonth: Record<string, AggCounts>;
+  namesByMonth: Record<string, AggNames>;
+  opsRows: Record<string, unknown>[];
+  actRows: Record<string, unknown>[];
+  shRows: Record<string, unknown>[];
+  tamRows: Record<string, unknown>[];
+}
+
 // ── helpers to convert between DB rows and app shapes ──
 
 function dbMemberToApp(
@@ -498,6 +553,7 @@ interface TeamsContextType {
     reliefMonthMembers: string[];
   }) => void;
   updateHistoricalRoster: (teamId: string, referenceDate: Date, memberIds: string[]) => void;
+  reloadAll: () => Promise<void>;
   loading: boolean;
 }
 
@@ -547,13 +603,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [archivedMembers, setArchivedMembers] = useState<ArchivedMember[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ── load all data & merge event-table metrics into funnels ──
-  const loadAll = useCallback(async () => {
-    const [tRes, mRes, fRes, wRes, actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows_raw, hRes, tghRes, mghRes] = await Promise.all([
-      supabase.from("teams").select("*").is("archived_at", null),
-      supabase.from("members").select("*").is("archived_at", null),
-      supabase.from("weekly_funnels").select("*"),
-      supabase.from("win_entries").select("*"),
+  const cachedMetricsRef = useRef<CachedMetrics | null>(null);
+  const metricCorrectionsRef = useRef<MetricCorrectionMap>(new Map());
+  const updatedMembersRef = useRef<TeamMember[]>([]);
+
+  // ── load metrics data (heavy, external pipeline) ──
+  const loadMetrics = useCallback(async (): Promise<CachedMetrics> => {
+    const [actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows] = await Promise.all([
       fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid"),
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
@@ -563,35 +619,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
       fetchAllRows("metrics_tam", "rep_name, tam"),
-      supabase.from("member_team_history").select("*"),
-      supabase.from("team_goals_history").select("*"),
-      supabase.from("member_goals_history").select("*"),
     ]);
 
-    const dbMembers = (mRes.data ?? []) as DbMember[];
-    const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
-
-    const memberIdByName = new Map<string, string>();
-    for (const m of dbMembers) {
-      memberIdByName.set(m.name.toLowerCase().trim(), m.id);
-    }
-
-    // Convert a date string (YYYY-MM-DD) to the Monday week key used by weekly_funnels
     const dateToWeekKey = (dateStr: string): string => {
       const d = new Date(dateStr + "T00:00:00");
       d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     };
-
     const dateToMonthKey = (dateStr: string): string => {
       const d = new Date(dateStr + "T00:00:00");
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     };
 
-    const weekKeyToMonthKey = (weekKey: string): string => weekKey.substring(0, 7);
-
-    // Aggregate event rows into counts keyed by (rep_name_lower, timeKey)
-    type AggCounts = Map<string, Map<string, number>>;
     const aggregateBy = (rows: Record<string, unknown>[], dateField: string, keyFn: (d: string) => string): AggCounts => {
       const result: AggCounts = new Map();
       for (const row of rows) {
@@ -613,8 +652,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       isWinStage(r.opportunity_stage as string | null, r.opportunity_type as string | null)
     );
 
-    // Build lookup from metrics_ops id → win_stage_date so wins are bucketed
-    // by the date their stage first qualified, not the original win_date.
     const winStageDateById = new Map<string, string>();
     for (const op of opsRows) {
       const id = op.id as string | null;
@@ -627,23 +664,26 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       return wsd ? { ...r, _effective_date: wsd } : { ...r, _effective_date: r.win_date as string };
     });
 
-    const activityByWeek = aggregateByWeek(actRows, "activity_date");
-    const callsByWeek = aggregateByWeek(callRows, "call_date");
-    const connectsByWeek = aggregateByWeek(conRows, "connect_date");
-    const demosByWeek = aggregateByWeek(demoRows, "demo_date");
-    const opsByWeek = aggregateByWeek(opsRows, "op_created_date");
-    const winsByWeek = aggregateByWeek(winsWithEffectiveDate, "_effective_date");
-    const feedbackByWeek = aggregateByWeek(fbRows, "feedback_date");
+    const byWeek: Record<string, AggCounts> = {
+      activity: aggregateByWeek(actRows, "activity_date"),
+      calls: aggregateByWeek(callRows, "call_date"),
+      connects: aggregateByWeek(conRows, "connect_date"),
+      demos: aggregateByWeek(demoRows, "demo_date"),
+      ops: aggregateByWeek(opsRows, "op_created_date"),
+      wins: aggregateByWeek(winsWithEffectiveDate, "_effective_date"),
+      feedback: aggregateByWeek(fbRows, "feedback_date"),
+    };
 
-    const activityByMonth = aggregateByMonth(actRows, "activity_date");
-    const callsByMonth = aggregateByMonth(callRows, "call_date");
-    const connectsByMonth = aggregateByMonth(conRows, "connect_date");
-    const demosByMonth = aggregateByMonth(demoRows, "demo_date");
-    const opsByMonth = aggregateByMonth(opsRows, "op_created_date");
-    const winsByMonth = aggregateByMonth(winsWithEffectiveDate, "_effective_date");
-    const feedbackByMonth = aggregateByMonth(fbRows, "feedback_date");
+    const byMonth: Record<string, AggCounts> = {
+      activity: aggregateByMonth(actRows, "activity_date"),
+      calls: aggregateByMonth(callRows, "call_date"),
+      connects: aggregateByMonth(conRows, "connect_date"),
+      demos: aggregateByMonth(demoRows, "demo_date"),
+      ops: aggregateByMonth(opsRows, "op_created_date"),
+      wins: aggregateByMonth(winsWithEffectiveDate, "_effective_date"),
+      feedback: aggregateByMonth(fbRows, "feedback_date"),
+    };
 
-    type AggNames = Map<string, Map<string, Set<string>>>;
     const aggregateNamesBy = (rows: Record<string, unknown>[], dateField: string, nameField: string, keyFn: (d: string) => string): AggNames => {
       const result: AggNames = new Map();
       for (const row of rows) {
@@ -660,9 +700,67 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       return result;
     };
 
-    const opsNamesByMonth = aggregateNamesBy(opsRows, "op_created_date", "opportunity_name", dateToMonthKey);
-    const demosNamesByMonth = aggregateNamesBy(demoRows, "demo_date", "account_name", dateToMonthKey);
-    const winsNamesByMonth = aggregateNamesBy(winsWithEffectiveDate, "_effective_date", "account_name", dateToMonthKey);
+    const namesByMonth: Record<string, AggNames> = {
+      ops: aggregateNamesBy(opsRows, "op_created_date", "opportunity_name", dateToMonthKey),
+      demos: aggregateNamesBy(demoRows, "demo_date", "account_name", dateToMonthKey),
+      wins: aggregateNamesBy(winsWithEffectiveDate, "_effective_date", "account_name", dateToMonthKey),
+      activity: new Map(),
+      calls: new Map(),
+      connects: new Map(),
+      feedback: new Map(),
+    };
+
+    const metrics: CachedMetrics = { byWeek, byMonth, namesByMonth, opsRows, actRows, shRows, tamRows };
+    cachedMetricsRef.current = metrics;
+    return metrics;
+  }, []);
+
+  // ── load core data & assemble with metrics ──
+  const loadCore = useCallback(async (metrics?: CachedMetrics) => {
+    const m = metrics ?? cachedMetricsRef.current;
+    if (!m) return;
+
+    const [tRes, mRes, fRes, wRes, hRes, tghRes, mghRes] = await Promise.all([
+      supabase.from("teams").select("*").is("archived_at", null),
+      supabase.from("members").select("*").is("archived_at", null),
+      supabase.from("weekly_funnels").select("*"),
+      supabase.from("win_entries").select("*"),
+      supabase.from("member_team_history").select("*"),
+      supabase.from("team_goals_history").select("*"),
+      supabase.from("member_goals_history").select("*"),
+    ]);
+
+    const { byWeek, byMonth, namesByMonth: cachedNames, opsRows, actRows, shRows, tamRows: tamRows_raw } = m;
+
+    const dbMembers = (mRes.data ?? []) as DbMember[];
+    const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
+
+    const memberIdByName = new Map<string, string>();
+    for (const mem of dbMembers) {
+      memberIdByName.set(mem.name.toLowerCase().trim(), mem.id);
+    }
+
+    const weekKeyToMonthKey = (weekKey: string): string => weekKey.substring(0, 7);
+
+    const activityByWeek = byWeek.activity;
+    const callsByWeek = byWeek.calls;
+    const connectsByWeek = byWeek.connects;
+    const demosByWeek = byWeek.demos;
+    const opsByWeek = byWeek.ops;
+    const winsByWeek = byWeek.wins;
+    const feedbackByWeek = byWeek.feedback;
+
+    const activityByMonth = byMonth.activity;
+    const callsByMonth = byMonth.calls;
+    const connectsByMonth = byMonth.connects;
+    const demosByMonth = byMonth.demos;
+    const opsByMonth = byMonth.ops;
+    const winsByMonth = byMonth.wins;
+    const feedbackByMonth = byMonth.feedback;
+
+    const opsNamesByMonth = cachedNames.ops;
+    const demosNamesByMonth = cachedNames.demos;
+    const winsNamesByMonth = cachedNames.wins;
 
     // Collect all (rep, weekKey) pairs across all event tables
     const allRepWeeks = new Map<string, Set<string>>();
@@ -748,10 +846,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       { key: "feedback", monthly: feedbackByMonth, weekly: feedbackByWeek },
     ];
 
-    const emptyFunnel = (): FunnelData => ({ tam: 0, calls: 0, connects: 0, ops: 0, demos: 0, wins: 0, feedback: 0, activity: 0 });
-
     const allMembers = [...u];
     for (const team of t) allMembers.push(...(team.members ?? []));
+
+    const correctionsBuild: MetricCorrectionMap = new Map();
 
     for (const member of allMembers) {
       const monthly: Record<string, FunnelData> = {};
@@ -770,6 +868,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }
 
       const repKey = member.name.toLowerCase().trim();
+      const memberCorr: Record<string, Partial<FunnelData>> = {};
       for (const { key, monthly: monthlyAgg, weekly: weeklyAgg } of metricSources) {
         const byActualMonth = monthlyAgg.get(repKey) ?? new Map<string, number>();
         const byWeek = weeklyAgg.get(repKey) ?? new Map<string, number>();
@@ -787,9 +886,12 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           if (correction !== 0) {
             if (!monthly[mk]) monthly[mk] = emptyFunnel();
             monthly[mk][key] += correction;
+            if (!memberCorr[mk]) memberCorr[mk] = {};
+            (memberCorr[mk] as any)[key] = correction;
           }
         }
       }
+      correctionsBuild.set(member.id, memberCorr);
 
       member.monthlyMetrics = monthly;
 
@@ -931,6 +1033,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       level: (h.level as MemberLevel) ?? null,
     }));
 
+    metricCorrectionsRef.current = correctionsBuild;
+
     setTeams(t);
     setUnassignedMembers(u);
     setAllMembersById(membersMap);
@@ -940,22 +1044,35 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
+  const loadAll = useCallback(async () => {
+    const metrics = await loadMetrics();
+    await loadCore(metrics);
+  }, [loadMetrics, loadCore]);
+
   // ── initial load + realtime subscription ──
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const coreDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const debouncedLoadAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
     debounceRef.current = setTimeout(() => loadAll(), 500);
   }, [loadAll]);
+
+  const debouncedLoadCore = useCallback(() => {
+    if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
+    coreDebounceRef.current = setTimeout(() => loadCore(), 500);
+  }, [loadCore]);
 
   useEffect(() => {
     loadAll();
 
     const channel = supabase
       .channel("gtmx-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_calls" }, debouncedLoadAll)
@@ -968,9 +1085,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [loadAll, debouncedLoadAll]);
+  }, [loadAll, debouncedLoadAll, debouncedLoadCore]);
 
   // ── mutations ──
 
@@ -1057,6 +1175,20 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       const updated = next.find((t) => t.id === teamId);
       if (updated) {
         const old = prev.find((t) => t.id === teamId);
+
+        // Recompute monthlyMetrics for members whose funnelByWeek changed
+        if (old) {
+          for (const member of updated.members) {
+            const oldMember = old.members.find((om) => om.id === member.id);
+            if (!oldMember || oldMember.funnelByWeek !== member.funnelByWeek) {
+              member.monthlyMetrics = recomputeMonthlyMetrics(
+                member, metricCorrectionsRef.current.get(member.id),
+              );
+            }
+          }
+          updatedMembersRef.current = updated.members;
+        }
+
         const goalsChanged = old && (
           old.goalsParity !== updated.goalsParity ||
           JSON.stringify(old.teamGoals) !== JSON.stringify(updated.teamGoals) ||
@@ -1203,6 +1335,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           }
         }
       }
+      return next;
+    });
+    // Sync allMembersById with any member data that changed
+    setAllMembersById((prev) => {
+      const members = updatedMembersRef.current;
+      if (members.length === 0) return prev;
+      const next = new Map(prev);
+      for (const m of members) next.set(m.id, m);
       return next;
     });
   }, []);
@@ -1693,6 +1833,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     removeMember,
     upsertTeamGoalsHistory,
     updateHistoricalRoster,
+    reloadAll: loadAll,
     loading,
   }), [
     teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
@@ -1700,7 +1841,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,
     createMember, updateMember, assignMember, unassignMember, removeMember,
-    upsertTeamGoalsHistory, updateHistoricalRoster,
+    upsertTeamGoalsHistory, updateHistoricalRoster, loadAll,
   ]);
 
   return (

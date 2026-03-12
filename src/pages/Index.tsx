@@ -274,7 +274,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, loading: teamsLoading } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -1187,6 +1187,7 @@ const Index = () => {
                 memberGoalsHistory={memberGoalsHistory}
                 collapsedSections={collapsedSections}
                 toggleSection={toggleSection}
+                reloadAll={reloadAll}
               />
             </TabsContent>
           ))}
@@ -1254,6 +1255,7 @@ const TeamTab = memo(function TeamTab({
   memberGoalsHistory,
   collapsedSections,
   toggleSection,
+  reloadAll,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -1279,8 +1281,10 @@ const TeamTab = memo(function TeamTab({
   memberGoalsHistory: MemberGoalsHistoryEntry[];
   collapsedSections: Record<string, boolean>;
   toggleSection: (key: string) => void;
+  reloadAll: () => Promise<void>;
 }) {
 
+  const funnelDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
   const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
@@ -2283,6 +2287,7 @@ const TeamTab = memo(function TeamTab({
                           { onConflict: "member_id,week_key" }
                         ),
                       "upsert funnel",
+                      reloadAll,
                     );
                   };
                   const updateFunnel = (field: keyof FunnelData, value: string) => {
@@ -2293,7 +2298,11 @@ const TeamTab = memo(function TeamTab({
                         mem.id === m.id ? { ...mem, funnelByWeek: { ...mem.funnelByWeek, [repOverrideWeek]: { ...getMemberFunnel(mem, repOverrideWeek), [field]: num } } } : mem
                       ),
                     }));
-                    upsertFunnelField({ [field]: num });
+                    const debounceKey = `${m.id}:${field}`;
+                    clearTimeout(funnelDebounceRef.current[debounceKey]);
+                    funnelDebounceRef.current[debounceKey] = setTimeout(() => {
+                      upsertFunnelField({ [field]: num });
+                    }, 300);
                   };
                   const updateRole = (val: string) => {
                     updateTeam(team.id, (t) => ({
