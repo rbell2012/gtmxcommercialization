@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-13 (Rep Filter for Test Data Selections)
+
+### Location — Data Page (`src/pages/Data.tsx`)
+
+**Rationale:** The Test Data Selections section had filters for time, data type, detail mode, and team-only, but no way to narrow results to specific reps. Users needed the ability to view data for one or more selected reps without scrolling through the full list.
+
+**Changes:**
+- Added a new "Rep" multi-select dropdown filter to the Test Data Selections filter bar, styled consistently with the existing "Data" multi-select.
+- The dropdown dynamically populates with all unique rep names from the currently loaded test data, sorted alphabetically.
+- Selecting one or more reps filters both the summary and detailed views to only show rows for those reps; leaving it on "All" shows every rep.
+- Includes an "All Reps" checkbox at the top for quickly clearing the selection back to unfiltered.
+- The filter label displays "All" when unfiltered, the rep name when one is selected, or "N selected" for multiple selections.
+
+---
+
 ## 2026-03-13 (+ Last Month Preserves Partial Teams)
 
 ### Location — Project Page (`src/pages/Index.tsx`), Teams Context (`src/contexts/TeamsContext.tsx`)

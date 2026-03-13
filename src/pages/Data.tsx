@@ -57,7 +57,7 @@ function computeDealCycleStats(rows: DbSuperhex[]): DealCycleStats {
   const activitiesForWin: number[] = [];
 
   for (const row of rows) {
-    const qualifiedWin = row.win_date && isSuperhexWinStage(row.op_stage);
+    const qualifiedWin = row.win_date && isSuperhexWinStage(row.op_stage, row.is_won);
     if (row.first_call_date && qualifiedWin) {
       dealCycleDays.push(daysBetween(row.first_call_date, row.win_date!));
     }
@@ -280,6 +280,7 @@ export default function Data() {
   const [testDataTypes, setTestDataTypes] = useState<Set<DataTypeKey>>(new Set(ALL_DATA_TYPES));
   const [testDetailMode, setTestDetailMode] = useState<"summary" | "detailed">("summary");
   const [testTeamOnly, setTestTeamOnly] = useState(false);
+  const [testRepFilter, setTestRepFilter] = useState<Set<string>>(new Set());
   const [testData, setTestData] = useState<Record<string, any[]>>({});
   const [testDataLoading, setTestDataLoading] = useState(false);
 
@@ -451,6 +452,16 @@ export default function Data() {
     [testDataTypes],
   );
 
+  const availableReps = useMemo(() => {
+    const repSet = new Set<string>();
+    for (const rows of Object.values(testData)) {
+      for (const row of rows) {
+        if (row.rep_name) repSet.add(row.rep_name);
+      }
+    }
+    return Array.from(repSet).sort((a, b) => a.localeCompare(b));
+  }, [testData]);
+
   const memberNameSet = useMemo(() => {
     const s = new Set<string>();
     for (const m of members) s.add(m.name.toLowerCase().trim());
@@ -464,13 +475,16 @@ export default function Data() {
       if (testTeamOnly) {
         filtered = filtered.filter((r) => memberNameSet.has((r.rep_name as string ?? "").toLowerCase().trim()));
       }
+      if (testRepFilter.size > 0) {
+        filtered = filtered.filter((r) => testRepFilter.has(r.rep_name as string ?? ""));
+      }
       if (type === "wins") {
         filtered = filtered.filter((r: any) => isWinStage(r.opportunity_stage, r.opportunity_type));
       }
       out[type] = filtered;
     }
     return out;
-  }, [testData, testTeamOnly, memberNameSet]);
+  }, [testData, testTeamOnly, testRepFilter, memberNameSet]);
 
   const testSummaryRows = useMemo(() => {
     if (activeTypes.length === 0) return [];
@@ -554,7 +568,7 @@ export default function Data() {
 
   const winsByTeam = new Map<string, number>();
   for (const row of metricsData) {
-    if (row.win_date && isSuperhexWinStage(row.op_stage)) {
+    if (row.win_date && isSuperhexWinStage(row.op_stage, row.is_won)) {
       const teamId = mapWinToTeam(row, membersByName, historyByMember);
       if (teamId) {
         winsByTeam.set(teamId, (winsByTeam.get(teamId) ?? 0) + 1);
@@ -926,6 +940,58 @@ export default function Data() {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground">Team Only:</span>
                   <Switch checked={testTeamOnly} onCheckedChange={setTestTeamOnly} />
+                </div>
+
+                {/* Rep filter */}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-muted-foreground">Rep:</span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-60 h-9 justify-between bg-card border-border text-foreground font-normal"
+                      >
+                        <span className="truncate">
+                          {testRepFilter.size === 0
+                            ? "All"
+                            : testRepFilter.size === 1
+                            ? Array.from(testRepFilter)[0]
+                            : `${testRepFilter.size} selected`}
+                        </span>
+                        <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-2 max-h-72 overflow-y-auto" align="start">
+                      <label
+                        className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent font-medium border-b border-border mb-1 pb-2"
+                      >
+                        <Checkbox
+                          checked={testRepFilter.size === 0}
+                          onCheckedChange={() => setTestRepFilter(new Set())}
+                        />
+                        All Reps
+                      </label>
+                      {availableReps.map((rep) => (
+                        <label
+                          key={rep}
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                        >
+                          <Checkbox
+                            checked={testRepFilter.has(rep)}
+                            onCheckedChange={(checked) => {
+                              setTestRepFilter((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(rep);
+                                else next.delete(rep);
+                                return next;
+                              });
+                            }}
+                          />
+                          {rep}
+                        </label>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
 
