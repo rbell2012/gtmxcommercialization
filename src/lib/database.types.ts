@@ -338,3 +338,32 @@ export interface DbAuditLog {
   new_data: Record<string, unknown> | null;
   changed_at: string;
 }
+
+export interface DbMetricsSalesTeam {
+  id: string;
+  manager_name: string;
+  manager_title: string;
+  location_reference: string;
+  team_size: number;
+  avg_monthly_wins: number;
+  team_members: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbMetricsProjectedBookings {
+  id: string;
+  month: string;
+  team_id: string | null;
+  projected_bookings: number | null;
+  new_business_attach: number | null;
+  growth_wins: number | null;
+  created_at: string;
+}
+
+export interface DbProjectTeamAssignment {
+  id: string;
+  team_id: string;
+  sales_team_id: string;
+  created_at: string;
+}

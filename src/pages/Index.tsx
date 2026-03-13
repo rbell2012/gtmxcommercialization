@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock } from "lucide-react";
-import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug } from "@/contexts/TeamsContext";
+import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, X, ChevronsUpDown, Check } from "lucide-react";
+import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -17,6 +17,8 @@ import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
 import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
@@ -269,12 +271,104 @@ const METRIC_BAR_COLORS: string[] = [
   "progress-bar-blue",
 ];
 
+function PilotRegionsPicker({
+  teamId,
+  salesTeams,
+  projectTeamAssignments,
+  assignSalesTeam,
+  unassignSalesTeam,
+}: {
+  teamId: string;
+  salesTeams: SalesTeam[];
+  projectTeamAssignments: { teamId: string; salesTeamId: string }[];
+  assignSalesTeam: (teamId: string, salesTeamId: string) => void;
+  unassignSalesTeam: (teamId: string, salesTeamId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const assigned = projectTeamAssignments
+    .filter((a) => a.teamId === teamId)
+    .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
+    .filter((st): st is SalesTeam => st != null);
+  const unassigned = salesTeams.filter(
+    (st) => !assigned.some((a) => a.id === st.id)
+  );
+
+  return (
+    <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Users className="h-4 w-4 text-primary" />
+          <h3 className="font-display text-lg font-semibold text-foreground">Pilot Regions</h3>
+        </div>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <button
+              className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 transition-colors w-[260px] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={unassigned.length === 0 && salesTeams.length === 0}
+            >
+              {salesTeams.length === 0
+                ? "No regions available"
+                : unassigned.length === 0
+                  ? "All regions assigned"
+                  : "Search regions..."}
+              <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[260px] p-0" align="end">
+            <Command>
+              <CommandInput placeholder="Search regions..." className="h-9 text-xs" />
+              <CommandList>
+                <CommandEmpty className="py-3 text-center text-xs">No regions found.</CommandEmpty>
+                <CommandGroup>
+                  {unassigned.map((st) => (
+                    <CommandItem
+                      key={st.id}
+                      value={st.displayName}
+                      onSelect={() => {
+                        assignSalesTeam(teamId, st.id);
+                        setOpen(false);
+                      }}
+                      className="text-xs cursor-pointer"
+                    >
+                      {st.displayName}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {assigned.length === 0 ? (
+        <p className="text-xs text-muted-foreground">None</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {assigned.map((st) => (
+            <span
+              key={st.id}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-medium text-primary"
+            >
+              {st.displayName}
+              <button
+                onClick={() => unassignSalesTeam(teamId, st.id)}
+                className="rounded-full p-0.5 hover:bg-primary/20 transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const Index = () => {
   const { pilotId } = useParams<{ pilotId?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -626,6 +720,15 @@ const Index = () => {
         </div>
 
         {!collapsedSections["manager-inputs"] && <>
+        {/* Pilot Regions */}
+        {activeTeam && <PilotRegionsPicker
+          teamId={activeTeam.id}
+          salesTeams={salesTeams}
+          projectTeamAssignments={projectTeamAssignments}
+          assignSalesTeam={assignSalesTeam}
+          unassignSalesTeam={unassignSalesTeam}
+        />}
+
         {/* Test Phases */}
         <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
           <div className="mb-3 flex items-center justify-between">

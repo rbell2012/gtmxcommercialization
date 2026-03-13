@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment } from "@/lib/database.types";
 import { isWinStage } from "@/lib/metrics-helpers";
 
 // ── Goal metrics system ──
@@ -223,6 +223,32 @@ export interface MemberGoalsHistoryEntry {
   month: string;
   goals: MemberGoals;
   level: MemberLevel | null;
+}
+
+export interface SalesTeam {
+  id: string;
+  managerName: string;
+  managerTitle: string;
+  locationReference: string;
+  teamSize: number;
+  avgMonthlyWins: number;
+  teamMembers: string;
+  displayName: string;
+}
+
+export interface ProjectedBooking {
+  id: string;
+  month: string;
+  teamId: string | null;
+  projectedBookings: number | null;
+  newBusinessAttach: number | null;
+  growthWins: number | null;
+}
+
+export interface ProjectTeamAssignment {
+  id: string;
+  teamId: string;
+  salesTeamId: string;
 }
 
 export function toMonthKey(d: Date): string {
@@ -577,6 +603,11 @@ interface TeamsContextType {
     reliefMonthMembers: string[];
   }) => void;
   updateHistoricalRoster: (teamId: string, referenceDate: Date, memberIds: string[]) => void;
+  salesTeams: SalesTeam[];
+  projectedBookings: ProjectedBooking[];
+  projectTeamAssignments: ProjectTeamAssignment[];
+  assignSalesTeam: (teamId: string, salesTeamId: string) => void;
+  unassignSalesTeam: (teamId: string, salesTeamId: string) => void;
   reloadAll: () => Promise<void>;
   loading: boolean;
 }
@@ -625,6 +656,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [allMembersById, setAllMembersById] = useState<Map<string, TeamMember>>(new Map());
   const [archivedTeams, setArchivedTeams] = useState<ArchivedTeam[]>([]);
   const [archivedMembers, setArchivedMembers] = useState<ArchivedMember[]>([]);
+  const [salesTeams, setSalesTeams] = useState<SalesTeam[]>([]);
+  const [projectedBookings, setProjectedBookings] = useState<ProjectedBooking[]>([]);
+  const [projectTeamAssignments, setProjectTeamAssignments] = useState<ProjectTeamAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const cachedMetricsRef = useRef<CachedMetrics | null>(null);
@@ -800,7 +834,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const m = metrics ?? cachedMetricsRef.current;
     if (!m) return;
 
-    const [tRes, mRes, fRes, wRes, hRes, tghRes, mghRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, hRes, tghRes, mghRes, stRes, pbRes, ptaRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*").is("archived_at", null),
       supabase.from("weekly_funnels").select("*"),
@@ -808,6 +842,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       supabase.from("member_team_history").select("*"),
       supabase.from("team_goals_history").select("*"),
       supabase.from("member_goals_history").select("*"),
+      supabase.from("metrics_sales_teams").select("*"),
+      supabase.from("metrics_projected_bookings").select("*"),
+      supabase.from("project_team_assignments").select("*"),
     ]);
 
     const { byWeek, byMonth, namesByMonth: cachedNames, winTypesByMonth, winTypeNamesByMonth, opsTypesByMonth, opsTypeNamesByMonth, opsRows, actRows, shRows, tamRows: tamRows_raw } = m;
@@ -1159,12 +1196,41 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     metricCorrectionsRef.current = correctionsBuild;
 
+    const salesTeamEntries: SalesTeam[] = ((stRes.data ?? []) as DbMetricsSalesTeam[]).map((st) => ({
+      id: st.id,
+      managerName: st.manager_name,
+      managerTitle: st.manager_title,
+      locationReference: st.location_reference,
+      teamSize: st.team_size,
+      avgMonthlyWins: Number(st.avg_monthly_wins),
+      teamMembers: st.team_members,
+      displayName: `${st.location_reference} - ${st.manager_name}`,
+    }));
+
+    const projectedBookingEntries: ProjectedBooking[] = ((pbRes.data ?? []) as DbMetricsProjectedBookings[]).map((pb) => ({
+      id: pb.id,
+      month: pb.month,
+      teamId: pb.team_id,
+      projectedBookings: pb.projected_bookings,
+      newBusinessAttach: pb.new_business_attach,
+      growthWins: pb.growth_wins,
+    }));
+
+    const assignmentEntries: ProjectTeamAssignment[] = ((ptaRes.data ?? []) as DbProjectTeamAssignment[]).map((a) => ({
+      id: a.id,
+      teamId: a.team_id,
+      salesTeamId: a.sales_team_id,
+    }));
+
     setTeams(t);
     setUnassignedMembers(u);
     setAllMembersById(membersMap);
     setMemberTeamHistory(historyEntries);
     setTeamGoalsHistory(teamGoalsHistoryEntries);
     setMemberGoalsHistory(memberGoalsHistoryEntries);
+    setSalesTeams(salesTeamEntries);
+    setProjectedBookings(projectedBookingEntries);
+    setProjectTeamAssignments(assignmentEntries);
     setLoading(false);
   }, []);
 
@@ -1205,6 +1271,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_ops" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_wins" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_sales_teams" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_projected_bookings" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_team_assignments" }, debouncedLoadCore)
       .subscribe();
 
     return () => {
@@ -1928,6 +1997,28 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     ]);
   }, [memberTeamHistory]);
 
+  const assignSalesTeam = useCallback((teamId: string, salesTeamId: string) => {
+    const tempId = crypto.randomUUID();
+    setProjectTeamAssignments((prev) => {
+      if (prev.some((a) => a.teamId === teamId && a.salesTeamId === salesTeamId)) return prev;
+      return [...prev, { id: tempId, teamId, salesTeamId }];
+    });
+    dbMutate(
+      supabase.from("project_team_assignments").insert({ id: tempId, team_id: teamId, sales_team_id: salesTeamId }),
+      "assign sales team",
+    );
+  }, []);
+
+  const unassignSalesTeam = useCallback((teamId: string, salesTeamId: string) => {
+    setProjectTeamAssignments((prev) =>
+      prev.filter((a) => !(a.teamId === teamId && a.salesTeamId === salesTeamId))
+    );
+    dbMutate(
+      supabase.from("project_team_assignments").delete().eq("team_id", teamId).eq("sales_team_id", salesTeamId),
+      "unassign sales team",
+    );
+  }, []);
+
   const contextValue = useMemo(() => ({
     teams,
     setTeams,
@@ -1957,15 +2048,21 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     removeMember,
     upsertTeamGoalsHistory,
     updateHistoricalRoster,
+    salesTeams,
+    projectedBookings,
+    projectTeamAssignments,
+    assignSalesTeam,
+    unassignSalesTeam,
     reloadAll: loadAll,
     loading,
   }), [
     teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
     allMembersById, archivedTeams, archivedMembers, loading,
+    salesTeams, projectedBookings, projectTeamAssignments,
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,
     createMember, updateMember, assignMember, unassignMember, removeMember,
-    upsertTeamGoalsHistory, updateHistoricalRoster, loadAll,
+    upsertTeamGoalsHistory, updateHistoricalRoster, assignSalesTeam, unassignSalesTeam, loadAll,
   ]);
 
   return (

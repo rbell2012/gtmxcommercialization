@@ -407,6 +407,40 @@ erDiagram
     teams ||--o{ activation_adoption_entries : "adoption"
     teams ||--o{ gtmx_impact_entries : "impact"
 
+    %% Forecasting & sales team assignments
+    metrics_sales_teams {
+        uuid id PK
+        text manager_name
+        text manager_title
+        text location_reference
+        int team_size
+        numeric avg_monthly_wins
+        text team_members
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    metrics_projected_bookings {
+        uuid id PK
+        text month
+        uuid team_id FK
+        int projected_bookings
+        int new_business_attach
+        int growth_wins
+        timestamptz created_at
+    }
+
+    project_team_assignments {
+        uuid id PK
+        uuid team_id FK
+        uuid sales_team_id FK
+        timestamptz created_at
+    }
+
+    teams ||--o{ metrics_projected_bookings : "forecasts"
+    teams ||--o{ project_team_assignments : "assigned teams"
+    metrics_sales_teams ||--o{ project_team_assignments : "assigned to"
+
     %% External metrics (linked by rep_name, no FK)
     members }o..o{ superhex : "rep_name"
     members }o..o{ metrics_tam : "rep_name"

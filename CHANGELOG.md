@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-12 (Forecasting, Pilot Regions & Projected Impact)
+
+### Location — Quota Page (`src/pages/Quota.tsx`), Project Page (`src/pages/Index.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Data Model (`docs/data-model.mmd`), Migration
+
+**Rationale:** Managers needed a way to forecast future month goals (split by New Business attach and Growth wins), assign external sales team regions to projects, and see the projected win impact those regions would add based on the pilot's current per-member performance.
+
+**Changes:**
+- Created 3 new Supabase tables via migration (`20260312100000_create_forecasting_tables.sql`): `metrics_sales_teams` (manager, location, team size, avg wins, members), `metrics_projected_bookings` (monthly global bookings and per-project NB attach / growth win forecasts), and `project_team_assignments` (join table linking projects to sales team regions).
+- Seeded `metrics_projected_bookings` with March–December 2026 global projected bookings and Toast Growth Platform NB attach goals.
+- Added `DbMetricsSalesTeam`, `DbMetricsProjectedBookings`, and `DbProjectTeamAssignment` TypeScript interfaces to `database.types.ts`.
+- Added `SalesTeam`, `ProjectedBooking`, and `ProjectTeamAssignment` app-level types to `TeamsContext.tsx`, loaded all 3 tables in `loadCore`, exposed via context, and added `assignSalesTeam` / `unassignSalesTeam` CRUD functions with realtime subscriptions.
+- Added **Pilot Regions** section to each project tab on `Index.tsx` with a searchable combobox (Popover + Command/cmdk) for assigning/removing sales team regions, displayed as removable badge chips. Installed `cmdk` package as a dependency.
+- Added **Forecasting & Goals** section at the bottom of `Quota.tsx` with a range dropdown (1/3/6/12 months) and per-project forecast tables showing: Month, Projected Bookings, NB Attach Goal, NB Attach %, Growth Wins Goal, Region Impact, and Projected Total.
+- Region Impact calculation: last month's total wins / (active members + assigned region reps) = wins/member, then wins/member × region reps = projected impact. A plain-text explanation of the formula is shown below the Assigned Teams Breakdown header.
+- Updated `docs/data-model.mmd` with the 3 new tables and their relationships.
+
+---
+
 ## 2026-03-12 (New Business / Growth Win & Ops Breakdown)
 
 ### Location — Project Page (`src/pages/Index.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`)

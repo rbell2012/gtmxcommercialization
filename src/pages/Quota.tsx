@@ -1,10 +1,11 @@
 import { useState, useMemo, memo, Component, type ReactNode, type ErrorInfo } from "react";
-import { Target, Calendar, LockOpen, Lock } from "lucide-react";
+import { Target, Calendar, LockOpen, Lock, TrendingUp } from "lucide-react";
 import {
   useTeams,
   getTeamMembersForMonth,
   getHistoricalTeam,
   getHistoricalMember,
+  toMonthKey,
   type Team,
   type TeamMember,
   type MemberTeamHistoryEntry,
@@ -12,6 +13,9 @@ import {
   type MemberGoalsHistoryEntry,
   type GoalMetric,
   type AcceleratorRule,
+  type SalesTeam,
+  type ProjectedBooking,
+  type ProjectTeamAssignment,
   GOAL_METRICS,
   GOAL_METRIC_LABELS,
 } from "@/contexts/TeamsContext";
@@ -51,7 +55,7 @@ function mergePhases(teams: Team[]): ComputedPhase[] {
 }
 
 const Quota = () => {
-  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById } = useTeams();
+  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, salesTeams, projectedBookings, projectTeamAssignments } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const [previousExpanded, setPreviousExpanded] = useState(false);
@@ -208,10 +212,220 @@ const Quota = () => {
         {activeTeams.map((team) => (
           <TeamQuotaCard key={team.id} team={team} referenceDate={referenceDate} memberTeamHistory={memberTeamHistory} teamGoalsHistory={teamGoalsHistory} memberGoalsHistory={memberGoalsHistory} allMembersById={allMembersById} />
         ))}
+
+        <ForecastingSection
+          teams={activeTeams}
+          salesTeams={salesTeams}
+          projectedBookings={projectedBookings}
+          projectTeamAssignments={projectTeamAssignments}
+        />
       </div>
     </div>
   );
 };
+
+const FORECAST_RANGE_OPTIONS = [
+  { value: "1", label: "1 Month" },
+  { value: "3", label: "3 Months" },
+  { value: "6", label: "6 Months" },
+  { value: "12", label: "12 Months" },
+] as const;
+
+function getFutureMonths(count: number): string[] {
+  const result: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return result;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleString("en-US", { month: "short", year: "2-digit" });
+}
+
+function ForecastingSection({
+  teams,
+  salesTeams,
+  projectedBookings,
+  projectTeamAssignments,
+}: {
+  teams: Team[];
+  salesTeams: SalesTeam[];
+  projectedBookings: ProjectedBooking[];
+  projectTeamAssignments: ProjectTeamAssignment[];
+}) {
+  const [range, setRange] = useState("3");
+  const months = useMemo(() => getFutureMonths(Number(range)), [range]);
+
+  const globalBookings = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pb of projectedBookings) {
+      if (pb.teamId === null && pb.projectedBookings != null) {
+        map.set(pb.month, pb.projectedBookings);
+      }
+    }
+    return map;
+  }, [projectedBookings]);
+
+  const prevMonthKey = useMemo(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return toMonthKey(d);
+  }, []);
+
+  return (
+    <div className="mt-8">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <TrendingUp className="h-6 w-6 text-primary" />
+          <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            Forecasting &amp; Goals
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Range:</span>
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+          >
+            {FORECAST_RANGE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {teams.length === 0 && (
+        <p className="text-sm text-muted-foreground">No active projects.</p>
+      )}
+
+      {teams.map((team) => {
+        const teamBookings = projectedBookings.filter(
+          (pb) => pb.teamId === team.id
+        );
+        const teamBookingsMap = new Map(
+          teamBookings.map((pb) => [pb.month, pb])
+        );
+
+        const assignedTeams = projectTeamAssignments
+          .filter((a) => a.teamId === team.id)
+          .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
+          .filter((st): st is SalesTeam => st != null);
+
+        const assignedReps = assignedTeams.reduce(
+          (sum, st) => sum + st.teamSize, 0
+        );
+
+        const lastMonthNB = team.members.reduce((sum, m) => {
+          const wt = m.monthlyWinTypes[prevMonthKey];
+          return sum + (wt?.nb ?? 0);
+        }, 0);
+
+        const lastMonthGrowth = team.members.reduce((sum, m) => {
+          const wt = m.monthlyWinTypes[prevMonthKey];
+          return sum + (wt?.growth ?? 0);
+        }, 0);
+
+        const lastMonthTotal = lastMonthNB + lastMonthGrowth;
+        const activeMembers = team.members.filter((m) => m.isActive).length;
+        const totalHeadcount = activeMembers + assignedReps;
+        const winsPerMember = totalHeadcount > 0 ? lastMonthTotal / totalHeadcount : 0;
+        const regionImpact = Math.round(winsPerMember * assignedReps);
+
+        return (
+          <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold text-foreground">{team.name}</h3>
+              {assignedTeams.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {assignedTeams.length} region{assignedTeams.length !== 1 ? "s" : ""} assigned ({assignedReps} reps)
+                </span>
+              )}
+            </div>
+
+            <div className="mb-3 flex items-center gap-6 text-xs text-muted-foreground">
+              <span>Last month: <span className="font-semibold text-foreground">{lastMonthTotal} wins</span> (NB: {lastMonthNB}, Growth: {lastMonthGrowth})</span>
+              {totalHeadcount > 0 && (
+                <span>{Math.round(winsPerMember)} wins/member &middot; {activeMembers} members{assignedReps > 0 ? ` + ${assignedReps} region reps = ${totalHeadcount} total` : ""}</span>
+              )}
+              {regionImpact > 0 && (
+                <span>With regions: <span className="font-semibold text-foreground">+{regionImpact} projected</span></span>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="py-2 px-3 text-left font-semibold text-muted-foreground">Month</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Projected Bookings</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Attach Goal</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Attach %</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Growth Wins Goal</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Region Impact</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Projected Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {months.map((mk) => {
+                    const global = globalBookings.get(mk) ?? null;
+                    const teamPb = teamBookingsMap.get(mk);
+                    const nbAttach = teamPb?.newBusinessAttach ?? null;
+                    const growthGoal = teamPb?.growthWins ?? null;
+                    const attachPct = (global && global > 0 && nbAttach != null)
+                      ? ((nbAttach / global) * 100).toFixed(2)
+                      : "—";
+                    const baseWins = (nbAttach ?? 0) + (growthGoal ?? 0);
+                    const projectedTotal = baseWins + regionImpact;
+
+                    return (
+                      <tr key={mk} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                        <td className="py-2 px-3 font-medium text-foreground">{formatMonthLabel(mk)}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{global != null ? global.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{nbAttach != null ? nbAttach.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{attachPct}{attachPct !== "—" ? "%" : ""}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{growthGoal != null ? growthGoal.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-primary font-semibold">{regionImpact > 0 ? `+${regionImpact}` : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums font-semibold text-foreground">{baseWins > 0 || regionImpact > 0 ? projectedTotal.toLocaleString() : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {assignedTeams.length > 0 && (
+              <div className="mt-4 border-t border-border pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Teams Breakdown</p>
+                <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                  Last month this pilot had <span className="font-semibold text-foreground">{lastMonthTotal} wins</span>.
+                  {" "}Total headcount: <span className="font-semibold text-foreground">{activeMembers} member{activeMembers !== 1 ? "s" : ""} + {assignedReps} region reps = {totalHeadcount}</span>.
+                  {" "}{lastMonthTotal} wins / {totalHeadcount} people = <span className="font-semibold text-foreground">{Math.round(winsPerMember)} wins/member</span>.
+                  {" "}Projected region impact: {Math.round(winsPerMember)} &times; {assignedReps} reps = <span className="font-semibold text-primary">+{regionImpact} wins/mo</span>.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {assignedTeams.map((st) => (
+                    <div key={st.id} className="rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+                      <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {st.teamSize} reps &middot; ~{Math.round(winsPerMember * st.teamSize)} projected wins/mo
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function TeamQuotaCard({
   team: rawTeam,
