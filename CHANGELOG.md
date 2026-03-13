@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-13 (Fix Double-Counted Reps in Quota Forecast)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** The "total reps" count displayed on each project's forecast card was summing rep counts for every region assignment across all phases, meaning a region assigned in multiple months had its reps counted multiple times. The total should reflect the number of distinct reps involved, not a sum inflated by multi-month assignments.
+
+**Changes:**
+- Deduplicated the assigned sales teams by ID before summing `teamSize`, so each region's reps are only counted once regardless of how many phases it is assigned to.
+
+---
+
 ## 2026-03-13 (Rename "Data & Findings" to "Data")
 
 ### Location — Nav Bar (`src/App.tsx`), Data Page (`src/pages/Data.tsx`), Home Page (`src/pages/Home.tsx`), Help Page (`src/pages/Help.tsx`)

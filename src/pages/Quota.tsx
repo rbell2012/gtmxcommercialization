@@ -332,7 +332,10 @@ function ForecastingSection({
           .filter((a) => a.teamId === team.id)
           .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
           .filter((st): st is SalesTeam => st != null);
-        const allAssignedReps = allAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
+        const distinctAssignedTeams = Array.from(
+          new Map(allAssignedTeams.map((st) => [st.id, st])).values()
+        );
+        const allAssignedReps = distinctAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
 
         const lastMonthNB = team.members.reduce((sum, m) => {
           const wt = m.monthlyWinTypes[prevMonthKey];
