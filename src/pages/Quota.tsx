@@ -383,7 +383,9 @@ function ForecastingSection({
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Attach %</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Growth Wins Goal</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Region Impact</th>
-                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Projected Total</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Goal Total</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Delta</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Reps Needed</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -397,8 +399,13 @@ function ForecastingSection({
                       : "—";
                     const monthAssigned = getAssignedTeamsForMonth(mk);
                     const regionImpact = computeRegionImpact(monthAssigned);
+                    const currentReps = monthAssigned.reduce((sum, st) => sum + st.teamSize, 0);
                     const baseWins = (nbAttach ?? 0) + (growthGoal ?? 0);
-                    const projectedTotal = baseWins + regionImpact;
+                    const delta = regionImpact - baseWins;
+                    const winsPerPerson = activeMembers > 0 ? lastMonthTotal / activeMembers : 0;
+                    const repsNeeded = baseWins > 0 && winsPerPerson > 0
+                      ? Math.max(0, Math.ceil(baseWins / winsPerPerson) - activeMembers - currentReps)
+                      : null;
 
                     return (
                       <tr key={mk} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
@@ -408,7 +415,13 @@ function ForecastingSection({
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{attachPct}{attachPct !== "—" ? "%" : ""}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{growthGoal != null ? growthGoal.toLocaleString() : "—"}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-primary font-semibold">{regionImpact > 0 ? `+${regionImpact}` : "—"}</td>
-                        <td className="py-2 px-3 text-right tabular-nums font-semibold text-foreground">{baseWins > 0 || regionImpact > 0 ? projectedTotal.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums font-semibold text-foreground">{baseWins > 0 ? baseWins.toLocaleString() : "—"}</td>
+                        <td className={`py-2 px-3 text-right tabular-nums font-semibold ${baseWins === 0 && regionImpact === 0 ? "text-muted-foreground" : delta >= 0 ? "text-green-500" : "text-destructive"}`}>
+                          {baseWins === 0 && regionImpact === 0 ? "—" : delta > 0 ? `+${delta}` : delta.toLocaleString()}
+                        </td>
+                        <td className={`py-2 px-3 text-right tabular-nums font-semibold ${repsNeeded === null ? "text-muted-foreground" : repsNeeded === 0 ? "text-green-500" : "text-destructive"}`}>
+                          {repsNeeded === null ? "—" : repsNeeded === 0 ? "✓" : `+${repsNeeded}`}
+                        </td>
                       </tr>
                     );
                   })}

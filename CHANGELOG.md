@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-13 (Replace Projected Total with Goal Delta & Reps Needed)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** The "Projected Total" column was summing NB + Growth goals with a Region Impact value derived from last month's wins, double-counting and mixing forward-looking targets with backward-looking actuals. The meaningful insight is the *gap* between the combined goal and the expected region contribution, plus how many additional reps are needed to close that gap.
+
+**Changes:**
+- Removed the "Projected Total" column from the Forecasting & Goals table.
+- Added a "Goal Total" column showing the simple sum of NB Attach Goal + Growth Wins Goal.
+- Added a "Delta" column showing Region Impact minus Goal Total, color-coded green (positive/covered) or red (shortfall).
+- Added a "Reps Needed" column that calculates additional reps required beyond the current team + assigned regions to cover the goal, using last month's per-member win rate. Shows "✓" when capacity is sufficient, "+N" when more reps are needed, or "—" when no goal is set.
+
+---
+
 ## 2026-03-13 (Fix Double-Counted Reps in Quota Forecast)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)
