@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-13 (Region Impact Hover Tooltip)
+
+### Location — Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** The Region Impact number in the Forecasting & Goals table was a single value with no visibility into how it was derived. Users needed a way to understand the calculation without leaving the page or reverse-engineering the formula.
+
+**Changes:**
+- Added a hover tooltip to each Region Impact value (e.g., "+17") in the forecast table that displays a full breakdown of the calculation.
+- Tooltip shows: last month's total wins, active member count, assigned reps count, total headcount, wins-per-member rate, and the final multiplication yielding the impact number.
+- When regions are assigned for that month, the tooltip also lists each region by name with its effective rep count (showing exclusions where applicable, e.g., "5 of 7 reps").
+- The Region Impact number now renders with a dotted underline to hint at hover interactivity.
+
+---
+
 ## 2026-03-13 (Separate New Business & Growth Pilot Regions)
 
 ### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`)

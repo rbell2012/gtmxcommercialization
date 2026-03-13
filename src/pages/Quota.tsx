@@ -425,9 +425,17 @@ function ForecastingSection({
                     const attachPct = (global && global > 0 && nbAttach != null)
                       ? ((nbAttach / global) * 100).toFixed(2)
                       : "—";
-                    const monthAssigned = getAssignedTeamsForMonth(mk);
-                    const regionImpact = computeRegionImpact(mk);
                     const currentReps = getEffectiveRepsForMonth(mk);
+                    const regionImpact = computeRegionImpact(mk);
+                    const headcount = activeMembers + currentReps;
+                    const wpm = headcount > 0 ? lastMonthTotal / headcount : 0;
+                    const monthAssignments = getAssignmentsForMonth(mk);
+                    const regionDetails = monthAssignments.map((a) => {
+                      const st = salesTeams.find((s) => s.id === a.salesTeamId);
+                      if (!st) return null;
+                      const excluded = a.excludedMembers ? a.excludedMembers.split(",").map((s) => s.trim()).filter(Boolean).length : 0;
+                      return { name: st.displayName, totalReps: st.teamSize, effectiveReps: Math.max(0, st.teamSize - excluded) };
+                    }).filter(Boolean) as { name: string; totalReps: number; effectiveReps: number }[];
                     const baseWins = (nbAttach ?? 0) + (growthGoal ?? 0);
                     const delta = regionImpact - baseWins;
                     const winsPerPerson = activeMembers > 0 ? lastMonthTotal / activeMembers : 0;
@@ -437,12 +445,67 @@ function ForecastingSection({
 
                     return (
                       <tr key={mk} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                        <td className="py-2 px-3 font-medium text-foreground">{formatMonthLabel(mk)}</td>
+                        <td className="py-2 px-3 font-medium text-foreground whitespace-nowrap">{formatMonthLabel(mk)}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{global != null ? global.toLocaleString() : "—"}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{nbAttach != null ? nbAttach.toLocaleString() : "—"}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{attachPct}{attachPct !== "—" ? "%" : ""}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{growthGoal != null ? growthGoal.toLocaleString() : "—"}</td>
-                        <td className="py-2 px-3 text-right tabular-nums text-primary font-semibold">{regionImpact > 0 ? `+${regionImpact}` : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-primary font-semibold">
+                          {regionImpact > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="cursor-help underline decoration-dotted underline-offset-2">+{regionImpact}</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[320px] p-3">
+                                <div className="text-xs leading-relaxed">
+                                  <p className="font-semibold mb-2">Region Impact Breakdown</p>
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between gap-4 text-muted-foreground">
+                                      <span>Last month wins</span>
+                                      <span className="font-semibold text-foreground">{lastMonthTotal}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 text-muted-foreground">
+                                      <span>Active members</span>
+                                      <span className="font-semibold text-foreground">{activeMembers}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 text-muted-foreground">
+                                      <span>Assigned reps</span>
+                                      <span className="font-semibold text-foreground">{currentReps}</span>
+                                    </div>
+                                    {regionDetails.length > 0 && (
+                                      <>
+                                        <div className="my-1.5 border-t border-border" />
+                                        <p className="font-semibold text-muted-foreground mb-1">Regions</p>
+                                        {regionDetails.map((r) => (
+                                          <div key={r.name} className="flex justify-between gap-4 text-muted-foreground pl-2">
+                                            <span className="truncate">{r.name}</span>
+                                            <span className="font-semibold text-foreground whitespace-nowrap">
+                                              {r.effectiveReps === r.totalReps ? `${r.effectiveReps} reps` : `${r.effectiveReps} of ${r.totalReps} reps`}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </>
+                                    )}
+                                    <div className="my-1.5 border-t border-border" />
+                                    <div className="flex justify-between gap-4 text-muted-foreground">
+                                      <span>Total headcount</span>
+                                      <span className="font-semibold text-foreground">{activeMembers} + {currentReps} = {headcount}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4 text-muted-foreground">
+                                      <span>Wins per member</span>
+                                      <span className="font-semibold text-foreground">{lastMonthTotal} / {headcount} = {wpm % 1 === 0 ? wpm : wpm.toFixed(2)}</span>
+                                    </div>
+                                    <div className="my-1.5 border-t border-border" />
+                                    <div className="flex justify-between gap-4 font-semibold text-foreground">
+                                      <span>Region Impact</span>
+                                      <span className="text-primary">{wpm % 1 === 0 ? wpm : wpm.toFixed(2)} × {currentReps} = +{regionImpact}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : "—"}
+                        </td>
                         <td className="py-2 px-3 text-right tabular-nums font-semibold text-foreground">{baseWins > 0 ? baseWins.toLocaleString() : "—"}</td>
                         <td className={`py-2 px-3 text-right tabular-nums font-semibold ${baseWins === 0 && regionImpact === 0 ? "text-muted-foreground" : delta >= 0 ? "text-green-500" : "text-destructive"}`}>
                           {baseWins === 0 && regionImpact === 0 ? "—" : delta > 0 ? `+${delta}` : delta.toLocaleString()}
