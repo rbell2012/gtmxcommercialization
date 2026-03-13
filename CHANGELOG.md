@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-13 (Per-Phase Pilot Regions)
+
+### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Migration
+
+**Rationale:** Pilot regions were stored globally per project, meaning the same regions appeared on every test phase/month. Regions need to be tracked month-over-month so each phase can have its own set of assigned regions, reflecting the actual rollout timeline (e.g. only Toast Growth Platform in March should have regions assigned).
+
+**Changes:**
+- Added `month_index` column to `project_team_assignments` table via new migration (`20260313000000_add_month_index_to_project_team_assignments.sql`), replacing the `(team_id, sales_team_id)` unique constraint with `(team_id, sales_team_id, month_index)`.
+- Updated `DbProjectTeamAssignment` and `ProjectTeamAssignment` types to include `monthIndex`.
+- Updated `assignSalesTeam` and `unassignSalesTeam` context functions to accept and persist `monthIndex`.
+- Updated `PilotRegionsPicker` on the Project Page to filter and manage regions for the currently viewed test phase. The header now shows which phase the regions apply to (e.g. "— (5) March").
+- Regions new to the current phase (not assigned in any earlier phase) display with a green border and green X button to indicate they are new.
+- Reduced font sizes and padding throughout the Pilot Regions component for a more compact layout.
+- Moved the Pilot Regions section to below the Mission & Purpose of Test section.
+- Updated the Quota page's Forecasting section to compute region impact per-month by mapping each forecast month to the correct phase index, so each row reflects only the regions assigned to that specific phase.
+- Migrated existing region assignments in Supabase from `month_index = 0` to `month_index = 4` (March 2026) for Toast Growth Platform.
+
+---
+
 ## 2026-03-12 (Forecasting, Pilot Regions & Projected Impact)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`), Project Page (`src/pages/Index.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Data Model (`docs/data-model.mmd`), Migration

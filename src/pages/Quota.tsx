@@ -312,14 +312,27 @@ function ForecastingSection({
           teamBookings.map((pb) => [pb.month, pb])
         );
 
-        const assignedTeams = projectTeamAssignments
+        const teamPhases = generateTestPhases(team.startDate, team.endDate, {});
+        const monthKeyToPhaseIndex = new Map<string, number>();
+        for (const p of teamPhases) {
+          const mk = `${p.year}-${String(p.month + 1).padStart(2, "0")}`;
+          monthKeyToPhaseIndex.set(mk, p.monthIndex);
+        }
+
+        const getAssignedTeamsForMonth = (mk: string) => {
+          const phaseIdx = monthKeyToPhaseIndex.get(mk);
+          if (phaseIdx === undefined) return [];
+          return projectTeamAssignments
+            .filter((a) => a.teamId === team.id && a.monthIndex === phaseIdx)
+            .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
+            .filter((st): st is SalesTeam => st != null);
+        };
+
+        const allAssignedTeams = projectTeamAssignments
           .filter((a) => a.teamId === team.id)
           .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
           .filter((st): st is SalesTeam => st != null);
-
-        const assignedReps = assignedTeams.reduce(
-          (sum, st) => sum + st.teamSize, 0
-        );
+        const allAssignedReps = allAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
 
         const lastMonthNB = team.members.reduce((sum, m) => {
           const wt = m.monthlyWinTypes[prevMonthKey];
@@ -333,29 +346,28 @@ function ForecastingSection({
 
         const lastMonthTotal = lastMonthNB + lastMonthGrowth;
         const activeMembers = team.members.filter((m) => m.isActive).length;
-        const totalHeadcount = activeMembers + assignedReps;
-        const winsPerMember = totalHeadcount > 0 ? lastMonthTotal / totalHeadcount : 0;
-        const regionImpact = Math.round(winsPerMember * assignedReps);
+
+        const computeRegionImpact = (monthAssignedTeams: SalesTeam[]) => {
+          const reps = monthAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
+          const headcount = activeMembers + reps;
+          const wpm = headcount > 0 ? lastMonthTotal / headcount : 0;
+          return Math.round(wpm * reps);
+        };
 
         return (
           <div key={team.id} className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-display text-lg font-semibold text-foreground">{team.name}</h3>
-              {assignedTeams.length > 0 && (
+              {allAssignedTeams.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {assignedTeams.length} region{assignedTeams.length !== 1 ? "s" : ""} assigned ({assignedReps} reps)
+                  {allAssignedTeams.length} region{allAssignedTeams.length !== 1 ? "s" : ""} assigned across phases ({allAssignedReps} total reps)
                 </span>
               )}
             </div>
 
             <div className="mb-3 flex items-center gap-6 text-xs text-muted-foreground">
               <span>Last month: <span className="font-semibold text-foreground">{lastMonthTotal} wins</span> (NB: {lastMonthNB}, Growth: {lastMonthGrowth})</span>
-              {totalHeadcount > 0 && (
-                <span>{Math.round(winsPerMember)} wins/member &middot; {activeMembers} members{assignedReps > 0 ? ` + ${assignedReps} region reps = ${totalHeadcount} total` : ""}</span>
-              )}
-              {regionImpact > 0 && (
-                <span>With regions: <span className="font-semibold text-foreground">+{regionImpact} projected</span></span>
-              )}
+              <span>{activeMembers} active members</span>
             </div>
 
             <div className="overflow-x-auto">
@@ -380,6 +392,8 @@ function ForecastingSection({
                     const attachPct = (global && global > 0 && nbAttach != null)
                       ? ((nbAttach / global) * 100).toFixed(2)
                       : "—";
+                    const monthAssigned = getAssignedTeamsForMonth(mk);
+                    const regionImpact = computeRegionImpact(monthAssigned);
                     const baseWins = (nbAttach ?? 0) + (growthGoal ?? 0);
                     const projectedTotal = baseWins + regionImpact;
 
@@ -399,27 +413,22 @@ function ForecastingSection({
               </table>
             </div>
 
-            {assignedTeams.length > 0 && (
+            {allAssignedTeams.length > 0 && (() => {
+              const uniqueTeams = Array.from(new Map(allAssignedTeams.map((st) => [st.id, st])).values());
+              return (
               <div className="mt-4 border-t border-border pt-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Teams Breakdown</p>
-                <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-                  Last month this pilot had <span className="font-semibold text-foreground">{lastMonthTotal} wins</span>.
-                  {" "}Total headcount: <span className="font-semibold text-foreground">{activeMembers} member{activeMembers !== 1 ? "s" : ""} + {assignedReps} region reps = {totalHeadcount}</span>.
-                  {" "}{lastMonthTotal} wins / {totalHeadcount} people = <span className="font-semibold text-foreground">{Math.round(winsPerMember)} wins/member</span>.
-                  {" "}Projected region impact: {Math.round(winsPerMember)} &times; {assignedReps} reps = <span className="font-semibold text-primary">+{regionImpact} wins/mo</span>.
-                </p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Regions (all phases)</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {assignedTeams.map((st) => (
+                  {uniqueTeams.map((st) => (
                     <div key={st.id} className="rounded-md border border-border/50 bg-muted/20 px-3 py-2">
                       <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {st.teamSize} reps &middot; ~{Math.round(winsPerMember * st.teamSize)} projected wins/mo
-                      </p>
+                      <p className="text-[10px] text-muted-foreground">{st.teamSize} reps</p>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         );
       })}

@@ -249,6 +249,7 @@ export interface ProjectTeamAssignment {
   id: string;
   teamId: string;
   salesTeamId: string;
+  monthIndex: number;
 }
 
 export function toMonthKey(d: Date): string {
@@ -606,8 +607,8 @@ interface TeamsContextType {
   salesTeams: SalesTeam[];
   projectedBookings: ProjectedBooking[];
   projectTeamAssignments: ProjectTeamAssignment[];
-  assignSalesTeam: (teamId: string, salesTeamId: string) => void;
-  unassignSalesTeam: (teamId: string, salesTeamId: string) => void;
+  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   reloadAll: () => Promise<void>;
   loading: boolean;
 }
@@ -1220,6 +1221,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       id: a.id,
       teamId: a.team_id,
       salesTeamId: a.sales_team_id,
+      monthIndex: a.month_index,
     }));
 
     setTeams(t);
@@ -1997,24 +1999,24 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     ]);
   }, [memberTeamHistory]);
 
-  const assignSalesTeam = useCallback((teamId: string, salesTeamId: string) => {
+  const assignSalesTeam = useCallback((teamId: string, salesTeamId: string, monthIndex: number) => {
     const tempId = crypto.randomUUID();
     setProjectTeamAssignments((prev) => {
-      if (prev.some((a) => a.teamId === teamId && a.salesTeamId === salesTeamId)) return prev;
-      return [...prev, { id: tempId, teamId, salesTeamId }];
+      if (prev.some((a) => a.teamId === teamId && a.salesTeamId === salesTeamId && a.monthIndex === monthIndex)) return prev;
+      return [...prev, { id: tempId, teamId, salesTeamId, monthIndex }];
     });
     dbMutate(
-      supabase.from("project_team_assignments").insert({ id: tempId, team_id: teamId, sales_team_id: salesTeamId }),
+      supabase.from("project_team_assignments").insert({ id: tempId, team_id: teamId, sales_team_id: salesTeamId, month_index: monthIndex }),
       "assign sales team",
     );
   }, []);
 
-  const unassignSalesTeam = useCallback((teamId: string, salesTeamId: string) => {
+  const unassignSalesTeam = useCallback((teamId: string, salesTeamId: string, monthIndex: number) => {
     setProjectTeamAssignments((prev) =>
-      prev.filter((a) => !(a.teamId === teamId && a.salesTeamId === salesTeamId))
+      prev.filter((a) => !(a.teamId === teamId && a.salesTeamId === salesTeamId && a.monthIndex === monthIndex))
     );
     dbMutate(
-      supabase.from("project_team_assignments").delete().eq("team_id", teamId).eq("sales_team_id", salesTeamId),
+      supabase.from("project_team_assignments").delete().eq("team_id", teamId).eq("sales_team_id", salesTeamId).eq("month_index", monthIndex),
       "unassign sales team",
     );
   }, []);

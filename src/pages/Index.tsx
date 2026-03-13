@@ -273,37 +273,49 @@ const METRIC_BAR_COLORS: string[] = [
 
 function PilotRegionsPicker({
   teamId,
+  monthIndex,
+  phaseLabel,
   salesTeams,
   projectTeamAssignments,
   assignSalesTeam,
   unassignSalesTeam,
 }: {
   teamId: string;
+  monthIndex: number;
+  phaseLabel: string;
   salesTeams: SalesTeam[];
-  projectTeamAssignments: { teamId: string; salesTeamId: string }[];
-  assignSalesTeam: (teamId: string, salesTeamId: string) => void;
-  unassignSalesTeam: (teamId: string, salesTeamId: string) => void;
+  projectTeamAssignments: { teamId: string; salesTeamId: string; monthIndex: number }[];
+  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const assigned = projectTeamAssignments
-    .filter((a) => a.teamId === teamId)
+    .filter((a) => a.teamId === teamId && a.monthIndex === monthIndex)
     .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
     .filter((st): st is SalesTeam => st != null);
   const unassigned = salesTeams.filter(
     (st) => !assigned.some((a) => a.id === st.id)
   );
+  const previouslyAssigned = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of projectTeamAssignments) {
+      if (a.teamId === teamId && a.monthIndex < monthIndex) ids.add(a.salesTeamId);
+    }
+    return ids;
+  }, [projectTeamAssignments, teamId, monthIndex]);
 
   return (
-    <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-primary" />
-          <h3 className="font-display text-lg font-semibold text-foreground">Pilot Regions</h3>
+    <div className="mb-4 rounded-lg border border-border bg-card p-4 glow-card">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Users className="h-3.5 w-3.5 text-primary" />
+          <h3 className="font-display text-sm font-semibold text-foreground">Pilot Regions</h3>
+          <span className="text-[10px] text-muted-foreground">— {phaseLabel}</span>
         </div>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
-              className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 transition-colors w-[260px] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:bg-muted/50 transition-colors w-[220px] disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={unassigned.length === 0 && salesTeams.length === 0}
             >
               {salesTeams.length === 0
@@ -314,21 +326,21 @@ function PilotRegionsPicker({
               <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-[260px] p-0" align="end">
+          <PopoverContent className="w-[220px] p-0" align="end">
             <Command>
-              <CommandInput placeholder="Search regions..." className="h-9 text-xs" />
+              <CommandInput placeholder="Search regions..." className="h-8 text-[10px]" />
               <CommandList>
-                <CommandEmpty className="py-3 text-center text-xs">No regions found.</CommandEmpty>
+                <CommandEmpty className="py-2 text-center text-[10px]">No regions found.</CommandEmpty>
                 <CommandGroup>
                   {unassigned.map((st) => (
                     <CommandItem
                       key={st.id}
                       value={st.displayName}
                       onSelect={() => {
-                        assignSalesTeam(teamId, st.id);
+                        assignSalesTeam(teamId, st.id, monthIndex);
                         setOpen(false);
                       }}
-                      className="text-xs cursor-pointer"
+                      className="text-[10px] cursor-pointer"
                     >
                       {st.displayName}
                     </CommandItem>
@@ -340,23 +352,26 @@ function PilotRegionsPicker({
         </Popover>
       </div>
       {assigned.length === 0 ? (
-        <p className="text-xs text-muted-foreground">None</p>
+        <p className="text-[10px] text-muted-foreground">None</p>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {assigned.map((st) => (
-            <span
-              key={st.id}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-medium text-primary"
-            >
-              {st.displayName}
-              <button
-                onClick={() => unassignSalesTeam(teamId, st.id)}
-                className="rounded-full p-0.5 hover:bg-primary/20 transition-colors"
+        <div className="flex flex-wrap gap-1.5">
+          {assigned.map((st) => {
+            const isNew = !previouslyAssigned.has(st.id);
+            return (
+              <span
+                key={st.id}
+                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-[10px] font-medium text-foreground ${isNew ? "border-emerald-500/50" : "border-border"}`}
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
+                {st.displayName}
+                <button
+                  onClick={() => unassignSalesTeam(teamId, st.id, monthIndex)}
+                  className={`rounded-full p-0.5 transition-colors ${isNew ? "text-emerald-500 hover:bg-emerald-500/10" : "text-muted-foreground hover:bg-muted"}`}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
@@ -508,6 +523,14 @@ const Index = () => {
   const overallProgress = activeTeam
     ? computeOverallProgress(activeTeam.startDate, activeTeam.endDate)
     : 0;
+
+  const activePhase = useMemo(() => {
+    if (computedPhases.length === 0) return null;
+    const anchor = selectedMonth ?? new Date();
+    return computedPhases.find(
+      (p) => p.year === anchor.getFullYear() && p.month === anchor.getMonth()
+    ) ?? computedPhases[0];
+  }, [computedPhases, selectedMonth]);
 
   const extendTest = () => {
     if (!activeTeam?.endDate) return;
@@ -720,14 +743,6 @@ const Index = () => {
         </div>
 
         {!collapsedSections["manager-inputs"] && <>
-        {/* Pilot Regions */}
-        {activeTeam && <PilotRegionsPicker
-          teamId={activeTeam.id}
-          salesTeams={salesTeams}
-          projectTeamAssignments={projectTeamAssignments}
-          assignSalesTeam={assignSalesTeam}
-          unassignSalesTeam={unassignSalesTeam}
-        />}
 
         {/* Test Phases */}
         <div className="mb-4 rounded-lg border border-border bg-card p-5 glow-card">
@@ -1031,6 +1046,17 @@ const Index = () => {
           </div>
         </div>
         )}
+
+        {/* Pilot Regions */}
+        {activeTeam && activePhase && <PilotRegionsPicker
+          teamId={activeTeam.id}
+          monthIndex={activePhase.monthIndex}
+          phaseLabel={activePhase.monthLabel}
+          salesTeams={salesTeams}
+          projectTeamAssignments={projectTeamAssignments}
+          assignSalesTeam={assignSalesTeam}
+          unassignSalesTeam={unassignSalesTeam}
+        />}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
         {activeTeam && (() => {

@@ -365,5 +365,6 @@ export interface DbProjectTeamAssignment {
   id: string;
   team_id: string;
   sales_team_id: string;
+  month_index: number;
   created_at: string;
 }
