@@ -23,10 +23,12 @@ export function isWinStage(
 
 /**
  * Permissive win check for superhex rows which lack opportunity_type.
- * Null stage → win (benefit of the doubt). Numbered stage → 14+ (most
- * permissive threshold). Non-numeric stage → not a win.
+ * If `isWon` is explicitly true, the row is a win regardless of stage.
+ * Otherwise: null stage → win (benefit of the doubt). Numbered stage →
+ * 14+ (most permissive threshold). Non-numeric stage → not a win.
  */
-export function isSuperhexWinStage(opStage: string | null | undefined): boolean {
+export function isSuperhexWinStage(opStage: string | null | undefined, isWon?: boolean): boolean {
+  if (isWon) return true;
   if (!opStage) return true;
   const num = parseInt(opStage, 10);
   if (isNaN(num)) return false;

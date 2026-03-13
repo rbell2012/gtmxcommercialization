@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-13 (Fix Deal Averages Win Detection)
+
+### Location — Data Page (`src/pages/Data.tsx`), Metrics Helpers (`src/lib/metrics-helpers.ts`)
+
+**Rationale:** Deal Averages on the Data page had low sample sizes (n) for all win-dependent metrics (Deal Cycle Avg, Avg Demo→Win, Avg Activities/Win). The `is_won` boolean field on each superhex record was completely ignored — win determination relied solely on `isSuperhexWinStage(op_stage)`, which rejected any record with a non-numeric `op_stage` value (e.g. "Closed Won") or a numeric stage below 14, even if the record was genuinely a won deal.
+
+**Changes:**
+- Updated `isSuperhexWinStage` in `metrics-helpers.ts` to accept an optional `isWon` boolean parameter; when `true`, the record is treated as a win regardless of `op_stage`.
+- Updated both call sites in `Data.tsx` (`computeDealCycleStats` and `winsByTeam`) to pass `row.is_won` to the updated function, so won deals are no longer silently excluded from averages.
+
+---
+
 ## 2026-03-13 (Rep Filter for Test Data Selections)
 
 ### Location — Data Page (`src/pages/Data.tsx`)
