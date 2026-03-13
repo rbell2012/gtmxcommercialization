@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-13 (Pilot Regions Helper Text & Rep Count)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** Users had no visual legend explaining what the green and orange borders on pilot region chips mean, and lacked a quick way to see the total number of reps participating in the current month without clicking into each region individually.
+
+**Changes:**
+- Added a helper legend row below the Pilot Regions header with two color-coded indicators: a green circle labeled "New region" and an orange circle labeled "Partial team."
+- Added a dynamic rep count on the right side of the legend row showing the total number of reps included this month, computed by summing each assigned region's team size minus any excluded members.
+
+---
+
 ## 2026-03-13 (Per-Rep Pilot Selection with Excluded Members)
 
 ### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Migration

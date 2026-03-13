@@ -418,6 +418,19 @@ function PilotRegionsPicker({
         </Popover>
         </div>
       </div>
+      <div className="flex items-center gap-3 mb-2">
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-full border-2 border-emerald-500/50" /> New region
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-full border-2 border-orange-500/70" /> Partial team
+        </span>
+        {assigned.length > 0 && (
+          <span className="text-[10px] text-muted-foreground ml-auto">
+            {assigned.reduce((sum, st) => sum + st.teamSize - getExcludedSet(getAssignment(st.id)).size, 0)} reps included this month
+          </span>
+        )}
+      </div>
       {assigned.length === 0 ? (
         <p className="text-[10px] text-muted-foreground">None</p>
       ) : (
