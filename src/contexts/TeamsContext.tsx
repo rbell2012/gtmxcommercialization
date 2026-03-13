@@ -250,6 +250,7 @@ export interface ProjectTeamAssignment {
   teamId: string;
   salesTeamId: string;
   monthIndex: number;
+  excludedMembers: string | null;
 }
 
 export function toMonthKey(d: Date): string {
@@ -609,6 +610,7 @@ interface TeamsContextType {
   projectTeamAssignments: ProjectTeamAssignment[];
   assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
   reloadAll: () => Promise<void>;
   loading: boolean;
 }
@@ -1222,6 +1224,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       teamId: a.team_id,
       salesTeamId: a.sales_team_id,
       monthIndex: a.month_index,
+      excludedMembers: a.excluded_members ?? null,
     }));
 
     setTeams(t);
@@ -2003,7 +2006,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const tempId = crypto.randomUUID();
     setProjectTeamAssignments((prev) => {
       if (prev.some((a) => a.teamId === teamId && a.salesTeamId === salesTeamId && a.monthIndex === monthIndex)) return prev;
-      return [...prev, { id: tempId, teamId, salesTeamId, monthIndex }];
+      return [...prev, { id: tempId, teamId, salesTeamId, monthIndex, excludedMembers: null }];
     });
     dbMutate(
       supabase.from("project_team_assignments").insert({ id: tempId, team_id: teamId, sales_team_id: salesTeamId, month_index: monthIndex }),
@@ -2018,6 +2021,24 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     dbMutate(
       supabase.from("project_team_assignments").delete().eq("team_id", teamId).eq("sales_team_id", salesTeamId).eq("month_index", monthIndex),
       "unassign sales team",
+    );
+  }, []);
+
+  const updateExcludedMembers = useCallback((teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => {
+    setProjectTeamAssignments((prev) =>
+      prev.map((a) =>
+        a.teamId === teamId && a.salesTeamId === salesTeamId && a.monthIndex === monthIndex
+          ? { ...a, excludedMembers }
+          : a
+      )
+    );
+    dbMutate(
+      supabase.from("project_team_assignments")
+        .update({ excluded_members: excludedMembers })
+        .eq("team_id", teamId)
+        .eq("sales_team_id", salesTeamId)
+        .eq("month_index", monthIndex),
+      "update excluded members",
     );
   }, []);
 
@@ -2055,6 +2076,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     projectTeamAssignments,
     assignSalesTeam,
     unassignSalesTeam,
+    updateExcludedMembers,
     reloadAll: loadAll,
     loading,
   }), [
@@ -2064,7 +2086,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,
     createMember, updateMember, assignMember, unassignMember, removeMember,
-    upsertTeamGoalsHistory, updateHistoricalRoster, assignSalesTeam, unassignSalesTeam, loadAll,
+    upsertTeamGoalsHistory, updateHistoricalRoster, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, loadAll,
   ]);
 
   return (

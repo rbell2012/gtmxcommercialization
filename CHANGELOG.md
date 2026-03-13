@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-13 (Per-Rep Pilot Selection with Excluded Members)
+
+### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Migration
+
+**Rationale:** When assigning sales team regions to a pilot, not every rep on the team may be participating. Managers needed the ability to select which specific reps are included in the pilot so that forecasting calculations use the correct headcount, and so the data is available for future reporting.
+
+**Changes:**
+- Added `excluded_members` nullable text column to `project_team_assignments` via migration (`20260313100000_add_excluded_members.sql`) and applied to live Supabase database.
+- Added `excluded_members` to `DbProjectTeamAssignment` in `database.types.ts` and `excludedMembers` to `ProjectTeamAssignment` in `TeamsContext.tsx`, mapped in `loadCore` and included in new assignments.
+- Added `updateExcludedMembers()` function to `TeamsContext` for optimistic local state updates with Supabase persistence, exposed via context.
+- Modified `PilotRegionsPicker` in `Index.tsx`: clicking a team chip name (not the X button) opens a Dialog modal listing all team members (parsed from the comma-separated `teamMembers` field) as toggleable chips. Selected members are highlighted; deselected members show muted/strikethrough styling. Footer displays "N of M reps selected" with a Done button.
+- When not all reps are selected, the pilot region chip shows an orange border (`border-orange-500/70`) and appends the included count as `(N)` after the team name.
+- Updated all forecasting calculations in `Quota.tsx` to use effective rep count (`teamSize - excludedCount`) instead of raw `teamSize`: `allAssignedReps`, `computeRegionImpact`, `currentReps`, and the Assigned Regions display grid.
+- Deduplicated the Assigned Regions summary to show distinct regions only (picking the most restrictive override per region), with orange borders and "N of M reps" when overridden.
+
+---
+
 ## 2026-03-13 (Replace Projected Total with Goal Delta & Reps Needed)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)

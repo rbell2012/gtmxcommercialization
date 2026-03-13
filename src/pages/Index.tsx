@@ -1,10 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, X, ChevronsUpDown, Check } from "lucide-react";
-import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam } from "@/contexts/TeamsContext";
+import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -279,18 +279,25 @@ function PilotRegionsPicker({
   projectTeamAssignments,
   assignSalesTeam,
   unassignSalesTeam,
+  updateExcludedMembers,
 }: {
   teamId: string;
   monthIndex: number;
   phaseLabel: string;
   salesTeams: SalesTeam[];
-  projectTeamAssignments: { teamId: string; salesTeamId: string; monthIndex: number }[];
+  projectTeamAssignments: ProjectTeamAssignment[];
   assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const assigned = projectTeamAssignments
-    .filter((a) => a.teamId === teamId && a.monthIndex === monthIndex)
+  const [repDialogTeamId, setRepDialogTeamId] = useState<string | null>(null);
+  const [pendingExcluded, setPendingExcluded] = useState<Set<string>>(new Set());
+
+  const assignmentsForMonth = projectTeamAssignments.filter(
+    (a) => a.teamId === teamId && a.monthIndex === monthIndex
+  );
+  const assigned = assignmentsForMonth
     .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
     .filter((st): st is SalesTeam => st != null);
   const unassigned = salesTeams.filter(
@@ -316,6 +323,41 @@ function PilotRegionsPicker({
     for (const salesTeamId of lastMonthRegions) {
       assignSalesTeam(teamId, salesTeamId, monthIndex);
     }
+  };
+
+  const getAssignment = (salesTeamId: string) =>
+    assignmentsForMonth.find((a) => a.salesTeamId === salesTeamId);
+
+  const getExcludedSet = (assignment: ProjectTeamAssignment | undefined): Set<string> => {
+    if (!assignment?.excludedMembers) return new Set();
+    return new Set(assignment.excludedMembers.split(",").map((s) => s.trim()).filter(Boolean));
+  };
+
+  const openRepDialog = (st: SalesTeam) => {
+    const assignment = getAssignment(st.id);
+    setPendingExcluded(getExcludedSet(assignment));
+    setRepDialogTeamId(st.id);
+  };
+
+  const repDialogTeam = repDialogTeamId ? salesTeams.find((st) => st.id === repDialogTeamId) : null;
+  const repDialogMembers = repDialogTeam
+    ? repDialogTeam.teamMembers.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  const toggleMember = (name: string) => {
+    setPendingExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const saveExcluded = () => {
+    if (!repDialogTeamId) return;
+    const excluded = pendingExcluded.size > 0 ? Array.from(pendingExcluded).join(", ") : null;
+    updateExcludedMembers(teamId, repDialogTeamId, monthIndex, excluded);
+    setRepDialogTeamId(null);
   };
 
   return (
@@ -382,15 +424,30 @@ function PilotRegionsPicker({
         <div className="flex flex-wrap gap-1.5">
           {assigned.map((st) => {
             const isNew = !previouslyAssigned.has(st.id);
+            const assignment = getAssignment(st.id);
+            const excluded = getExcludedSet(assignment);
+            const hasOverride = excluded.size > 0;
+            const effectiveReps = st.teamSize - excluded.size;
+            const borderClass = hasOverride
+              ? "border-orange-500/70"
+              : isNew
+                ? "border-emerald-500/50"
+                : "border-border";
             return (
               <span
                 key={st.id}
-                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-xs font-medium text-foreground ${isNew ? "border-emerald-500/50" : "border-border"}`}
+                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-xs font-medium text-foreground ${borderClass}`}
               >
-                {st.displayName}
+                <button
+                  type="button"
+                  onClick={() => openRepDialog(st)}
+                  className="hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-medium text-foreground"
+                >
+                  {st.displayName}{hasOverride ? ` (${effectiveReps})` : ""}
+                </button>
                 <button
                   onClick={() => unassignSalesTeam(teamId, st.id, monthIndex)}
-                  className={`rounded-full p-0.5 transition-colors ${isNew ? "text-emerald-500 hover:bg-emerald-500/10" : "text-muted-foreground hover:bg-muted"}`}
+                  className={`rounded-full p-0.5 transition-colors ${isNew && !hasOverride ? "text-emerald-500 hover:bg-emerald-500/10" : hasOverride ? "text-orange-500 hover:bg-orange-500/10" : "text-muted-foreground hover:bg-muted"}`}
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -399,6 +456,45 @@ function PilotRegionsPicker({
           })}
         </div>
       )}
+
+      <Dialog open={repDialogTeamId !== null} onOpenChange={(v) => { if (!v) setRepDialogTeamId(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{repDialogTeam?.displayName}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Select reps included in pilot
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 py-2">
+            {repDialogMembers.map((name) => {
+              const isIncluded = !pendingExcluded.has(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggleMember(name)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    isIncluded
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-muted/30 text-muted-foreground line-through"
+                  }`}
+                >
+                  {name}
+                </button>
+              );
+            })}
+            {repDialogMembers.length === 0 && (
+              <p className="text-xs text-muted-foreground">No team members listed for this region.</p>
+            )}
+          </div>
+          <DialogFooter className="flex items-center justify-between sm:justify-between">
+            <span className="text-xs text-muted-foreground">
+              {repDialogMembers.length - pendingExcluded.size} of {repDialogMembers.length} reps selected
+            </span>
+            <Button size="sm" onClick={saveExcluded}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -408,7 +504,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -1081,6 +1177,7 @@ const Index = () => {
           projectTeamAssignments={projectTeamAssignments}
           assignSalesTeam={assignSalesTeam}
           unassignSalesTeam={unassignSalesTeam}
+          updateExcludedMembers={updateExcludedMembers}
         />}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}

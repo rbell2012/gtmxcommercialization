@@ -319,23 +319,51 @@ function ForecastingSection({
           monthKeyToPhaseIndex.set(mk, p.monthIndex);
         }
 
-        const getAssignedTeamsForMonth = (mk: string) => {
+        const getExcludedCount = (a: ProjectTeamAssignment) => {
+          if (!a.excludedMembers) return 0;
+          return a.excludedMembers.split(",").map((s) => s.trim()).filter(Boolean).length;
+        };
+
+        const getEffectiveReps = (st: SalesTeam, a: ProjectTeamAssignment) =>
+          Math.max(0, st.teamSize - getExcludedCount(a));
+
+        const getAssignmentsForMonth = (mk: string) => {
           const phaseIdx = monthKeyToPhaseIndex.get(mk);
           if (phaseIdx === undefined) return [];
           return projectTeamAssignments
-            .filter((a) => a.teamId === team.id && a.monthIndex === phaseIdx)
+            .filter((a) => a.teamId === team.id && a.monthIndex === phaseIdx);
+        };
+
+        const getAssignedTeamsForMonth = (mk: string) => {
+          return getAssignmentsForMonth(mk)
             .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
             .filter((st): st is SalesTeam => st != null);
         };
 
-        const allAssignedTeams = projectTeamAssignments
-          .filter((a) => a.teamId === team.id)
+        const getEffectiveRepsForMonth = (mk: string) => {
+          const assignments = getAssignmentsForMonth(mk);
+          return assignments.reduce((sum, a) => {
+            const st = salesTeams.find((s) => s.id === a.salesTeamId);
+            return st ? sum + getEffectiveReps(st, a) : sum;
+          }, 0);
+        };
+
+        const allAssignments = projectTeamAssignments.filter((a) => a.teamId === team.id);
+        const distinctAssignmentMap = new Map<string, typeof allAssignments[number]>();
+        for (const a of allAssignments) {
+          const prev = distinctAssignmentMap.get(a.salesTeamId);
+          if (!prev || getExcludedCount(a) > getExcludedCount(prev)) {
+            distinctAssignmentMap.set(a.salesTeamId, a);
+          }
+        }
+        const distinctAssignments = Array.from(distinctAssignmentMap.values());
+        const allAssignedTeams = distinctAssignments
           .map((a) => salesTeams.find((st) => st.id === a.salesTeamId))
           .filter((st): st is SalesTeam => st != null);
-        const distinctAssignedTeams = Array.from(
-          new Map(allAssignedTeams.map((st) => [st.id, st])).values()
-        );
-        const allAssignedReps = distinctAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
+        const allAssignedReps = distinctAssignments.reduce((sum, a) => {
+          const st = salesTeams.find((s) => s.id === a.salesTeamId);
+          return st ? sum + getEffectiveReps(st, a) : sum;
+        }, 0);
 
         const lastMonthNB = team.members.reduce((sum, m) => {
           const wt = m.monthlyWinTypes[prevMonthKey];
@@ -350,8 +378,8 @@ function ForecastingSection({
         const lastMonthTotal = lastMonthNB + lastMonthGrowth;
         const activeMembers = team.members.filter((m) => m.isActive).length;
 
-        const computeRegionImpact = (monthAssignedTeams: SalesTeam[]) => {
-          const reps = monthAssignedTeams.reduce((sum, st) => sum + st.teamSize, 0);
+        const computeRegionImpact = (mk: string) => {
+          const reps = getEffectiveRepsForMonth(mk);
           const headcount = activeMembers + reps;
           const wpm = headcount > 0 ? lastMonthTotal / headcount : 0;
           return Math.round(wpm * reps);
@@ -398,8 +426,8 @@ function ForecastingSection({
                       ? ((nbAttach / global) * 100).toFixed(2)
                       : "—";
                     const monthAssigned = getAssignedTeamsForMonth(mk);
-                    const regionImpact = computeRegionImpact(monthAssigned);
-                    const currentReps = monthAssigned.reduce((sum, st) => sum + st.teamSize, 0);
+                    const regionImpact = computeRegionImpact(mk);
+                    const currentReps = getEffectiveRepsForMonth(mk);
                     const baseWins = (nbAttach ?? 0) + (growthGoal ?? 0);
                     const delta = regionImpact - baseWins;
                     const winsPerPerson = activeMembers > 0 ? lastMonthTotal / activeMembers : 0;
@@ -430,17 +458,23 @@ function ForecastingSection({
             </div>
 
             {allAssignedTeams.length > 0 && (() => {
-              const uniqueTeams = Array.from(new Map(allAssignedTeams.map((st) => [st.id, st])).values());
               return (
               <div className="mt-4 border-t border-border pt-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Regions (all phases)</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Regions</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {uniqueTeams.map((st) => (
-                    <div key={st.id} className="rounded-md border border-border/50 bg-muted/20 px-3 py-2">
+                  {allAssignedTeams.map((st) => {
+                    const stAssignment = distinctAssignmentMap.get(st.id);
+                    const effReps = stAssignment ? getEffectiveReps(st, stAssignment) : st.teamSize;
+                    const hasOverride = effReps < st.teamSize;
+                    return (
+                    <div key={st.id} className={`rounded-md border bg-muted/20 px-3 py-2 ${hasOverride ? "border-orange-500/50" : "border-border/50"}`}>
                       <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
-                      <p className="text-[10px] text-muted-foreground">{st.teamSize} reps</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {hasOverride ? `${effReps} of ${st.teamSize} reps` : `${st.teamSize} reps`}
+                      </p>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               );
