@@ -304,6 +304,20 @@ function PilotRegionsPicker({
     return ids;
   }, [projectTeamAssignments, teamId, monthIndex]);
 
+  const lastMonthRegions = useMemo(() => {
+    if (monthIndex <= 0) return [];
+    const currentIds = new Set(assigned.map((st) => st.id));
+    return projectTeamAssignments
+      .filter((a) => a.teamId === teamId && a.monthIndex === monthIndex - 1 && !currentIds.has(a.salesTeamId))
+      .map((a) => a.salesTeamId);
+  }, [projectTeamAssignments, teamId, monthIndex, assigned]);
+
+  const addLastMonth = () => {
+    for (const salesTeamId of lastMonthRegions) {
+      assignSalesTeam(teamId, salesTeamId, monthIndex);
+    }
+  };
+
   return (
     <div className="mb-4 rounded-lg border border-border bg-card p-4 glow-card">
       <div className="flex items-center justify-between mb-2">
@@ -312,6 +326,16 @@ function PilotRegionsPicker({
           <h3 className="font-display text-sm font-semibold text-foreground">Pilot Regions</h3>
           <span className="text-[10px] text-muted-foreground">— {phaseLabel}</span>
         </div>
+        <div className="flex items-center gap-1.5">
+          {monthIndex > 0 && (
+            <button
+              onClick={addLastMonth}
+              disabled={lastMonthRegions.length === 0}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[10px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-card disabled:hover:text-muted-foreground"
+            >
+              + last month
+            </button>
+          )}
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
@@ -350,6 +374,7 @@ function PilotRegionsPicker({
             </Command>
           </PopoverContent>
         </Popover>
+        </div>
       </div>
       {assigned.length === 0 ? (
         <p className="text-[10px] text-muted-foreground">None</p>

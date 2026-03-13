@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-13 (+ Last Month Regions Button)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** When advancing to a new test phase/month, managers typically want to carry forward most or all of the pilot regions from the previous month. Manually re-selecting each region one by one is tedious, so a quick "add last month's regions" shortcut was needed.
+
+**Changes:**
+- Added a `+ last month` button to the left of the "Search regions…" dropdown in the Pilot Regions picker.
+- The button appears for any month after the first phase. It is disabled (dimmed) when all regions from the previous month are already assigned to the current month.
+- When clicked, all regions assigned in the previous month that are not yet assigned in the current month are bulk-added in one action.
+- Computed `lastMonthRegions` via `useMemo` to efficiently derive which regions from `monthIndex - 1` are missing from the current month's assignments.
+
+---
+
 ## 2026-03-13 (Per-Phase Pilot Regions)
 
 ### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`), TeamsContext (`src/contexts/TeamsContext.tsx`), Database Types (`src/lib/database.types.ts`), Migration
