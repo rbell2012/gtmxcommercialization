@@ -608,7 +608,7 @@ interface TeamsContextType {
   salesTeams: SalesTeam[];
   projectedBookings: ProjectedBooking[];
   projectTeamAssignments: ProjectTeamAssignment[];
-  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers?: string | null) => void;
   unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
   reloadAll: () => Promise<void>;
@@ -2002,14 +2002,16 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     ]);
   }, [memberTeamHistory]);
 
-  const assignSalesTeam = useCallback((teamId: string, salesTeamId: string, monthIndex: number) => {
+  const assignSalesTeam = useCallback((teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null = null) => {
     const tempId = crypto.randomUUID();
     setProjectTeamAssignments((prev) => {
       if (prev.some((a) => a.teamId === teamId && a.salesTeamId === salesTeamId && a.monthIndex === monthIndex)) return prev;
-      return [...prev, { id: tempId, teamId, salesTeamId, monthIndex, excludedMembers: null }];
+      return [...prev, { id: tempId, teamId, salesTeamId, monthIndex, excludedMembers }];
     });
+    const row: Record<string, unknown> = { id: tempId, team_id: teamId, sales_team_id: salesTeamId, month_index: monthIndex };
+    if (excludedMembers != null) row.excluded_members = excludedMembers;
     dbMutate(
-      supabase.from("project_team_assignments").insert({ id: tempId, team_id: teamId, sales_team_id: salesTeamId, month_index: monthIndex }),
+      supabase.from("project_team_assignments").insert(row),
       "assign sales team",
     );
   }, []);

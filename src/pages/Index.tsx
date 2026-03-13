@@ -286,7 +286,7 @@ function PilotRegionsPicker({
   phaseLabel: string;
   salesTeams: SalesTeam[];
   projectTeamAssignments: ProjectTeamAssignment[];
-  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
+  assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers?: string | null) => void;
   unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
 }) {
@@ -316,12 +316,12 @@ function PilotRegionsPicker({
     const currentIds = new Set(assigned.map((st) => st.id));
     return projectTeamAssignments
       .filter((a) => a.teamId === teamId && a.monthIndex === monthIndex - 1 && !currentIds.has(a.salesTeamId))
-      .map((a) => a.salesTeamId);
+      .map((a) => ({ salesTeamId: a.salesTeamId, excludedMembers: a.excludedMembers }));
   }, [projectTeamAssignments, teamId, monthIndex, assigned]);
 
   const addLastMonth = () => {
-    for (const salesTeamId of lastMonthRegions) {
-      assignSalesTeam(teamId, salesTeamId, monthIndex);
+    for (const { salesTeamId, excludedMembers } of lastMonthRegions) {
+      assignSalesTeam(teamId, salesTeamId, monthIndex, excludedMembers);
     }
   };
 

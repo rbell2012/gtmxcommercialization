@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-13 (+ Last Month Preserves Partial Teams)
+
+### Location — Project Page (`src/pages/Index.tsx`), Teams Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Clicking "+ last month" in Pilot Regions pulled in the full team for every region, ignoring any partial team exclusions (excluded reps) that had been configured in the previous month. Users expected partial team selections to carry forward automatically, avoiding the need to re-exclude the same reps each month.
+
+**Changes:**
+- Updated `assignSalesTeam` in `TeamsContext.tsx` to accept an optional `excludedMembers` parameter, persisting it in both local state and Supabase on insert.
+- Changed `lastMonthRegions` in `PilotRegionsPicker` to capture both the `salesTeamId` and `excludedMembers` from the previous month's assignments instead of only the ID.
+- Updated `addLastMonth` to pass the previous month's `excludedMembers` through to `assignSalesTeam`, so partial team selections are preserved when copying regions forward.
+
+---
+
 ## 2026-03-13 (Region Impact Hover Tooltip)
 
 ### Location — Quota Page (`src/pages/Quota.tsx`)
