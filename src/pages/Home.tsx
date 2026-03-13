@@ -315,7 +315,7 @@ const Home = () => {
             </Card>
 
             <PageOverviewCard
-              title="Data & Findings"
+              title="Data"
               icon={<BarChart3 className="h-5 w-5 text-primary" />}
               description="Cross-project analytics, account-level insights, and deal cycle metrics."
               bullets={[

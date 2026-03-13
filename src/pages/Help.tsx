@@ -22,7 +22,7 @@ export default function Help() {
 
         <H3>Navigating the App</H3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/roadmap" className="text-primary underline">Roadmap</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
+          <li>The <strong>sticky navigation bar</strong> at the top of every page starts with a <Link to="/home" className="text-primary underline"><strong>Home</strong></Link> link (house icon), followed by each active team, <Link to="/data" className="text-primary underline">Data</Link>, <Link to="/quota" className="text-primary underline">Quota</Link>, <Link to="/roadmap" className="text-primary underline">Roadmap</Link>, <Link to="/settings" className="text-primary underline">Settings</Link>, and <Link to="/help" className="text-primary underline">Help</Link>.</li>
           <li>Click any <strong>team name</strong> in the nav to jump directly to that pilot's dashboard.</li>
           <li>The <Link to="/help" className="text-primary underline"><strong>Help</strong></Link> link (question-mark icon) and <Link to="/settings" className="text-primary underline"><strong>Settings</strong></Link> link (gear icon) are on the far right, next to the theme toggle.</li>
         </ul>
@@ -45,7 +45,7 @@ export default function Help() {
             <strong>Explore</strong>: overview cards describing what to expect on
             each page: a "Project Pages" tile summarizing all project dashboards,
             plus clickable tiles for{" "}
-            <Link to="/data" className="text-primary underline">Data &amp; Findings</Link>,{" "}
+            <Link to="/data" className="text-primary underline">Data</Link>,{" "}
             <Link to="/quota" className="text-primary underline">Quota</Link>, and{" "}
             <Link to="/roadmap" className="text-primary underline">Roadmap</Link> with
             bullet-point descriptions.
@@ -507,12 +507,12 @@ export default function Help() {
         </ul>
       </Section>
 
-      {/* ---- 6. Data & Findings ---- */}
-      <Section id="data" title="6. Data &amp; Findings Page">
+      {/* ---- 6. Data ---- */}
+      <Section id="data" title="6. Data Page">
         <p>
           The{" "}
           <Link to="/data" className="text-primary underline">
-            Data &amp; Findings
+            Data
           </Link>{" "}
           page provides deal-cycle analytics, revenue impact tracking, and a
           filterable metrics explorer, all derived from the underlying metrics

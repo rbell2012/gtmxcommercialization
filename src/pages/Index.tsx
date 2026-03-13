@@ -385,7 +385,7 @@ function PilotRegionsPicker({
             return (
               <span
                 key={st.id}
-                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-[10px] font-medium text-foreground ${isNew ? "border-emerald-500/50" : "border-border"}`}
+                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-xs font-medium text-foreground ${isNew ? "border-emerald-500/50" : "border-border"}`}
               >
                 {st.displayName}
                 <button

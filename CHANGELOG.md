@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-13 (Rename "Data & Findings" to "Data")
+
+### Location — Nav Bar (`src/App.tsx`), Data Page (`src/pages/Data.tsx`), Home Page (`src/pages/Home.tsx`), Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The "Data & Findings" label was unnecessarily long and the "& Findings" portion no longer reflected the page's content after previous rebuilds. Shortening it to "Data" keeps the nav bar compact and the naming consistent with what the page actually provides.
+
+**Changes:**
+- Renamed the nav bar link text from "Data & Findings" to "Data" in the `Nav` component.
+- Updated the Data page heading (`<h1>`) from "Data & Findings" to "Data".
+- Updated the Home page Explore card title from "Data & Findings" to "Data".
+- Updated all four references on the Help page: the nav description, the Explore bullet, the section header (now "6. Data Page"), and the section intro link.
+
+---
+
 ## 2026-03-13 (+ Last Month Regions Button)
 
 ### Location — Project Page (`src/pages/Index.tsx`)

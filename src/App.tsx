@@ -51,7 +51,7 @@ function Nav() {
         }`}
       >
         <FileChartColumn className="h-3.5 w-3.5" />
-        Data &amp; Findings
+        Data
       </Link>
       <Link
         to="/quota"

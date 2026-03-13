@@ -591,7 +591,7 @@ export default function Data() {
         <div className="mb-8 flex items-center gap-3">
           <FileChartColumn className="h-8 w-8 text-primary" />
           <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
-            Data &amp; Findings
+            Data
           </h1>
         </div>
 
