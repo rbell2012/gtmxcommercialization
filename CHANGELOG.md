@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-13 (Separate New Business & Growth Pilot Regions)
+
+### Location — Project Page (`src/pages/Index.tsx`), Quota Page (`src/pages/Quota.tsx`)
+
+**Rationale:** Pilot regions included a mix of New Business and Growth sales teams displayed in a single flat list, making it difficult to distinguish between the two segments at a glance. Separating them provides clearer visibility into the composition of each pilot phase.
+
+**Changes:**
+- Split the assigned pilot regions display in `PilotRegionsPicker` (`Index.tsx`) into two labeled groups: **New Business** and **Growth**. Classification is based on whether the team's `displayName` contains "growth" (case-insensitive).
+- Each group shows its own uppercase sub-header with a rep count in parentheses (e.g., "NEW BUSINESS (48 reps)").
+- Simplified the top-right summary to show only the total rep count (e.g., "59 reps") without the NB/G breakdown.
+- Applied the same NB/Growth separation to the "Assigned Regions" section in `ForecastingSection` on the Quota page (`Quota.tsx`), displaying "New Business Regions" and "Growth Regions" as distinct sub-sections.
+
+---
+
 ## 2026-03-13 (Pilot Regions Helper Text & Rep Count)
 
 ### Location — Project Page (`src/pages/Index.tsx`)

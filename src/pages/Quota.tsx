@@ -458,24 +458,41 @@ function ForecastingSection({
             </div>
 
             {allAssignedTeams.length > 0 && (() => {
+              const nbTeams = allAssignedTeams.filter((st) => !st.displayName.toLowerCase().includes("growth"));
+              const growthTeams = allAssignedTeams.filter((st) => st.displayName.toLowerCase().includes("growth"));
+
+              const renderRegionCard = (st: SalesTeam) => {
+                const stAssignment = distinctAssignmentMap.get(st.id);
+                const effReps = stAssignment ? getEffectiveReps(st, stAssignment) : st.teamSize;
+                const hasOverride = effReps < st.teamSize;
+                return (
+                  <div key={st.id} className={`rounded-md border bg-muted/20 px-3 py-2 ${hasOverride ? "border-orange-500/50" : "border-border/50"}`}>
+                    <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {hasOverride ? `${effReps} of ${st.teamSize} reps` : `${st.teamSize} reps`}
+                    </p>
+                  </div>
+                );
+              };
+
               return (
-              <div className="mt-4 border-t border-border pt-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Assigned Regions</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {allAssignedTeams.map((st) => {
-                    const stAssignment = distinctAssignmentMap.get(st.id);
-                    const effReps = stAssignment ? getEffectiveReps(st, stAssignment) : st.teamSize;
-                    const hasOverride = effReps < st.teamSize;
-                    return (
-                    <div key={st.id} className={`rounded-md border bg-muted/20 px-3 py-2 ${hasOverride ? "border-orange-500/50" : "border-border/50"}`}>
-                      <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {hasOverride ? `${effReps} of ${st.teamSize} reps` : `${st.teamSize} reps`}
-                      </p>
+              <div className="mt-4 border-t border-border pt-3 space-y-3">
+                {nbTeams.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">New Business Regions</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {nbTeams.map(renderRegionCard)}
                     </div>
-                    );
-                  })}
-                </div>
+                  </div>
+                )}
+                {growthTeams.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Growth Regions</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {growthTeams.map(renderRegionCard)}
+                    </div>
+                  </div>
+                )}
               </div>
               );
             })()}

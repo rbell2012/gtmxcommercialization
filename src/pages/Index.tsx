@@ -426,49 +426,80 @@ function PilotRegionsPicker({
           <span className="inline-block h-2 w-2 rounded-full border-2 border-orange-500/70" /> Partial team
         </span>
         {assigned.length > 0 && (
-          <span className="text-[10px] text-muted-foreground ml-auto">
-            {assigned.reduce((sum, st) => sum + st.teamSize - getExcludedSet(getAssignment(st.id)).size, 0)} reps included this month
+          <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+            {assigned.reduce((sum, st) => sum + st.teamSize - getExcludedSet(getAssignment(st.id)).size, 0)} reps
           </span>
         )}
       </div>
       {assigned.length === 0 ? (
         <p className="text-[10px] text-muted-foreground">None</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {assigned.map((st) => {
-            const isNew = !previouslyAssigned.has(st.id);
-            const assignment = getAssignment(st.id);
-            const excluded = getExcludedSet(assignment);
-            const hasOverride = excluded.size > 0;
-            const effectiveReps = st.teamSize - excluded.size;
-            const borderClass = hasOverride
-              ? "border-orange-500/70"
-              : isNew
-                ? "border-emerald-500/50"
-                : "border-border";
-            return (
-              <span
-                key={st.id}
-                className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-xs font-medium text-foreground ${borderClass}`}
+      ) : (() => {
+        const nbAssigned = assigned.filter((st) => !st.displayName.toLowerCase().includes("growth"));
+        const growthAssigned = assigned.filter((st) => st.displayName.toLowerCase().includes("growth"));
+
+        const renderChip = (st: SalesTeam) => {
+          const isNew = !previouslyAssigned.has(st.id);
+          const assignment = getAssignment(st.id);
+          const excluded = getExcludedSet(assignment);
+          const hasOverride = excluded.size > 0;
+          const effectiveReps = st.teamSize - excluded.size;
+          const borderClass = hasOverride
+            ? "border-orange-500/70"
+            : isNew
+              ? "border-emerald-500/50"
+              : "border-border";
+          return (
+            <span
+              key={st.id}
+              className={`inline-flex items-center gap-1 rounded-full bg-muted/60 border px-2.5 py-0.5 text-xs font-medium text-foreground ${borderClass}`}
+            >
+              <button
+                type="button"
+                onClick={() => openRepDialog(st)}
+                className="hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-medium text-foreground"
               >
-                <button
-                  type="button"
-                  onClick={() => openRepDialog(st)}
-                  className="hover:underline cursor-pointer bg-transparent border-none p-0 text-xs font-medium text-foreground"
-                >
-                  {st.displayName}{hasOverride ? ` (${effectiveReps})` : ""}
-                </button>
-                <button
-                  onClick={() => unassignSalesTeam(teamId, st.id, monthIndex)}
-                  className={`rounded-full p-0.5 transition-colors ${isNew && !hasOverride ? "text-emerald-500 hover:bg-emerald-500/10" : hasOverride ? "text-orange-500 hover:bg-orange-500/10" : "text-muted-foreground hover:bg-muted"}`}
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      )}
+                {st.displayName}{hasOverride ? ` (${effectiveReps})` : ""}
+              </button>
+              <button
+                onClick={() => unassignSalesTeam(teamId, st.id, monthIndex)}
+                className={`rounded-full p-0.5 transition-colors ${isNew && !hasOverride ? "text-emerald-500 hover:bg-emerald-500/10" : hasOverride ? "text-orange-500 hover:bg-orange-500/10" : "text-muted-foreground hover:bg-muted"}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          );
+        };
+
+        const repsFor = (list: SalesTeam[]) =>
+          list.reduce((sum, st) => sum + st.teamSize - getExcludedSet(getAssignment(st.id)).size, 0);
+
+        return (
+          <div className="space-y-3">
+            {nbAssigned.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">New Business</span>
+                  <span className="text-[10px] text-muted-foreground">({repsFor(nbAssigned)} reps)</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {nbAssigned.map(renderChip)}
+                </div>
+              </div>
+            )}
+            {growthAssigned.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Growth</span>
+                  <span className="text-[10px] text-muted-foreground">({repsFor(growthAssigned)} reps)</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {growthAssigned.map(renderChip)}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <Dialog open={repDialogTeamId !== null} onOpenChange={(v) => { if (!v) setRepDialogTeamId(null); }}>
         <DialogContent className="sm:max-w-md">
