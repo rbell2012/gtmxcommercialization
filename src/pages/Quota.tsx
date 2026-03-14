@@ -299,6 +299,9 @@ function ForecastingSection({
           </select>
         </div>
       </div>
+      <p className="mb-4 text-sm italic text-muted-foreground">
+        Below is a work in progress. Hover over Region impact lines for calculation and provide feedback to Ricky.
+      </p>
 
       {teams.length === 0 && (
         <p className="text-sm text-muted-foreground">No active projects.</p>
@@ -398,7 +401,7 @@ function ForecastingSection({
 
             <div className="mb-3 flex items-center gap-6 text-xs text-muted-foreground">
               <span>Last month: <span className="font-semibold text-foreground">{lastMonthTotal} wins</span> (NB: {lastMonthNB}, Growth: {lastMonthGrowth})</span>
-              <span>{activeMembers} active members</span>
+              <span>{activeMembers} members</span>
             </div>
 
             <div className="overflow-x-auto">
@@ -533,6 +536,7 @@ function ForecastingSection({
                     <p className="text-xs font-semibold text-foreground">{st.displayName}</p>
                     <p className="text-[10px] text-muted-foreground">
                       {hasOverride ? `${effReps} of ${st.teamSize} reps` : `${st.teamSize} reps`}
+                      {" · "}{st.avgMonthlyWins} avg wins/mo
                     </p>
                   </div>
                 );
