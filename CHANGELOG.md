@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-14 (Help Page — Document Recent Features)
+
+### Location — Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The Help page had not been updated to reflect features added between 2026-03-10 and 2026-03-13, including Pilot Regions, Forecasting & Goals, Relief Month, Basic Accelerator Mode, NB/Growth breakdowns, the Rep filter on the Data page, the Roadmap availability row, adjustable chart date ranges, dynamic default chart metrics, and the TOTAL column for team-scoped goals. Users consulting the Help page would not know about any of these features.
+
+**Changes:**
+- Updated **Settings (section 2)**: rewrote the Goal Scope bullet to describe the TOTAL column that appears when a metric is set to TEAM scope (per-level inputs disabled, single TOTAL input active). Rewrote the Accelerators bullet to document the Basic/Logic mode toggle — Basic mode with linear interpolation (Min Value, Min %, Max Value, scope) and Logic mode retaining the original IF/THEN rule editor. Added a Relief Month bullet describing the toggle, per-member checkboxes, 100% base quota, and parity auto-selection.
+- Added **Pilot Regions** `H4` subsection under Summary (section 3a) documenting: per-phase region assignment via searchable combobox, NB/Growth sub-group headers with rep counts, per-rep exclusion dialog with orange-border chips, "+ last month" button preserving exclusions, green/orange color legend, dynamic rep count, and link to Quota forecasting.
+- Updated **Monthly Data (section 3b)**: added NB/Growth breakdown bullet for inline wins/ops counts and grouped hover tooltips. Added Relief badges bullet for green badge, 100% progress bars, and simplified relief-only table with accelerator progress. Added date range dropdown bullet to Funnel Overview (4W/8W/12W/6M/All presets persisted to localStorage). Added dynamic defaults bullet noting chart metrics reflect the team's goal and accelerator configuration.
+- Updated **Quota Page (section 4)**: added Relief members bullet (green badge, green quota text, "Relief month → 100%" in breakdown tooltip). Added Basic/Logic accelerator display bullet (adaptive tooltip content per mode). Added full Forecasting & Goals `H4` subsection covering range dropdown, forecast table columns (Month, Projected Bookings, NB Attach Goal, NB Attach %, Growth Wins Goal, Region Impact, Goal Total, Delta, Reps Needed), Region Impact calculation formula and hover tooltip, and Assigned Regions NB/Growth split.
+- Updated **Roadmap Page (section 5)**: added availability row bullet to Calendar Grid describing green-tinted initials circles for available members with name tooltips.
+- Updated **Data Page (section 6)**: added Rep filter bullet to Test Data Selections documenting the multi-select dropdown with "All Reps" quick-clear and adaptive label.
+- Updated **Tips (section 8)**: added tips for Pilot Regions (per-phase assignment and "+ last month" shortcut), Relief Month (100% base with stacking accelerators), and Forecasting (projected impact, delta, reps needed).
+
+---
+
 ## 2026-03-13 (Fix Deal Averages Win Detection)
 
 ### Location — Data Page (`src/pages/Data.tsx`), Metrics Helpers (`src/lib/metrics-helpers.ts`)

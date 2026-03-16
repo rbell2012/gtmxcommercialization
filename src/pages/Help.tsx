@@ -149,12 +149,30 @@ export default function Help() {
           <li>
             <strong>Goal Scope (Self vs Team)</strong>: for each metric, choose
             whether the goal is measured per individual rep or as a summed team
-            total.
+            total. When a metric is set to <strong>TEAM</strong> scope, the
+            per-level columns become disabled and a <strong>TOTAL</strong>{" "}
+            column (to the right of Lead) becomes the single active input. All
+            members share that collective target and see the same quota
+            percentage based on team-wide output.
           </li>
           <li>
-            <strong>Accelerators</strong>: define stackable IF/THEN rules that
-            modify quota. For example: "IF Calls &gt; 600 THEN +10% to Quota."
-            Each rule has its own condition, effect, and Self/Team scope.
+            <strong>Accelerators</strong>: a <strong>Basic / Logic</strong>{" "}
+            toggle at the top of the Accelerator section lets you choose the
+            mode. <strong>Basic</strong> mode (default) shows per-metric rows
+            with a Min Value, Min %, and Max Value — the system linearly
+            interpolates the bonus from Min % at Min Value up to 200% at Max
+            Value, with a Self/Team scope toggle per metric.{" "}
+            <strong>Logic</strong> mode retains the original rule editor for
+            defining stackable IF/THEN rules (e.g. "IF Calls &gt; 600 THEN
+            +10% to Quota") with per-rule conditions, effects, and scopes.
+          </li>
+          <li>
+            <strong>Relief Month</strong>: inside the Monthly Goals card, a
+            Relief Month toggle can be enabled for a given month. When active,
+            checkboxes appear for each team member — selected members receive a
+            100% base quota with accelerators still stacking on top. When Parity
+            is on, all members automatically receive relief and the checkboxes
+            are disabled.
           </li>
         </ul>
         <p>The <strong>Save Changes</strong> button stays pinned at the bottom of the modal so you can save from any scroll position.</p>
@@ -296,6 +314,50 @@ export default function Help() {
           </li>
         </ul>
 
+        <H4>Pilot Regions</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A searchable combobox lets managers assign external{" "}
+            <strong>sales team regions</strong> to each test phase. Regions are{" "}
+            <strong>per-phase</strong> — each month has its own set of assigned
+            regions, and the header shows the phase name and count (e.g.
+            "March (5)").
+          </li>
+          <li>
+            Assigned regions are split into <strong>New Business</strong> and{" "}
+            <strong>Growth</strong> sub-groups, each with an uppercase header
+            and rep count (e.g. "NEW BUSINESS (48 reps)"). A total rep count
+            appears in the section header.
+          </li>
+          <li>
+            <strong>Per-rep exclusion:</strong> click a region chip name to open
+            a dialog listing all team members as toggleable chips. Deselected
+            members are excluded from the pilot, reducing the effective rep
+            count. Chips with exclusions display an{" "}
+            <strong>orange border</strong> and an "(N)" suffix showing the
+            included count.
+          </li>
+          <li>
+            <strong>"+ last month" button:</strong> bulk-copies all regions from
+            the previous month (including their exclusion settings) into the
+            current phase. The button is disabled when all prior regions are
+            already assigned.
+          </li>
+          <li>
+            <strong>Color legend:</strong> a helper row below the header shows
+            a <strong>green circle</strong> for regions new to this phase (not
+            assigned in any earlier month) and an <strong>orange
+            circle</strong> for partial-team regions where some reps are
+            excluded.
+          </li>
+          <li>
+            Region assignments feed into the <strong>Forecasting &amp;
+            Goals</strong> section on the{" "}
+            <Link to="/quota" className="text-primary underline">Quota</Link>{" "}
+            page for projected win impact calculations.
+          </li>
+        </ul>
+
         <H3 id="test-signals">3b. Monthly Data</H3>
 
         <H4>Monthly Stats</H4>
@@ -317,6 +379,21 @@ export default function Help() {
           <li>Percentages are uncapped: values above 100% turn green to indicate the goal has been exceeded.</li>
           <li>Active and former members are shown in separate groups.</li>
           <li>When viewing a past month, goals and enabled metrics reflect the configuration that was in effect at that time.</li>
+          <li>
+            <strong>NB / Growth breakdown:</strong> Wins and Ops cells show an
+            inline breakdown of New Business vs. Growth counts (e.g.
+            "6NB + 4G"). When one type is zero it is omitted. Hover tooltips
+            group account names under <strong>New Business</strong> and{" "}
+            <strong>Growth</strong> headers instead of a flat list.
+          </li>
+          <li>
+            <strong>Relief badges:</strong> Members on relief for the current
+            month display a green <strong>"Relief"</strong> badge next to their
+            name, with progress bars filled green at 100%. When no goals are
+            configured but relief is active, a simplified table shows each
+            member's name, relief badge, quota %, and per-metric accelerator
+            progress toward the next tier.
+          </li>
           <li><strong>Account name tooltips:</strong> Hover over an ops, demos, or wins cell to see which accounts or opportunities contributed. Click the cell to copy the names to your clipboard.</li>
           <li>Goals are configured in <Link to="/settings" className="text-primary underline">Settings</Link>, not on this page.</li>
         </ul>
@@ -328,6 +405,18 @@ export default function Help() {
             trends. Toggle metrics on/off using the buttons above the chart.
             Hover over any data point to see values and each member's role that
             week.
+          </li>
+          <li>
+            A <strong>date range dropdown</strong> in the chart header lets you
+            zoom into the last 4 Weeks, 8 Weeks, 12 Weeks, 6 Months, or view
+            All data. The preference persists across all teams via localStorage.
+          </li>
+          <li>
+            <strong>Dynamic defaults:</strong> the chart's initially selected
+            metrics reflect the team's enabled goals and accelerator
+            configuration rather than a hardcoded set. Switching teams resets
+            the chart to the new team's defaults; you can still manually toggle
+            metrics on or off afterward.
           </li>
           <li>
             <strong>SELECT PLAYERS</strong> buttons below the chart let you
@@ -443,6 +532,58 @@ export default function Help() {
             names that contribute to that number. Click the cell to copy the
             names to your clipboard (a "Copied!" confirmation appears briefly).
           </li>
+          <li>
+            <strong>Relief members:</strong> Members on relief for the current
+            month show a green <strong>"Relief"</strong> badge, green quota
+            text, and green progress bars. The breakdown tooltip shows "Relief
+            month → 100.0%" as the base line, followed by any triggered
+            accelerator steps and the final total.
+          </li>
+          <li>
+            <strong>Basic / Logic accelerator display:</strong> The quota
+            breakdown tooltip adapts to the team's accelerator mode. In Basic
+            mode it shows the metric range and interpolated bonus percentage;
+            in Logic mode it shows the traditional rule details with
+            before/after values.
+          </li>
+        </ul>
+
+        <H4>Forecasting &amp; Goals</H4>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            A <strong>range dropdown</strong> (1, 3, 6, or 12 months) at the
+            top of the section controls how many months the forecast table
+            displays for each project.
+          </li>
+          <li>
+            Each project with an active date range gets a{" "}
+            <strong>forecast table</strong> with columns: Month, Projected
+            Bookings, NB Attach Goal, NB Attach %, Growth Wins Goal, Region
+            Impact, Goal Total (NB + Growth), Delta (Region Impact minus Goal
+            Total, color-coded green or red), and Reps Needed (additional reps
+            required beyond current team + assigned regions to cover the goal,
+            showing "✓" when capacity is sufficient).
+          </li>
+          <li>
+            <strong>Region Impact</strong> is calculated as: last month's total
+            wins ÷ (active members + assigned region reps) = wins per member,
+            then wins per member × assigned region reps = projected impact.
+          </li>
+          <li>
+            <strong>Region Impact tooltip:</strong> hover over any Region
+            Impact value (shown with a dotted underline) for a full breakdown
+            of the calculation — last month's wins, active member count,
+            assigned reps, total headcount, per-member win rate, and the
+            resulting impact. When regions are assigned, each region is listed
+            by name with its effective rep count (showing exclusions where
+            applicable).
+          </li>
+          <li>
+            <strong>Assigned Regions</strong> are displayed below the forecast
+            table, split into <strong>New Business Regions</strong> and{" "}
+            <strong>Growth Regions</strong> sub-sections, each showing the
+            region name, rep count, and an orange border when reps are excluded.
+          </li>
         </ul>
       </Section>
 
@@ -484,6 +625,12 @@ export default function Help() {
           <li>
             <strong>Inactive projects</strong> (non-archived but toggled off)
             appear at 60% opacity to distinguish them from active projects.
+          </li>
+          <li>
+            An <strong>availability row</strong> between the month headers and
+            the first project row shows green-tinted initials circles for
+            members who are unassigned or whose project ends before that month.
+            Hover over a circle to see the member's full name.
           </li>
         </ul>
 
@@ -583,6 +730,14 @@ export default function Help() {
             Account Name, Date, Type, Rep, and Details).
           </li>
           <li>
+            <strong>Rep</strong> filter: a multi-select dropdown populated with
+            all unique rep names from the current data set. Select one or more
+            reps to filter both summary and detailed views; an "All Reps"
+            checkbox at the top quickly clears the selection back to unfiltered.
+            The label shows "All" when unfiltered, the rep name when one is
+            selected, or "N selected" for multiple.
+          </li>
+          <li>
             <strong>Team Only</strong> toggle: filter results to only include
             rows where the rep is a known team member.
           </li>
@@ -673,6 +828,25 @@ export default function Help() {
             <strong>Plan ahead with <Link to="/roadmap" className="text-primary underline">Roadmap</Link></strong>:{" "}
             use the 6-month calendar view to see which projects overlap, who's
             assigned where, and when team members become available for new work.
+          </li>
+          <li>
+            <strong>Assign Pilot Regions per phase</strong>: use the region
+            picker on each project page to track which sales teams are rolling
+            into each month, and click "+ last month" to quickly carry forward
+            the previous month's assignments.
+          </li>
+          <li>
+            <strong>Use Relief Month</strong> for onboarding, PTO, or
+            transition periods — members receive a 100% base quota while
+            accelerators still stack on top, so strong performers are still
+            recognized.
+          </li>
+          <li>
+            <strong>Check the forecast</strong> on the{" "}
+            <Link to="/quota" className="text-primary underline">Quota</Link>{" "}
+            page to see projected win impact from assigned regions, the delta
+            between your goal and expected output, and how many additional reps
+            are needed.
           </li>
           <li>
             <strong>Dark mode</strong> adapts all charts, cards, and text for
