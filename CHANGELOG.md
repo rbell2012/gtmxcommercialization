@@ -1,5 +1,60 @@
 # Changelog
 
+## 2026-03-17 (Test Phases First Line — Dropdown Only; Centered Label)
+
+### Location — Project Page (`src/pages/Index.tsx`), Test Phases Utility (`src/lib/test-phases.ts`), Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** Constrain the first line under each test phase month to a fixed set of labels (Ramp, Run, Recommendations, Pilot, Commercial Lead) instead of free text, so phase types are consistent and reportable. Additionally fix a blank project page caused by Radix Select not supporting empty string as a controlled value, and center the dropdown label text to align with the priorities line below.
+
+**Changes:**
+- Added `PHASE_LABEL_OPTIONS` and `isAllowedPhaseLabel()` in `src/lib/test-phases.ts` for the five allowed phase labels; existing `team_phase_labels.label` remains stored as text (no DB migration).
+- Replaced the first-line textarea in the Test Phases section on the project page with a Select dropdown; options are "—" (clear) plus Ramp, Run, Recommendations, Pilot, Commercial Lead. Legacy or invalid labels display as "—" until the user picks one of the five.
+- Used sentinel value `__none__` for the empty/unset option and convert to empty string when saving, because Radix UI Select does not support controlled `value=""` and was causing the project page to render blank.
+- Centered the dropdown label text in the trigger (flex-1, justify-center, text-center on the value span) so it aligns with the priorities line below.
+- Updated the Help page Test Phases section to describe the first line as a dropdown with the five fixed options and the second line as the free-text priorities field.
+
+---
+
+## 2026-03-17 (Rich Text in Mission & Purpose; Line Breaks & Color Picker Fixes)
+
+### Location — Project Page (`src/pages/Index.tsx`), New Component (`src/components/RichTextEditor.tsx`), Global Styles (`src/index.css`)
+
+**Rationale:** Allow Mission & Purpose of Test fields to support formatted content (bold, italic, underline, lists, text color) for clearer communication. Additionally fix two UX issues: multiple line breaks not preserved after save, and the color picker disappearing when moving the mouse to select a color.
+
+**Changes:**
+- Added a reusable rich text editor built with Tiptap: toolbar supports bold, italic, underline, bullet list, numbered list, and a text color palette (red, orange, green, blue, purple, gray, default).
+- Replaced plain Input/Textarea in the Mission & Purpose section for Business Goal, What We Are Testing, Executive Sponsor, Executive Proxy, and Product Description with `RichTextEditor` (edit) and `RichTextDisplay` (read-only); Revenue Lever remains a Select dropdown.
+- Installed Tiptap packages: `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-underline`, `@tiptap/extension-text-style`, `@tiptap/extension-color`, `@tiptap/extension-placeholder`.
+- Line breaks: Empty paragraphs now preserve height after save by applying `min-height: 1em` and `display: block` to empty `<p>` elements in both the editor (`.tiptap` in `index.css`) and read-only display (`RichTextDisplay`); added `tiptap` class to the editor content.
+- Color picker: Replaced margin (`mt-1`) with padding (`pt-2`) on the color dropdown container so the hover area bridges the gap between the palette button and swatches, keeping the dropdown visible when moving the mouse down to click a color.
+
+---
+
+## 2026-03-17 (Revenue Lever Dropdown in Mission & Purpose)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** Standardize revenue lever values and improve data consistency by constraining the field to predefined options instead of free text.
+
+**Changes:**
+- Replaced the Revenue Lever free-text input with a Select dropdown in the Mission & Purpose section of the project page.
+- Added three dropdown options: Opp:Win, MRR/ARPU, New TAM.
+- Kept existing behavior: read-only display when mission is submitted; editable dropdown when not submitted.
+
+---
+
+## 2026-03-17 (Rename Mission Statement to Product Description)
+
+### Location — Project Page (`src/pages/Index.tsx`), Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** The field previously labeled "Mission Statement" on project pages was renamed to "Product Description" to better reflect its use as a product description rather than a mission statement.
+
+**Changes:**
+- On the project page (Index): changed the Mission & Purpose card label from "Mission Statement" to "Product Description" and updated the textarea placeholder from "Describe the mission and purpose of this test..." to "Describe the product..."
+- On the Help page: updated the Mission & Purpose section list item from "Mission Statement" to "Product Description" and adjusted the description to refer to the product description field.
+
+---
+
 ## 2026-03-14 (Help Page — Document Recent Features)
 
 ### Location — Help Page (`src/pages/Help.tsx`)

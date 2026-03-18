@@ -19,7 +19,8 @@ import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTota
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
-import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, PHASE_LABEL_OPTIONS, isAllowedPhaseLabel, type ComputedPhase } from "@/lib/test-phases";
+import RichTextEditor, { RichTextDisplay } from "@/components/RichTextEditor";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -1041,24 +1042,25 @@ const Index = () => {
                       }}
                     >
                       <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>{phase.monthLabel}</p>
-                      <textarea
-                        value={phase.label}
-                        onChange={(e) => {
-                          updatePhaseLabel(activeTeam!.id, phase.monthIndex, e.target.value);
-                          e.target.style.height = "auto";
-                          e.target.style.height = e.target.scrollHeight + "px";
-                        }}
-                        ref={(el) => {
-                          if (el) {
-                            el.style.height = "auto";
-                            el.style.height = el.scrollHeight + "px";
-                          }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        placeholder="—"
-                        rows={1}
-                        className="w-full text-xs text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 resize-none overflow-hidden"
-                      />
+                      <Select
+                        value={isAllowedPhaseLabel(phase.label) ? phase.label : "__none__"}
+                        onValueChange={(v) => updatePhaseLabel(activeTeam!.id, phase.monthIndex, v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-auto min-h-6 w-full border-0 bg-transparent shadow-none text-xs text-muted-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-primary/50 py-0 [&>span]:flex [&>span]:flex-1 [&>span]:justify-center [&>span]:min-w-0 [&>span]:text-center"
+                        >
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border z-50">
+                          <SelectItem value="__none__" className="text-xs text-muted-foreground">—</SelectItem>
+                          {PHASE_LABEL_OPTIONS.map((opt) => (
+                            <SelectItem key={opt} value={opt} className="text-xs">
+                              {opt}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <textarea
                         value={phase.priority}
                         onChange={(e) => {
@@ -1132,80 +1134,85 @@ const Index = () => {
               {activeTeam.missionSubmitted ? (
                 <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.revenueLever || <span className="text-muted-foreground/50 italic">—</span>}</p>
               ) : (
-                <Input
+                <Select
                   value={activeTeam.revenueLever}
-                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, revenueLever: e.target.value }))}
-                  placeholder="e.g. Opp:Win"
-                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
-                />
+                  onValueChange={(value) => updateTeam(activeTeam.id, (t) => ({ ...t, revenueLever: value }))}
+                >
+                  <SelectTrigger className="bg-secondary/20 border-border text-foreground text-sm h-9">
+                    <SelectValue placeholder="Select revenue lever" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Opp:Win">Opp:Win</SelectItem>
+                    <SelectItem value="MRR/ARPU">MRR/ARPU</SelectItem>
+                    <SelectItem value="New TAM">New TAM</SelectItem>
+                  </SelectContent>
+                </Select>
               )}
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Business Goal</label>
               {activeTeam.missionSubmitted ? (
-                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.businessGoal || <span className="text-muted-foreground/50 italic">—</span>}</p>
+                <RichTextDisplay value={activeTeam.businessGoal} />
               ) : (
-                <Input
+                <RichTextEditor
                   value={activeTeam.businessGoal}
-                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, businessGoal: e.target.value }))}
+                  onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, businessGoal: html }))}
                   placeholder="Describe the business goal..."
-                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                  minHeight="60px"
                 />
               )}
             </div>
             <div className="sm:col-span-2">
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">What We Are Testing</label>
               {activeTeam.missionSubmitted ? (
-                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.whatWeAreTesting || <span className="text-muted-foreground/50 italic">—</span>}</p>
+                <RichTextDisplay value={activeTeam.whatWeAreTesting} />
               ) : (
-                <Textarea
+                <RichTextEditor
                   value={activeTeam.whatWeAreTesting}
-                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, whatWeAreTesting: e.target.value }))}
+                  onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, whatWeAreTesting: html }))}
                   placeholder="Describe what is being tested..."
-                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
-                  rows={2}
+                  minHeight="60px"
                 />
               )}
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Sponsor</label>
               {activeTeam.missionSubmitted ? (
-                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.executiveSponsor || <span className="text-muted-foreground/50 italic">—</span>}</p>
+                <RichTextDisplay value={activeTeam.executiveSponsor} />
               ) : (
-                <Input
+                <RichTextEditor
                   value={activeTeam.executiveSponsor}
-                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveSponsor: e.target.value }))}
+                  onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveSponsor: html }))}
                   placeholder="Executive sponsor name"
-                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                  minHeight="40px"
                 />
               )}
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Proxy</label>
               {activeTeam.missionSubmitted ? (
-                <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.executiveProxy || <span className="text-muted-foreground/50 italic">—</span>}</p>
+                <RichTextDisplay value={activeTeam.executiveProxy} />
               ) : (
-                <Input
+                <RichTextEditor
                   value={activeTeam.executiveProxy}
-                  onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveProxy: e.target.value }))}
+                  onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, executiveProxy: html }))}
                   placeholder="Executive proxy name"
-                  className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm h-9"
+                  minHeight="40px"
                 />
               )}
             </div>
           </div>
 
           <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Mission Statement</label>
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Product Description</label>
             {activeTeam.missionSubmitted ? (
-              <p className="text-sm text-foreground min-h-[1.5rem] whitespace-pre-wrap">{activeTeam.missionPurpose || <span className="text-muted-foreground/50 italic">—</span>}</p>
+              <RichTextDisplay value={activeTeam.missionPurpose} />
             ) : (
-              <Textarea
+              <RichTextEditor
                 value={activeTeam.missionPurpose}
-                onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, missionPurpose: e.target.value }))}
-                placeholder="Describe the mission and purpose of this test..."
-                className="bg-secondary/20 border-border text-foreground placeholder:text-muted-foreground text-sm"
-                rows={3}
+                onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, missionPurpose: html }))}
+                placeholder="Describe the product..."
+                minHeight="80px"
               />
             )}
           </div>

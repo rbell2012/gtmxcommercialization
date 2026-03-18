@@ -222,8 +222,8 @@ export default function Help() {
           <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
           <li>Below each month, a <strong>wins label</strong> shows the total wins for that month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only).</li>
-          <li>Click the <strong>phase label</strong> (headline) to edit its description. Labels support <strong>multi-line text</strong>: the field auto-expands as you type so longer notes and paragraphs are always fully visible.</li>
-          <li>Below each headline, a second <strong>priorities</strong> text field lets managers record per-month priorities alongside the headline. Priorities are only visible on the Pilots page; the Roadmap page shows only the headline.</li>
+          <li>The <strong>first line</strong> under each month is a <strong>dropdown</strong> with fixed options: Ramp, Run, Recommendations, Pilot, Commercial Lead. Choose one to label that phase.</li>
+          <li>Below that, a <strong>priorities</strong> text field lets managers record per-month priorities. Priorities are only visible on the Pilots page; the Roadmap page shows only the phase label.</li>
           <li>
             <strong>Collapsible buckets:</strong> When a test spans many months,
             older months are grouped into a "Prev (N)" bucket on the left and
@@ -278,7 +278,7 @@ export default function Help() {
           <li><strong>What We Are Testing:</strong> A description of the hypothesis or approach under test.</li>
           <li><strong>Executive Sponsor:</strong> The executive sponsor overseeing the test.</li>
           <li><strong>Executive Proxy:</strong> The executive proxy supporting the test.</li>
-          <li><strong>Mission Statement:</strong> A free-text field for additional mission context.</li>
+          <li><strong>Product Description:</strong> A free-text field for the product description.</li>
         </ul>
         <p>
           Click <strong>Submit</strong> to save. Once submitted, values display

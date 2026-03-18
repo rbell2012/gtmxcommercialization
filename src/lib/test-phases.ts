@@ -1,3 +1,18 @@
+/** Allowed values for the first line (phase label) in Test Phases — dropdown only. */
+export const PHASE_LABEL_OPTIONS = [
+  "Ramp",
+  "Run",
+  "Recommendations",
+  "Pilot",
+  "Commercial Lead",
+] as const;
+
+export type PhaseLabelOption = (typeof PHASE_LABEL_OPTIONS)[number];
+
+export function isAllowedPhaseLabel(value: string): value is PhaseLabelOption {
+  return (PHASE_LABEL_OPTIONS as readonly string[]).includes(value);
+}
+
 export interface ComputedPhase {
   monthIndex: number;
   monthLabel: string;
