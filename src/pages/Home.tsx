@@ -219,7 +219,7 @@ function PageOverviewCard({
   );
 }
 
-const Home = () => {
+const Home = ({ isUnlocked }: { isUnlocked: boolean }) => {
   const { teams, loading } = useTeams();
   const navigate = useNavigate();
   const activeTeams = teams.filter((t) => t.isActive);
@@ -314,45 +314,49 @@ const Home = () => {
               </CardContent>
             </Card>
 
-            <PageOverviewCard
-              title="Data"
-              icon={<BarChart3 className="h-5 w-5 text-primary" />}
-              description="Cross-project analytics, account-level insights, and deal cycle metrics."
-              bullets={[
-                "Account breakdown by rep and team",
-                "Deal cycle averages (call → connect → demo → win)",
-                "Activity and engagement metrics per account",
-                "Revenue impact values and comparisons",
-                "Filterable data exports",
-              ]}
-              onClick={() => navigate("/data")}
-            />
+            {isUnlocked && (
+              <>
+                <PageOverviewCard
+                  title="Data"
+                  icon={<BarChart3 className="h-5 w-5 text-primary" />}
+                  description="Cross-project analytics, account-level insights, and deal cycle metrics."
+                  bullets={[
+                    "Account breakdown by rep and team",
+                    "Deal cycle averages (call → connect → demo → win)",
+                    "Activity and engagement metrics per account",
+                    "Revenue impact values and comparisons",
+                    "Filterable data exports",
+                  ]}
+                  onClick={() => navigate("/data")}
+                />
 
-            <PageOverviewCard
-              title="Quota"
-              icon={<Target className="h-5 w-5 text-primary" />}
-              description="Monthly quota tracking with accelerator support across all projects."
-              bullets={[
-                "Per-rep quota attainment breakdown",
-                "Goal vs. actual for every metric",
-                "Accelerator rule impact analysis",
-                "Month-over-month phase navigation",
-                "Team-scoped and individual-scoped views",
-              ]}
-              onClick={() => navigate("/quota")}
-            />
+                <PageOverviewCard
+                  title="Quota"
+                  icon={<Target className="h-5 w-5 text-primary" />}
+                  description="Monthly quota tracking with accelerator support across all projects."
+                  bullets={[
+                    "Per-rep quota attainment breakdown",
+                    "Goal vs. actual for every metric",
+                    "Accelerator rule impact analysis",
+                    "Month-over-month phase navigation",
+                    "Team-scoped and individual-scoped views",
+                  ]}
+                  onClick={() => navigate("/quota")}
+                />
 
-            <PageOverviewCard
-              title="Roadmap"
-              icon={<MapIcon className="h-5 w-5 text-primary" />}
-              description="Timeline view of all projects with phase milestones and team availability."
-              bullets={[
-                "Phase labels",
-                "Team member availability windows",
-                "Unassigned rep visibility",
-              ]}
-              onClick={() => navigate("/roadmap")}
-            />
+                <PageOverviewCard
+                  title="Roadmap"
+                  icon={<MapIcon className="h-5 w-5 text-primary" />}
+                  description="Timeline view of all projects with phase milestones and team availability."
+                  bullets={[
+                    "Phase labels",
+                    "Team member availability windows",
+                    "Unassigned rep visibility",
+                  ]}
+                  onClick={() => navigate("/roadmap")}
+                />
+              </>
+            )}
           </div>
         </section>
       </div>

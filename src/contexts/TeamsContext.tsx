@@ -41,6 +41,7 @@ export interface BasicAcceleratorMetricConfig {
   minPct: number;
   maxValue: number;
   scope?: GoalScope;
+  excludedMembers?: string[];
 }
 
 export type BasicAcceleratorConfig = Partial<Record<GoalMetric, BasicAcceleratorMetricConfig>>;
@@ -88,6 +89,28 @@ export const DEFAULT_GOALS: MemberGoals = {
   wins: 0,
   feedback: 0,
   activity: 0,
+};
+
+export interface OverallGoalConfig {
+  winsEnabled: boolean;
+  wins: number;
+  totalPriceEnabled: boolean;
+  totalPrice: number;
+  discountThresholdEnabled: boolean;
+  discountThreshold: number;
+  realizedPriceEnabled: boolean;
+  realizedPrice: number;
+}
+
+export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
+  winsEnabled: false,
+  wins: 0,
+  totalPriceEnabled: false,
+  totalPrice: 0,
+  discountThresholdEnabled: false,
+  discountThreshold: 0,
+  realizedPriceEnabled: false,
+  realizedPrice: 0,
 };
 
 // ── App types ──
@@ -178,9 +201,15 @@ export interface Team {
   revenueLever: string;
   businessGoal: string;
   whatWeAreTesting: string;
+  topObjections: string[];
+  biggestRisks: string[];
+  onboardingProcess: string;
+  signalsSubmitted: boolean;
+  signalsLastEdit: string | null;
   goalsParity: boolean;
   teamGoals: MemberGoals;
   enabledGoals: EnabledGoals;
+  overallGoal: OverallGoalConfig;
   acceleratorConfig: AcceleratorConfig;
   acceleratorMode: AcceleratorMode;
   basicAcceleratorConfig: BasicAcceleratorConfig;
@@ -519,6 +548,11 @@ function assembleTeams(
       revenueLever: t.revenue_lever ?? "",
       businessGoal: t.business_goal ?? "",
       whatWeAreTesting: t.what_we_are_testing ?? "",
+      topObjections: (t.top_objections as string[] | null) ?? ["", "", ""],
+      biggestRisks: (t.biggest_risks as string[] | null) ?? ["", "", ""],
+      onboardingProcess: t.onboarding_process ?? "",
+      signalsSubmitted: t.signals_submitted ?? false,
+      signalsLastEdit: t.signals_last_edit ?? null,
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
         calls: t.team_goal_calls ?? 0,
@@ -535,6 +569,16 @@ function assembleTeams(
         wins: t.goal_enabled_wins ?? false,
         feedback: t.goal_enabled_feedback ?? false,
         activity: t.goal_enabled_activity ?? false,
+      },
+      overallGoal: {
+        winsEnabled: t.overall_goal_wins_enabled ?? false,
+        wins: t.overall_goal_wins ?? 0,
+        totalPriceEnabled: t.overall_goal_total_price_enabled ?? false,
+        totalPrice: t.overall_goal_total_price ?? 0,
+        discountThresholdEnabled: t.overall_goal_discount_threshold_enabled ?? false,
+        discountThreshold: t.overall_goal_discount_threshold ?? 0,
+        realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
+        realizedPrice: t.overall_goal_realized_price ?? 0,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
@@ -1399,6 +1443,17 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           JSON.stringify(old.reliefMonthMembers) !== JSON.stringify(updated.reliefMonthMembers)
         );
 
+        const overallGoalChanged = old && (
+          old.overallGoal.winsEnabled !== updated.overallGoal.winsEnabled ||
+          old.overallGoal.wins !== updated.overallGoal.wins ||
+          old.overallGoal.totalPriceEnabled !== updated.overallGoal.totalPriceEnabled ||
+          old.overallGoal.totalPrice !== updated.overallGoal.totalPrice ||
+          old.overallGoal.discountThresholdEnabled !== updated.overallGoal.discountThresholdEnabled ||
+          old.overallGoal.discountThreshold !== updated.overallGoal.discountThreshold ||
+          old.overallGoal.realizedPriceEnabled !== updated.overallGoal.realizedPriceEnabled ||
+          old.overallGoal.realizedPrice !== updated.overallGoal.realizedPrice
+        );
+
         if (
           old &&
           (old.name !== updated.name ||
@@ -1417,7 +1472,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.revenueLever !== updated.revenueLever ||
             old.businessGoal !== updated.businessGoal ||
             old.whatWeAreTesting !== updated.whatWeAreTesting ||
-            goalsChanged)
+            JSON.stringify(old.topObjections) !== JSON.stringify(updated.topObjections) ||
+            JSON.stringify(old.biggestRisks) !== JSON.stringify(updated.biggestRisks) ||
+            old.onboardingProcess !== updated.onboardingProcess ||
+            old.signalsSubmitted !== updated.signalsSubmitted ||
+            old.signalsLastEdit !== updated.signalsLastEdit ||
+            goalsChanged ||
+            overallGoalChanged)
         ) {
           dbMutate(
             supabase
@@ -1439,6 +1500,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 revenue_lever: updated.revenueLever,
                 business_goal: updated.businessGoal,
                 what_we_are_testing: updated.whatWeAreTesting,
+                top_objections: updated.topObjections,
+                biggest_risks: updated.biggestRisks,
+                onboarding_process: updated.onboardingProcess,
+                signals_submitted: updated.signalsSubmitted,
+                signals_last_edit: updated.signalsLastEdit,
                 goals_parity: updated.goalsParity,
                 team_goal_calls: updated.teamGoals.calls,
                 team_goal_ops: updated.teamGoals.ops,
@@ -1452,6 +1518,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 goal_enabled_wins: updated.enabledGoals.wins,
                 goal_enabled_feedback: updated.enabledGoals.feedback,
                 goal_enabled_activity: updated.enabledGoals.activity,
+                overall_goal_wins_enabled: updated.overallGoal.winsEnabled,
+                overall_goal_wins: updated.overallGoal.wins,
+                overall_goal_total_price_enabled: updated.overallGoal.totalPriceEnabled,
+                overall_goal_total_price: updated.overallGoal.totalPrice,
+                overall_goal_discount_threshold_enabled: updated.overallGoal.discountThresholdEnabled,
+                overall_goal_discount_threshold: updated.overallGoal.discountThreshold,
+                overall_goal_realized_price_enabled: updated.overallGoal.realizedPriceEnabled,
+                overall_goal_realized_price: updated.overallGoal.realizedPrice,
                 accelerator_config: updated.acceleratorConfig,
                 accelerator_mode: updated.acceleratorMode,
                 basic_accelerator_config: updated.basicAcceleratorConfig,
@@ -1556,8 +1630,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           startDate, endDate, totalTam: 0, tamSubmitted: false,
           missionPurpose: "", missionSubmitted: false, missionLastEdit: null,
           executiveSponsor: "", executiveProxy: "", revenueLever: "", businessGoal: "", whatWeAreTesting: "",
+          topObjections: ["", "", ""],
+          biggestRisks: ["", "", ""],
+          onboardingProcess: "",
+          signalsSubmitted: false,
+          signalsLastEdit: null,
           goalsParity: false, teamGoals: { ...DEFAULT_GOALS },
           enabledGoals: { ...DEFAULT_ENABLED_GOALS },
+          overallGoal: { ...DEFAULT_OVERALL_GOAL_CONFIG },
           acceleratorConfig: {},
           acceleratorMode: 'basic',
           basicAcceleratorConfig: {},
@@ -1637,6 +1717,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       revenueLever: t.revenue_lever ?? "",
       businessGoal: t.business_goal ?? "",
       whatWeAreTesting: t.what_we_are_testing ?? "",
+      topObjections: (t.top_objections as string[] | null) ?? ["", "", ""],
+      biggestRisks: (t.biggest_risks as string[] | null) ?? ["", "", ""],
+      onboardingProcess: t.onboarding_process ?? "",
+      signalsSubmitted: t.signals_submitted ?? false,
+      signalsLastEdit: t.signals_last_edit ?? null,
       goalsParity: t.goals_parity ?? false,
       teamGoals: {
         calls: t.team_goal_calls ?? 0,
@@ -1653,6 +1738,16 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         wins: t.goal_enabled_wins ?? false,
         feedback: t.goal_enabled_feedback ?? false,
         activity: t.goal_enabled_activity ?? false,
+      },
+      overallGoal: {
+        winsEnabled: t.overall_goal_wins_enabled ?? false,
+        wins: t.overall_goal_wins ?? 0,
+        totalPriceEnabled: t.overall_goal_total_price_enabled ?? false,
+        totalPrice: t.overall_goal_total_price ?? 0,
+        discountThresholdEnabled: t.overall_goal_discount_threshold_enabled ?? false,
+        discountThreshold: t.overall_goal_discount_threshold ?? 0,
+        realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
+        realizedPrice: t.overall_goal_realized_price ?? 0,
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',

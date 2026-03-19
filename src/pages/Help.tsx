@@ -222,7 +222,7 @@ export default function Help() {
           <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
           <li>Below each month, a <strong>wins label</strong> shows the total wins for that month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only).</li>
-          <li>The <strong>first line</strong> under each month is a <strong>dropdown</strong> with fixed options: Ramp, Run, Recommendations, Pilot, Commercial Lead. Choose one to label that phase.</li>
+          <li>The <strong>first line</strong> under each month is a <strong>dropdown</strong> with fixed options: Ramp, Run, Recommendations, Sales Org Pilot / Commercial Lead, GA / Commercial Lead. Choose one to label that phase.</li>
           <li>Below that, a <strong>priorities</strong> text field lets managers record per-month priorities. Priorities are only visible on the Pilots page; the Roadmap page shows only the phase label.</li>
           <li>
             <strong>Collapsible buckets:</strong> When a test spans many months,
@@ -291,7 +291,7 @@ export default function Help() {
         <p>
           An orange-bordered card showing cumulative performance across the{" "}
           <strong>entire test duration</strong>, regardless of which month is
-          selected. Includes conversion funnels (Touch Rate, Call→Connect,
+          selected. Includes conversion funnels (% TAM, Call→Connect,
           Connect→Demo, Demo→Win) and stat totals (Ops, Demos, Wins, Feedback,
           Activity).
         </p>
@@ -300,14 +300,14 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li>
             <strong>When external metrics data exists:</strong> Total TAM,
-            Touched Accounts, Avg TAM, and Touch Rate are displayed as read-only
+            Touched Accounts, Avg TAM, and % TAM are displayed as read-only
             stats sourced from the metrics system.
           </li>
           <li>
             <strong>When no external data exists (manual fallback):</strong>{" "}
             Enter a Total TAM value and click <strong>Submit</strong>. The value
             is divided equally across active members and persisted to each
-            member's weekly funnel. Touched Accounts, Avg TAM, and Touch Rate
+            member's weekly funnel. Touched Accounts, Avg TAM, and % TAM
             are computed and displayed alongside the editable Total TAM. Click{" "}
             <strong>Edit</strong> to change it. The new value applies from the
             current week forward while older weeks retain their original value.
@@ -439,7 +439,7 @@ export default function Help() {
           <li><strong>Player</strong> and <strong>Metric</strong> columns are frozen on the left; <strong>Total</strong> is frozen on the right. The Total column sums only the weekly values (monthly summary columns are not double-counted).</li>
           <li>The <strong>Activity</strong> row is always visible directly below TAM, regardless of whether the activity goal is enabled in team settings.</li>
           <li>TAM values <strong>carry forward</strong>: once set, TAM persists in future weeks until a new value is submitted.</li>
-          <li>Conversion rate rows (Touch Rate, Call-to-Connect, Connect-to-Demo, Demo-to-Win) are included below the metric rows.</li>
+          <li>Conversion rate rows (% TAM, Call-to-Connect, Connect-to-Demo, Demo-to-Win) are included below the metric rows.</li>
           <li>
             Below a thick separator line, the <strong>Team Monthly Aggregate</strong>{" "}
             section shows summed team totals grouped by calendar month, with
@@ -871,7 +871,7 @@ export default function Help() {
           across active members. TAM is a <strong>snapshot</strong>, not a
           cumulative metric: once set for a week, it carries forward automatically
           until a new value is submitted. Monthly summaries use the last week's
-          carried TAM value. Touch Rate is derived from TAM as{" "}
+          carried TAM value. % TAM is derived from TAM as{" "}
           <em>Touched Accounts / TAM</em>.
         </p>
         <ul className="list-disc !pl-14 space-y-1">
@@ -1047,7 +1047,7 @@ export default function Help() {
             the entire test duration.
           </li>
           <li>
-            <strong>Conversion rates:</strong> Touch Rate (Touched Accounts /
+            <strong>Conversion rates:</strong> % TAM (Touched Accounts /
             TAM), Call → Connect (Connects / Calls), Connect → Demo (Demos /
             Connects), and Demo → Win (Wins / Demos). Rates are calculated
             per-month and lifetime.

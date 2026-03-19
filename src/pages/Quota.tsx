@@ -411,8 +411,10 @@ function ForecastingSection({
                     <th className="py-2 px-3 text-left font-semibold text-muted-foreground">Month</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Projected Bookings</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Attach Goal</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Wins</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">NB Attach %</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Growth Wins Goal</th>
+                    <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Growth Wins</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Region Impact</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Goal Total</th>
                     <th className="py-2 px-3 text-right font-semibold text-muted-foreground">Delta</th>
@@ -425,6 +427,11 @@ function ForecastingSection({
                     const teamPb = teamBookingsMap.get(mk);
                     const nbAttach = teamPb?.newBusinessAttach ?? null;
                     const growthGoal = teamPb?.growthWins ?? null;
+                    const actualNB = team.members.reduce((sum, m) => sum + (m.monthlyWinTypes[mk]?.nb ?? 0), 0);
+                    const actualGrowth = team.members.reduce((sum, m) => sum + (m.monthlyWinTypes[mk]?.growth ?? 0), 0);
+                    const hasGoals = nbAttach != null || growthGoal != null;
+                    const displayActualNB = actualNB > 0 ? actualNB.toLocaleString() : hasGoals ? "0" : "—";
+                    const displayActualGrowth = actualGrowth > 0 ? actualGrowth.toLocaleString() : hasGoals ? "0" : "—";
                     const attachPct = (global && global > 0 && nbAttach != null)
                       ? ((nbAttach / global) * 100).toFixed(2)
                       : "—";
@@ -451,8 +458,10 @@ function ForecastingSection({
                         <td className="py-2 px-3 font-medium text-foreground whitespace-nowrap">{formatMonthLabel(mk)}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{global != null ? global.toLocaleString() : "—"}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{nbAttach != null ? nbAttach.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{displayActualNB}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{attachPct}{attachPct !== "—" ? "%" : ""}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-foreground">{growthGoal != null ? growthGoal.toLocaleString() : "—"}</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-foreground">{displayActualGrowth}</td>
                         <td className="py-2 px-3 text-right tabular-nums text-primary font-semibold">
                           {regionImpact > 0 ? (
                             <Tooltip>

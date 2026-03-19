@@ -1,5 +1,158 @@
 # Changelog
 
+## 2026-03-19 (Chorus in Test Data & Account Name Hyperlink)
+
+### Location — Data Page (`src/pages/Data.tsx`)
+
+**Rationale:** Expose Chorus data in the Data page Test Data Selections and let users open the Chorus recording for a row by clicking the account name.
+
+**Changes:**
+- Added "Chorus" to the test data dropdown: extended `DataTypeKey` with `"chorus"`, added `chorus: { table: "metrics_chorus", dateCol: "chorus_date", label: "Chorus" }` to `DATA_TYPE_CONFIG`, included `"chorus"` in `ALL_DATA_TYPES`, and added a `case "chorus"` in `normalizeRow` that builds the detail string from `comments` and `chorus_link`.
+- Made the Account Name cell in the detailed table a hyperlink for Chorus rows: added `link: string | null` to `NormalizedRow`, set `link: type === "chorus" ? (row.chorus_link ?? null) : null` in `normalizeRow`, and in the detailed table render the account name as an `<a href={row.link} target="_blank" rel="noopener noreferrer">` when `row.link` is set, otherwise plain text.
+
+---
+
+## 2026-03-19 (Accelerator Columns, Relief Fix, Member Exclusions)
+
+### Location — Project Page (`src/pages/Index.tsx`), Settings Page (`src/pages/Settings.tsx`), Quota Helpers (`src/lib/quota-helpers.ts`), Teams Context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Accelerator-configured metrics were not appearing as columns in the Monthly Goals section (only Goal-enabled metrics showed). Additionally, relief members incorrectly showed 100% progress bars on accelerator-only metrics because the `hasGoal` check was not gated on `team.enabledGoals[metric]`. A new per-metric member exclusion feature was also added so managers can mark specific members as ineligible for an accelerator in a given month.
+
+**Changes:**
+- In `Index.tsx`, added a `hasAccel(metric)` helper that checks both basic and logic accelerator config; `visibleMetrics` is now built from metrics that have either a Goal OR an Accelerator enabled (not Goals only).
+- In `Index.tsx`, for metrics that are accelerator-only (no goal), the Monthly Goals cell now renders accelerator progress (value, progress bar, "need X", tier lock badges) instead of a plain count.
+- In `Index.tsx`, fixed the `hasGoal` check in both the active members table and former members table: changed `(metric !== 'wins' || winsHasGoal) && goal > 0` to `!!team.enabledGoals[metric] && goal > 0`. This prevents relief's 100% override from being applied to accelerator-only metrics (e.g. Feedback showing 100% for Zoe Lang and Carly King on Mad Max).
+- In `TeamsContext.tsx`, added `excludedMembers?: string[]` to `BasicAcceleratorMetricConfig` — stored in the existing `basic_accelerator_config` JSON column, no migration required.
+- In `quota-helpers.ts`, exported `isMemberExcludedFromAccelerator(team, memberId, metric)` and used it to fully skip excluded members in `computeQuota`, `computeQuotaBreakdown`, `countTriggeredAccelerators`, `getTriggeredAcceleratorDetails`, and `getAcceleratorProgress`.
+- In `Settings.tsx` (Basic mode), added an "Exclude members" checkbox list beneath each enabled accelerator metric's config row; checked members receive no bonus and show a blank cell in Monthly Goals.
+- In `Settings.tsx` (Logic mode), added the same "Exclude members" checkbox list beneath each metric's rules list (shown when the metric has rules or existing exclusions); exclusions are stored in `basicAcceleratorConfig` so they are shared across modes.
+- In `Index.tsx`, excluded members render a blank cell in the Monthly Goals accelerator column (both in the main table and the relief-only accelerator table).
+- Fixed a JSX syntax error in `Settings.tsx` where the `{cfg.enabled && (...)}` block wrapped two sibling `<div>` elements without a React fragment; wrapped with `<>...</>`.
+
+---
+
+## 2026-03-19 (Hide Data, Quota, Roadmap Tiles on Home When Locked)
+
+### Location — Home Page (`src/pages/Home.tsx`), App routing (`src/App.tsx`)
+
+**Rationale:** When the app is locked (password-protected), the Data, Quota, and Roadmap nav links are already hidden and those routes redirect to home. The home page tiles for those same sections were still visible; hiding them when locked keeps the UI consistent and avoids showing entry points to protected content.
+
+**Changes:**
+- In `App.tsx`, the `/home` route now passes `isUnlocked` to the Home component: `element={<Home isUnlocked={isUnlocked} />}`.
+- In `Home.tsx`, the Home component accepts an `isUnlocked: boolean` prop and renders the Data, Quota, and Roadmap `PageOverviewCard` tiles only when `isUnlocked` is true (wrapped in `{isUnlocked && (...)}`).
+
+---
+
+## 2026-03-18 (Funnel Overview — True Conversion Rates for Player Metrics)
+
+### Location — Project Page, Funnel Overview (`src/pages/Index.tsx`)
+
+**Rationale:** The per-player conversion rates (% TAM / TAM→Call, Call→Connect, Connect→Demo, Demo→Win) in the Funnel Overview "Select Players" section were computed as averages of weekly rates. That diluted the displayed rate when reps had many active weeks with little or no demos (e.g. Carly and Zoe showed 43% and 33% Demo→Win despite 61/42 and 51/49 total wins/demos). Users want the "true" rate: total numerator divided by total denominator across the full period.
+
+**Changes:**
+- In `WeekOverWeekView`, replaced the four rate calculations with a single pass that sums raw counts across all valid weeks (`totals`: tam, calls, connects, demos, wins) per selected member.
+- % TAM (metrics branch) is unchanged; TAM→Call (non-metrics) now uses `totals.calls / totals.tam` when `totals.tam > 0`.
+- Call→Connect, Connect→Demo, and Demo→Win now use `totals.connects/totals.calls`, `totals.demos/totals.connects`, and `totals.wins/totals.demos` respectively (with divide-by-zero guards).
+- Renamed variables from `avgCallToConnect` / `avgConnectToDemo` / `avgDemoToWin` to `callToConnect` / `connectToDemo` / `demoToWin` for clarity.
+
+---
+
+## 2026-03-18 (Remove RevX Impact Section from Data Page)
+
+### Location — Data Page (`src/pages/Data.tsx`)
+
+**Rationale:** Remove the RevX Impact (WIP) section entirely so the Data page focuses only on Deal Averages and Test Data Selections; the feature was work-in-progress and is no longer needed on this page.
+
+**Changes:**
+- Removed the RevX Impact (WIP) collapsible section and all of its UI (header, project cards, value-per-win inputs, total impact summary).
+- Removed RevX-only state: `revxValues`, `editingRevxTeam`, `revxSaving` (and localStorage init for revx values).
+- Simplified initial data load to fetch only `superhex`; removed the `revx_impact_values` fetch and merge logic.
+- Removed derived data and handlers: `winsByTeam`, `projectsWithWins`, `updateRevxValue`, `saveRevxValue`, and the `mapWinToTeam` helper.
+- Removed unused imports: `DbRevxImpactValue`, `DollarSign`, and `Input`. The `revx_impact_values` table remains in Supabase but is no longer used by this page.
+
+---
+
+## 2026-03-18 (TAM Touch Restructure — Lifetime Stats & Total TAM)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** Touched-account counts were confusing because they summed per-rep unique account sets (the same account touched by multiple reps was counted multiple times), so the number could exceed total TAM (e.g. 1190 > 812). Consolidating TAM-related metrics in the Total TAM section and removing the misleading tile/count reduced confusion.
+
+**Changes:**
+- Removed the Touched Accounts / TAM→Call tile from the Lifetime Stats conversion grid; grid is now three columns (Call→Connect, Connect→Demo, Demo→Win).
+- In the Total TAM section (metrics branch): renamed "Touch Rate" to "% of TAM" (same formula, capped at 100%) and added "Avg Touches/Acct" (total activities ÷ touched accounts).
+- In the Total TAM section (fallback/manual TAM branch): same renames and added Avg Touches/Acct.
+- Removed the "Touched Accounts" metric display from both Total TAM branches; the section now shows Total TAM, Avg TAM, % of TAM, and Avg Touches/Acct.
+
+---
+
+## 2026-03-18 (Changelog Section on Settings Page)
+
+### Location — Settings Page (`src/pages/Settings.tsx`)
+
+**Rationale:** Expose the project changelog in view-only form at the bottom of Settings so users can see release history and recent changes without leaving the app.
+
+**Changes:**
+- Installed `react-markdown` and added a new "Changelog" section at the bottom of the Settings page, after the Members section.
+- Section uses the same header pattern as Teams and Members (rounded secondary bar, font-display heading).
+- CHANGELOG.md is imported as raw text via Vite `?raw` and rendered with `<ReactMarkdown>` inside a scrollable card (`max-h-[600px]`, `overflow-y-auto`).
+- Applied hand-rolled Tailwind typography for markdown elements (h2, h3, p, ul, li, strong, hr) via `[&_...]` selectors; no `@tailwindcss/typography` added.
+- Changelog content is read-only (no editing).
+
+---
+
+## 2026-03-18 (Overall Goal Inline in Lifetime Stats Card)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** The Overall Goal progress (wins, total price, discount threshold, realized price) should appear as part of the Lifetime Stats section rather than as a separate card below it, so all lifetime/overall metrics live in one place.
+
+**Changes:**
+- Moved the Overall Goal block from a standalone card into the same Lifetime Stats card, as a third row below the funnel conversion rates and the Ops/Demos/Wins/Feedback/Activity StatCards.
+- Added a subtle top border (`border-t border-accent/10`) and "Overall Goal" label above the progress rows so the section is visually distinct within the card.
+- Kept all four metric rows (Wins with % progress; Total Price, Discount Threshold, Realized Price with "coming soon") and slimmed progress bars to `h-1.5` for the inline layout.
+- No DB, Settings, or context changes; data and toggles were already wired from the Overall Goal feature.
+
+---
+
+## 2026-03-18 (Lifetime Stats — "In month X of Y" Badge)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** Users need to see how far into the test they are (months elapsed vs total test length). The badge should always reflect the actual current calendar month (e.g. "In month 6 of 8" when it is March and March is the 6th month of an 8‑month test), regardless of which month is selected in the date picker.
+
+**Changes:**
+- Added an "In month X of Y" badge to the Lifetime Stats card header (next to "Entire Test"), where X is the current test month and Y is the total number of months in the test.
+- Badge is derived from today's real date: the phase matching `new Date()` is found in `computedPhases`; if today falls within the test window, the badge shows that phase's 1-based month index and `computedPhases.length`; if today is before or after the test, the badge is hidden.
+- Ensured the badge does not change when the user selects a different month (e.g. January); it always shows the current month's position in the test.
+
+---
+
+## 2026-03-18 (Lifetime Stats — Hover Tooltips for Metric Calculations)
+
+### Location — Project Page (`src/pages/Index.tsx`)
+
+**Rationale:** Users need to understand in plain language how each Lifetime Stats metric is calculated. Hover tooltips were added so that hovering over any of the nine metrics shows a short, readable explanation of the calculation.
+
+**Changes:**
+- Updated the `StatCard` component to accept an optional `tooltip` prop; when provided, the card is wrapped in `UiTooltip` and shows the tooltip on hover, with `cursor-help` for discoverability.
+- Passed tooltip text to all five Lifetime Stats `StatCard`s: Ops (opportunities opened across all weeks), Demos (demos logged), Wins (closed wins from weekly funnel), Feedback (feedback interactions), Activity (calls, emails, etc.).
+- Wrapped the four funnel-rate tiles (Touch Rate / TAM→Call, Call→Connect, Connect→Demo, Demo→Win) in `UiTooltip` with plain-language text describing each formula (e.g. “% of calls that resulted in a live connection… Calculated as: Connects ÷ Calls”).
+
+---
+
+## 2026-03-18 (Test Phase Headlines Updated)
+
+### Location — Project Page (`src/pages/Index.tsx`), Test Phases Labels (`src/lib/test-phases.ts`), Help Page (`src/pages/Help.tsx`)
+
+**Rationale:** Update the fixed Test Phases dropdown labels to match the latest naming convention for Pilot + Commercial Lead, keeping the options consistent across the project page and documentation.
+
+**Changes:**
+- Updated `PHASE_LABEL_OPTIONS` in `src/lib/test-phases.ts` to replace `Pilot` and `Commercial Lead` with `Sales Org Pilot / Commercial Lead` and `GA / Commercial Lead`.
+- Updated the Test Phases dropdown option text in `src/pages/Help.tsx` to reflect the new labels.
+- No DB migration required since `team_phase_labels.label` is free-form `text`; existing rows with legacy labels may display as `—` until re-selected.
+---
+
 ## 2026-03-17 (Test Phases First Line — Dropdown Only; Centered Label)
 
 ### Location — Project Page (`src/pages/Index.tsx`), Test Phases Utility (`src/lib/test-phases.ts`), Help Page (`src/pages/Help.tsx`)
@@ -2347,4 +2500,37 @@
 - Consolidated the Add Member dialog into a single shared instance in the parent component instead of duplicating it inside every team tab.
 - Replaced the per-team Dialog-based "Add First Member" empty state in Test Signals with a simple button that opens the parent dialog for the correct team.
 - Removed `addMemberOpen`, `setAddMemberOpen`, `newName`, `setNewName`, `newGoal`, `setNewGoal`, and `addMember` props from the `TeamTab` component; replaced with a single `onAddMemberClick` callback.
+---
+## Signals - Front end: Pilots page (`src/pages/Index.tsx`)
+**Rationale:** Add a structured “Signals” input section (objections, risks, and onboarding notes) to capture key narrative context for a test, while keeping it consistent with the existing mission submit/edit workflow and persisting it to Supabase.
+**Changes:**
+- Added a new `Signals` card below “Mission & Purpose of Test” in `src/pages/Index.tsx` with a Submit/Edit toggle, three numeric inputs for “Top 3 objections” and “Biggest Risks”, and a rich text editor for “onboarding process”.
+- Extended the app’s `Team` model and persistence logic in `src/contexts/TeamsContext.tsx` (mapping in `assembleTeams`, write payload in `updateTeam`, and defaults in `addTeam`), including `signalsSubmitted` and `signalsLastEdit`.
+- Added Supabase `teams` columns via live DDL and committed migration `supabase/migrations/20260319000000_add_signals_fields_to_teams.sql`.
+- Updated TypeScript typing in `src/lib/database.types.ts` for the new `DbTeam` fields.
+---
+
+## Quota Page - Forecasting & Goals Table (`src/pages/Quota.tsx`)
+**Rationale:** Managers need to compare actual wins in the current month split by New Business vs Growth alongside the NB Attach Goal and Growth Wins Goal so forecasting progress and gaps are easier to understand.
+**Changes:**
+- Added `NB Wins` column sourced from computed `monthlyWinTypes[mk].nb` per team member.
+- Added `Growth Wins` column sourced from computed `monthlyWinTypes[mk].growth` per team member.
+- Display `—` when there are no goals and actuals are zero; otherwise show `0`.
+---
+
+## Location - Front end Password gate & protected routes (`src/App.tsx`, `src/hooks/usePasswordAuth.ts`, `src/components/PasswordModal.tsx`)
+
+**Rationale:** Add a lightweight, session-scoped password gate for sensitive pages without requiring full authentication.
+
+**Changes:**
+- Added `usePasswordAuth` hook that stores an unlocked flag in `sessionStorage` (default locked).
+- Added `PasswordModal` dialog prompting for password `GTMx` and unlocking/locking protected routes.
+- Updated the top-right navbar to show a lock icon left of Help and hide Data/Quota/Roadmap/Settings links while locked.
+- Guarded `/data`, `/quota`, `/roadmap`, and `/settings` routes to redirect to `/home` when locked.
+---
+
+## Location - Front end Project pages (`src/pages/Index.tsx`)
+**Rationale:** Pilot Regions should only appear for months whose project phase is one of the Commercial Lead variants, so managers see the correct controls only when they apply.
+**Changes:**
+- Updated `src/pages/Index.tsx` to render `PilotRegionsPicker` only when `activePhase.label` is `Sales Org Pilot / Commercial Lead`, `Recommendations`, or `GA / Commercial Lead`.
 ---

@@ -1,15 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { useTeams } from "@/contexts/TeamsContext";
-import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, DollarSign, ChevronsUpDown, Download, FileChartColumn } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Activity, Trophy, Timer, ChevronsUpDown, Download, FileChartColumn } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import type { DbSuperhex, DbMemberTeamHistory, DbRevxImpactValue } from "@/lib/database.types";
+import type { DbSuperhex, DbMemberTeamHistory } from "@/lib/database.types";
 import { isSuperhexWinStage, isWinStage } from "@/lib/metrics-helpers";
 
 interface TeamBasic {
@@ -123,37 +122,12 @@ function mapRowToTeam(
   return null;
 }
 
-// For win attribution, use win_date (not first activity date) to find which
-// team the rep was on when the win actually occurred.
-function mapWinToTeam(
-  row: DbSuperhex,
-  membersByName: Map<string, MemberBasic>,
-  historyByMember: Map<string, DbMemberTeamHistory[]>,
-): string | null {
-  if (!row.win_date || !row.rep_name) return null;
-
-  const member = membersByName.get(row.rep_name.toLowerCase().trim());
-  if (!member) return null;
-
-  const winTime = new Date(row.win_date).getTime();
-  const history = historyByMember.get(member.id) ?? [];
-
-  for (const h of history) {
-    const start = new Date(h.started_at).getTime();
-    const end = h.ended_at ? new Date(h.ended_at).getTime() : Date.now();
-    if (winTime >= start && winTime <= end) {
-      return h.team_id;
-    }
-  }
-  return null;
-}
-
 function fmtStat(v: number | null, suffix = ""): string {
   if (v === null) return "—";
   return v % 1 === 0 ? `${v.toLocaleString()}${suffix}` : `${v.toFixed(1)}${suffix}`;
 }
 
-type DataTypeKey = "activity" | "calls" | "connects" | "demos" | "wins" | "ops" | "feedback";
+type DataTypeKey = "activity" | "calls" | "connects" | "demos" | "wins" | "ops" | "feedback" | "chorus";
 
 const DATA_TYPE_CONFIG: Record<DataTypeKey, { table: string; dateCol: string; label: string }> = {
   activity: { table: "metrics_activity", dateCol: "activity_date", label: "Activity" },
@@ -163,9 +137,10 @@ const DATA_TYPE_CONFIG: Record<DataTypeKey, { table: string; dateCol: string; la
   wins: { table: "metrics_wins", dateCol: "win_date", label: "Wins" },
   ops: { table: "metrics_ops", dateCol: "op_created_date", label: "Ops" },
   feedback: { table: "metrics_feedback", dateCol: "feedback_date", label: "Feedback" },
+  chorus: { table: "metrics_chorus", dateCol: "chorus_date", label: "Chorus" },
 };
 
-const ALL_DATA_TYPES: DataTypeKey[] = ["activity", "calls", "connects", "demos", "wins", "ops", "feedback"];
+const ALL_DATA_TYPES: DataTypeKey[] = ["activity", "calls", "connects", "demos", "wins", "ops", "feedback", "chorus"];
 
 interface TimeOption {
   key: string;
@@ -181,6 +156,7 @@ interface NormalizedRow {
   type: DataTypeKey;
   rep_name: string;
   detail: string;
+  link: string | null;
 }
 
 function normalizeRow(row: any, type: DataTypeKey): NormalizedRow {
@@ -208,6 +184,9 @@ function normalizeRow(row: any, type: DataTypeKey): NormalizedRow {
     case "feedback":
       detail = [row.source, row.feedback].filter(Boolean).join(" · ");
       break;
+    case "chorus":
+      detail = [row.comments, row.chorus_link].filter(Boolean).join(" · ");
+      break;
   }
   return {
     salesforce_accountid: row.salesforce_accountid ?? null,
@@ -216,6 +195,7 @@ function normalizeRow(row: any, type: DataTypeKey): NormalizedRow {
     type,
     rep_name: row.rep_name,
     detail,
+    link: type === "chorus" ? (row.chorus_link ?? null) : null,
   };
 }
 
@@ -239,15 +219,6 @@ export default function Data() {
       return stored ? JSON.parse(stored) : {};
     } catch { return {}; }
   });
-
-  const [revxValues, setRevxValues] = useState<Record<string, string>>(() => {
-    try {
-      const stored = localStorage.getItem("data-revx-values");
-      return stored ? JSON.parse(stored) : {};
-    } catch { return {}; }
-  });
-  const [editingRevxTeam, setEditingRevxTeam] = useState<string | null>(null);
-  const [revxSaving, setRevxSaving] = useState<Set<string>>(new Set());
 
   const { teams: ctxTeams, allMembersById, memberTeamHistory, archivedMembers, loadArchivedMembers, loading: ctxLoading } = useTeams();
 
@@ -294,25 +265,8 @@ export default function Data() {
   useEffect(() => {
     loadArchivedMembers();
     async function load() {
-      const [metricsRes, revxRes] = await Promise.all([
-        supabase.from("superhex").select("*").limit(50000),
-        supabase.from("revx_impact_values").select("*"),
-      ]);
-      setMetricsData((metricsRes.data ?? []) as DbSuperhex[]);
-
-      const dbRevx = (revxRes.data ?? []) as DbRevxImpactValue[];
-      if (dbRevx.length > 0) {
-        const fromDb: Record<string, string> = {};
-        for (const row of dbRevx) {
-          fromDb[row.team_id] = row.value_per_win > 0 ? String(row.value_per_win) : "";
-        }
-        setRevxValues((prev) => {
-          const merged = { ...prev, ...fromDb };
-          try { localStorage.setItem("data-revx-values", JSON.stringify(merged)); } catch {}
-          return merged;
-        });
-      }
-
+      const { data } = await supabase.from("superhex").select("*").limit(50000);
+      setMetricsData((data ?? []) as DbSuperhex[]);
       setLocalLoading(false);
     }
     load();
@@ -566,39 +520,6 @@ export default function Data() {
 
   const stats = computeDealCycleStats(filteredRows);
 
-  const winsByTeam = new Map<string, number>();
-  for (const row of metricsData) {
-    if (row.win_date && isSuperhexWinStage(row.op_stage, row.is_won)) {
-      const teamId = mapWinToTeam(row, membersByName, historyByMember);
-      if (teamId) {
-        winsByTeam.set(teamId, (winsByTeam.get(teamId) ?? 0) + 1);
-      }
-    }
-  }
-  const projectsWithWins = teams
-    .map((t) => ({ team: t, wins: winsByTeam.get(t.id) ?? 0 }))
-    .filter(({ wins }) => wins > 0);
-
-  const updateRevxValue = (teamId: string, value: string) => {
-    // Optimistic local update
-    setRevxValues((prev) => {
-      const next = { ...prev, [teamId]: value };
-      try { localStorage.setItem("data-revx-values", JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-
-  const saveRevxValue = async (teamId: string, value: string) => {
-    const numVal = parseFloat(value.replace(/,/g, ""));
-    const valuePerWin = !isNaN(numVal) && numVal > 0 ? numVal : 0;
-    setRevxSaving((s) => new Set(s).add(teamId));
-    await supabase.from("revx_impact_values").upsert(
-      { team_id: teamId, value_per_win: valuePerWin, updated_at: new Date().toISOString() },
-      { onConflict: "team_id" }
-    );
-    setRevxSaving((s) => { const n = new Set(s); n.delete(teamId); return n; });
-  };
-
   return (
     <div className="min-h-screen bg-background px-4 py-8 md:px-8">
       <div className="mx-auto max-w-6xl space-y-8">
@@ -702,118 +623,7 @@ export default function Data() {
           )}
         </div>
 
-        {/* ===== REVX IMPACT ===== */}
-        <div id="revx-impact" className="scroll-mt-16">
-          <div
-            className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
-            onClick={() => toggleSection("revx-impact")}
-          >
-            <div className="flex items-center gap-2">
-              {collapsedSections["revx-impact"] ? (
-                <ChevronRight className="h-5 w-5 text-primary shrink-0" />
-              ) : (
-                <ChevronDown className="h-5 w-5 text-primary shrink-0" />
-              )}
-              <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-                💰 RevX Impact (WIP)
-              </h2>
-            </div>
-          </div>
-
-          {!collapsedSections["revx-impact"] && (
-            <div className="space-y-4">
-              {loading ? (
-                <p className="text-muted-foreground py-4">Loading impact data…</p>
-              ) : projectsWithWins.length === 0 ? (
-                <p className="text-muted-foreground py-4">No projects with wins yet.</p>
-              ) : (
-                <>
-                  <p className="text-sm text-muted-foreground">
-                    Enter a deal value per win for each project to calculate total revenue impact.
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {projectsWithWins.map(({ team, wins }) => {
-                      const rawVal = revxValues[team.id] ?? "";
-                      const numVal = parseFloat(rawVal.replace(/,/g, ""));
-                      const total = !isNaN(numVal) && numVal > 0 ? wins * numVal : null;
-                      const isEditing = editingRevxTeam === team.id;
-                      return (
-                        <div
-                          key={team.id}
-                          className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5 glow-card"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="font-display text-base font-bold text-foreground leading-tight">
-                              {team.name}
-                            </p>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {revxSaving.has(team.id) && (
-                                <span className="text-[10px] text-muted-foreground animate-pulse">saving…</span>
-                              )}
-                              <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-sm font-bold text-primary">
-                                {wins.toLocaleString()} {wins === 1 ? "win" : "wins"}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                            <DollarSign className="h-3.5 w-3.5 shrink-0" />
-                            {isEditing ? (
-                              <Input
-                                autoFocus
-                                type="text"
-                                inputMode="numeric"
-                                value={rawVal}
-                                onChange={(e) => updateRevxValue(team.id, e.target.value)}
-                                onBlur={() => { setEditingRevxTeam(null); saveRevxValue(team.id, rawVal); }}
-                                onKeyDown={(e) => { if (e.key === "Enter") { setEditingRevxTeam(null); saveRevxValue(team.id, rawVal); } }}
-                                placeholder="value per win"
-                                className="h-5 w-28 text-xs bg-transparent border-none shadow-none p-0 focus-visible:ring-1 focus-visible:ring-primary/50"
-                              />
-                            ) : (
-                              <span
-                                className="cursor-pointer hover:underline text-xs min-w-[60px]"
-                                onClick={() => setEditingRevxTeam(team.id)}
-                              >
-                                {rawVal ? `$${parseFloat(rawVal.replace(/,/g, "")).toLocaleString()} / win` : "click to set value / win"}
-                              </span>
-                            )}
-                          </div>
-
-                          {total !== null && (
-                            <div className="mt-1 rounded-md bg-primary/10 px-3 py-2 text-center">
-                              <p className="text-xs text-muted-foreground mb-0.5">Total Impact</p>
-                              <p className="font-display text-xl font-bold text-primary">
-                                ${total.toLocaleString()}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {projectsWithWins.some(({ team }) => {
-                    const v = parseFloat((revxValues[team.id] ?? "").replace(/,/g, ""));
-                    return !isNaN(v) && v > 0;
-                  }) && (
-                    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-center justify-between">
-                      <p className="font-display text-sm font-semibold text-foreground">Total RevX Impact</p>
-                      <p className="font-display text-2xl font-bold text-primary">
-                        ${projectsWithWins.reduce((sum, { team, wins }) => {
-                          const v = parseFloat((revxValues[team.id] ?? "").replace(/,/g, ""));
-                          return sum + (!isNaN(v) && v > 0 ? wins * v : 0);
-                        }, 0).toLocaleString()}
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ===== TEST DATA SELECTIONS ===== */}
+        {/* ===== REPORTS ===== */}
         <div id="test-data" className="scroll-mt-16">
           <div
             className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
@@ -826,7 +636,7 @@ export default function Data() {
                 <ChevronDown className="h-5 w-5 text-primary shrink-0" />
               )}
               <h2 className="font-display text-2xl font-bold tracking-tight text-primary flex-1">
-                📊 Test Data Selections
+                📊 Reports
               </h2>
               {!collapsedSections["test-data"] && (
                 <button
@@ -1049,7 +859,18 @@ export default function Data() {
                         {testDetailedRows.map((row, i) => (
                           <TableRow key={i}>
                             <TableCell className="font-medium">
-                              {row.account_name ?? row.salesforce_accountid ?? "—"}
+                              {row.link ? (
+                                <a
+                                  href={row.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary underline hover:opacity-80"
+                                >
+                                  {row.account_name ?? row.salesforce_accountid ?? "—"}
+                                </a>
+                              ) : (
+                                row.account_name ?? row.salesforce_accountid ?? "—"
+                              )}
                             </TableCell>
                             <TableCell>{row.date ?? "—"}</TableCell>
                             <TableCell>

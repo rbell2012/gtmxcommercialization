@@ -15,7 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, isMemberExcludedFromAccelerator, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -1219,17 +1219,135 @@ const Index = () => {
         </div>
         )}
 
+        {/* Signals */}
+        {activeTeam && (
+          <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.signalsSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <label className="font-display text-lg font-semibold text-foreground">Signals</label>
+              <div className="flex items-center gap-2">
+                {activeTeam.signalsLastEdit && (
+                  <span className="text-[10px] text-muted-foreground">
+                    last edit: {new Date(activeTeam.signalsLastEdit).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+                  </span>
+                )}
+                {!activeTeam.signalsSubmitted ? (
+                  <Button
+                    size="sm"
+                    onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, signalsSubmitted: true, signalsLastEdit: new Date().toISOString() }))}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
+                  >
+                    Submit
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, signalsSubmitted: false }))}
+                    className="text-xs h-7 border-border text-muted-foreground hover:text-foreground"
+                  >
+                    Edit
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-4">
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Top 3 objections</label>
+                {activeTeam.signalsSubmitted ? (
+                  <ol className="list-decimal pl-5 space-y-1">
+                    {(activeTeam.topObjections ?? []).slice(0, 3).map((v, i) => (
+                      <li key={i} className="text-sm text-foreground min-h-[1.5rem]">
+                        {v || <span className="text-muted-foreground/50 italic">—</span>}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <ol className="list-decimal pl-5 space-y-2">
+                    {(activeTeam.topObjections ?? ["", "", ""]).slice(0, 3).map((v, i) => (
+                      <li key={i}>
+                        <Input
+                          value={v}
+                          onChange={(e) => {
+                            updateTeam(activeTeam.id, (t) => {
+                              const next = [...t.topObjections];
+                              next[i] = e.target.value;
+                              return { ...t, topObjections: next };
+                            });
+                          }}
+                          placeholder={`Objection ${i + 1}`}
+                          className="bg-secondary/20 border-border text-foreground text-sm h-9"
+                        />
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Biggest Risks</label>
+                {activeTeam.signalsSubmitted ? (
+                  <ol className="list-decimal pl-5 space-y-1">
+                    {(activeTeam.biggestRisks ?? []).slice(0, 3).map((v, i) => (
+                      <li key={i} className="text-sm text-foreground min-h-[1.5rem]">
+                        {v || <span className="text-muted-foreground/50 italic">—</span>}
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <ol className="list-decimal pl-5 space-y-2">
+                    {(activeTeam.biggestRisks ?? ["", "", ""]).slice(0, 3).map((v, i) => (
+                      <li key={i}>
+                        <Input
+                          value={v}
+                          onChange={(e) => {
+                            updateTeam(activeTeam.id, (t) => {
+                              const next = [...t.biggestRisks];
+                              next[i] = e.target.value;
+                              return { ...t, biggestRisks: next };
+                            });
+                          }}
+                          placeholder={`Risk ${i + 1}`}
+                          className="bg-secondary/20 border-border text-foreground text-sm h-9"
+                        />
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Onboarding Process</label>
+                {activeTeam.signalsSubmitted ? (
+                  <RichTextDisplay value={activeTeam.onboardingProcess} />
+                ) : (
+                  <RichTextEditor
+                    value={activeTeam.onboardingProcess}
+                    onChange={(html) => updateTeam(activeTeam.id, (t) => ({ ...t, onboardingProcess: html }))}
+                    placeholder="Describe the onboarding process..."
+                    minHeight="80px"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Pilot Regions */}
-        {activeTeam && activePhase && <PilotRegionsPicker
-          teamId={activeTeam.id}
-          monthIndex={activePhase.monthIndex}
-          phaseLabel={activePhase.monthLabel}
-          salesTeams={salesTeams}
-          projectTeamAssignments={projectTeamAssignments}
-          assignSalesTeam={assignSalesTeam}
-          unassignSalesTeam={unassignSalesTeam}
-          updateExcludedMembers={updateExcludedMembers}
-        />}
+        {activeTeam &&
+          activePhase &&
+          ["Sales Org Pilot / Commercial Lead", "Recommendations", "GA / Commercial Lead"].includes(activePhase.label) && (
+            <PilotRegionsPicker
+              teamId={activeTeam.id}
+              monthIndex={activePhase.monthIndex}
+              phaseLabel={activePhase.monthLabel}
+              salesTeams={salesTeams}
+              projectTeamAssignments={projectTeamAssignments}
+              assignSalesTeam={assignSalesTeam}
+              unassignSalesTeam={unassignSalesTeam}
+              updateExcludedMembers={updateExcludedMembers}
+            />
+          )}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
         {activeTeam && (() => {
@@ -1242,7 +1360,16 @@ const Index = () => {
           const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
           const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects'), 0);
           const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos'), 0);
+          const og = activeTeam.overallGoal;
+          const showWinsGoal = og.winsEnabled && og.wins > 0;
+          const showTotalPriceGoal = og.totalPriceEnabled && og.totalPrice > 0;
+          const showDiscountThresholdGoal = og.discountThresholdEnabled && og.discountThreshold > 0;
+          const showRealizedPriceGoal = og.realizedPriceEnabled && og.realizedPrice > 0;
+          const showOverallGoal = showWinsGoal || showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal;
+          const winsProgressPct = showWinsGoal ? Math.min(100, (lifetimeWins / og.wins) * 100) : 0;
+
           return (
+            <>
             <div className="mb-4 rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
               <div className="mb-3 flex items-center gap-2">
                 <Trophy className="h-4 w-4 text-accent" />
@@ -1252,70 +1379,158 @@ const Index = () => {
                 <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
                   Entire Test
                 </span>
+                {computedPhases.length > 0 && (() => {
+                  const today = new Date();
+                  const todayPhase = computedPhases.find(
+                    (p) => p.year === today.getFullYear() && p.month === today.getMonth()
+                  );
+                  if (!todayPhase) return null;
+                  return (
+                    <span className="rounded-full bg-muted/30 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      In month {todayPhase.monthIndex + 1} of {computedPhases.length}
+                    </span>
+                  );
+                })()}
               </div>
-              <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-                <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                  {(() => {
-                    const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
-                    const tt = members.reduce((s, m) => s + m.touchedTam, 0);
-                    const hasMetrics = tt > 0;
-                    if (hasMetrics) {
-                      return (
-                        <>
-                          <p className="font-display text-lg font-bold text-accent">{((ta / tt) * 100).toFixed(0)}%</p>
-                          <p className="text-[10px] text-muted-foreground">Touch Rate</p>
-                        </>
-                      );
-                    }
-                    return (
-                      <>
-                        <p className="font-display text-lg font-bold text-accent">{activeTeam.totalTam > 0 ? ((lifetimeCalls / activeTeam.totalTam) * 100).toFixed(0) : 0}%</p>
-                        <p className="text-[10px] text-muted-foreground">TAM→Call</p>
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                  <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
-                  <p className="text-[10px] text-muted-foreground">Call→Connect</p>
-                </div>
-                <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                  <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
-                  <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
-                </div>
-                <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                  <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
-                  <p className="text-[10px] text-muted-foreground">Demo→Win</p>
-                </div>
+              <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
+                      <p className="text-[10px] text-muted-foreground">Call→Connect</p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    <p className="text-xs leading-relaxed">
+                      % of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.
+                    </p>
+                  </TooltipContent>
+                </UiTooltip>
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
+                      <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    <p className="text-xs leading-relaxed">
+                      % of live connections that converted to a demo. Calculated as: Demos ÷ Connects.
+                    </p>
+                  </TooltipContent>
+                </UiTooltip>
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
+                      <p className="text-[10px] text-muted-foreground">Demo→Win</p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    <p className="text-xs leading-relaxed">
+                      % of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.
+                    </p>
+                  </TooltipContent>
+                </UiTooltip>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <StatCard
                   icon={<Handshake className="h-5 w-5 text-accent" />}
                   label="Ops"
                   value={lifetimeOps}
+                  tooltip="Total number of opportunities (ops) opened across all weeks of the test."
                 />
                 <StatCard
                   icon={<Video className="h-5 w-5 text-primary" />}
                   label="Demos"
                   value={lifetimeDemos}
+                  tooltip="Total 'Completed' Events with subject 'Demo' logged across all weeks of the test."
                 />
                 <StatCard
                   icon={<TrendingUp className="h-5 w-5 text-accent" />}
                   label="Wins"
                   value={lifetimeWins}
+                  tooltip="Total closed wins across all weeks of the test (summed from weekly funnel data)."
                 />
                 <StatCard
                   icon={<MessageCircle className="h-5 w-5 text-primary" />}
                   label="Feedback"
                   value={lifetimeFeedback}
+                  tooltip="Total feedback interactions logged in Google Sheets across all weeks of the test."
                 />
                 <StatCard
                   icon={<Activity className="h-5 w-5 text-accent" />}
                   label="Activity"
                   value={lifetimeActivity}
+                  tooltip="Total activity count (calls, emails, texts) logged across all weeks of the test."
                 />
               </div>
+            {showOverallGoal && (
+              <div className="mt-3 border-t border-accent/10 pt-3 space-y-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  Overall Goal
+                </p>
+                <div className="space-y-3">
+                  {showWinsGoal && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-foreground">Wins</span>
+                        <span className="text-[11px] font-semibold text-accent">
+                          {lifetimeWins.toLocaleString()} / {og.wins.toLocaleString()} ({winsProgressPct.toFixed(0)}%)
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
+                        <div className="h-full bg-accent" style={{ width: `${winsProgressPct}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {showTotalPriceGoal && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-foreground">Total Price</span>
+                        <span className="text-[11px] font-semibold text-accent">
+                          — / ${og.totalPrice.toLocaleString()} (coming soon)
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
+                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {showDiscountThresholdGoal && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-foreground">Discount Threshold</span>
+                        <span className="text-[11px] font-semibold text-accent">
+                          — / {og.discountThreshold.toLocaleString()}% (coming soon)
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
+                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {showRealizedPriceGoal && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-foreground">Realized Price</span>
+                        <span className="text-[11px] font-semibold text-accent">
+                          — / ${og.realizedPrice.toLocaleString()} (coming soon)
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
+                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             </div>
+            </>
           );
         })()}
 
@@ -1326,8 +1541,11 @@ const Index = () => {
           if (hasMetricsTam) {
             const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
             const teamTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
+            const teamActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
             const membersWithTam = activeMembers.filter((m) => m.touchedTam > 0);
             const avgTam = membersWithTam.length > 0 ? Math.round(teamTam / membersWithTam.length) : 0;
+            const pctOfTam = Math.min(100, teamTam > 0 ? (teamTouched / teamTam) * 100 : 0);
+            const avgTouchesAcct = teamTouched > 0 ? (teamActivity / teamTouched).toFixed(1) : '—';
             return (
               <div className="mb-8 rounded-lg border border-primary/30 bg-primary/5 bg-card p-5 glow-card">
                 <div className="flex items-center gap-6">
@@ -1336,24 +1554,27 @@ const Index = () => {
                     <span className="font-display text-2xl font-bold text-primary">{teamTam.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Touched Accounts</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{teamTouched.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
                     <label className="text-sm text-muted-foreground">Avg TAM</label>
                     <span className="font-display text-2xl font-bold text-foreground">{avgTam.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Touch Rate</label>
-                    <span className="font-display text-2xl font-bold text-primary">{teamTam > 0 ? ((teamTouched / teamTam) * 100).toFixed(0) : 0}%</span>
+                    <label className="text-sm text-muted-foreground">% of TAM</label>
+                    <span className="font-display text-2xl font-bold text-primary">{pctOfTam.toFixed(0)}%</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
+                    <span className="font-display text-2xl font-bold text-foreground">{avgTouchesAcct}</span>
                   </div>
                 </div>
               </div>
             );
           }
           const fbTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
+          const fbActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
           const fbAvg = activeMembers.length > 0 ? Math.round((activeTeam.totalTam || 0) / activeMembers.length) : 0;
-          const fbRate = (activeTeam.totalTam || 0) > 0 ? ((fbTouched / activeTeam.totalTam) * 100).toFixed(0) : "0";
+          const totalTam = activeTeam.totalTam || 0;
+          const fbPctOfTam = Math.min(100, totalTam > 0 ? (fbTouched / totalTam) * 100 : 0);
+          const fbAvgTouchesAcct = fbTouched > 0 ? (fbActivity / fbTouched).toFixed(1) : '—';
           return (
             <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${activeTeam.tamSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
               <div className="flex items-center justify-between">
@@ -1372,16 +1593,16 @@ const Index = () => {
                     {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Touched Accounts</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{fbTouched.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
                     <label className="text-sm text-muted-foreground">Avg TAM</label>
                     <span className="font-display text-2xl font-bold text-foreground">{fbAvg.toLocaleString()}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Touch Rate</label>
-                    <span className="font-display text-2xl font-bold text-primary">{fbRate}%</span>
+                    <label className="text-sm text-muted-foreground">% of TAM</label>
+                    <span className="font-display text-2xl font-bold text-primary">{fbPctOfTam.toFixed(0)}%</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
+                    <span className="font-display text-2xl font-bold text-foreground">{fbAvgTouchesAcct}</span>
                   </div>
                 </div>
                 {!activeTeam.tamSubmitted ? (
@@ -1789,8 +2010,8 @@ const TeamTab = memo(function TeamTab({
                           if (hasMetrics) {
                             return (
                               <>
-                                <p className="font-display text-lg font-bold text-primary">{((ta / tt) * 100).toFixed(0)}%</p>
-                                <p className="text-[10px] text-secondary-foreground/50">Touch Rate</p>
+                                <p className="font-display text-lg font-bold text-primary">{Math.min(100, (ta / tt) * 100).toFixed(0)}%</p>
+                                <p className="text-[10px] text-secondary-foreground/50">% TAM</p>
                               </>
                             );
                           }
@@ -1864,14 +2085,21 @@ const TeamTab = memo(function TeamTab({
           {(() => {
             const goalMembers = activeMembers.map((m) => getHistoricalMember(m, referenceDate, memberGoalsHistory));
             const winsHasGoal = team.enabledGoals.wins;
-            const baseMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m] && m !== 'wins' && m !== 'feedback');
+            const hasAccel = (metric: GoalMetric): boolean => {
+              if ((team.acceleratorMode ?? 'basic') === 'basic') {
+                return !!(team.basicAcceleratorConfig ?? {})[metric]?.enabled;
+              }
+              const rules = (team.acceleratorConfig ?? {})[metric];
+              return !!rules && Array.isArray(rules) && rules.some((r) => r?.enabled);
+            };
+            const baseMetrics = GOAL_METRICS.filter((m) => (team.enabledGoals[m] || hasAccel(m)) && m !== 'wins' && m !== 'feedback');
             const visibleMetrics: GoalMetric[] = [
               ...baseMetrics,
               'wins',
-              ...(team.enabledGoals.feedback ? ['feedback' as GoalMetric] : []),
+              ...(team.enabledGoals.feedback || hasAccel('feedback') ? ['feedback' as GoalMetric] : []),
             ];
             const hasReliefMembers = (team.reliefMonthMembers ?? []).length > 0;
-            const noGoalsConfigured = baseMetrics.length === 0 && !winsHasGoal && !team.enabledGoals.feedback;
+            const noGoalsConfigured = baseMetrics.length === 0 && !winsHasGoal && !hasAccel('wins') && !team.enabledGoals.feedback && !hasAccel('feedback');
             return (
               <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
                 <div className="mb-4 flex items-center justify-between">
@@ -2106,7 +2334,7 @@ const TeamTab = memo(function TeamTab({
                               {visibleMetrics.map((metric, metricIdx) => {
                                 const actual = getScopedMetricTotal(team, m, metric, referenceDate);
                                 const goal = getEffectiveGoal(team, m, metric);
-                                const hasGoal = (metric !== 'wins' || winsHasGoal) && goal > 0;
+                                const hasGoal = !!team.enabledGoals[metric] && goal > 0;
                                 const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
                                 const pct = onRelief ? 100 : (hasGoal ? (actual / goal) * 100 : 0);
                                 const barPct = onRelief ? 100 : Math.min(pct, 100);
@@ -2141,7 +2369,71 @@ const TeamTab = memo(function TeamTab({
                                         </div>
                                         <span className={`text-[10px] tabular-nums ${pct >= 100 ? "text-green-400 font-semibold" : "text-muted-foreground"}`}>{pct.toFixed(0)}%</span>
                                       </>
-                                    ) : (
+                                    ) : hasAccel(metric) ? (() => {
+                                      if (isMemberExcludedFromAccelerator(team, m.id, metric)) return null;
+                                      const progress = getAcceleratorProgress(team, m, metric, referenceDate);
+                                      if (!progress) return (
+                                        <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
+                                      );
+                                      const { currentValue, triggeredRules, nextRule, needed, totalRules } = progress;
+                                      const allTriggered = triggeredRules.length === totalRules;
+                                      const accelBarPct = nextRule
+                                        ? Math.min((currentValue / (nextRule.conditionValue1 + 1)) * 100, 100)
+                                        : 100;
+                                      return (
+                                        <>
+                                          <span className="text-xs font-semibold text-foreground tabular-nums">{currentValue}</span>
+                                          {typeCounts && currentValue > 0 && (
+                                            <span className="text-[9px] text-muted-foreground tabular-nums whitespace-nowrap">
+                                              {typeCounts.nb > 0 && <>{typeCounts.nb}<span className="font-medium">NB</span></>}
+                                              {typeCounts.nb > 0 && typeCounts.growth > 0 && ' + '}
+                                              {typeCounts.growth > 0 && <>{typeCounts.growth}<span className="font-medium">G</span></>}
+                                            </span>
+                                          )}
+                                          <div className="h-1.5 w-full max-w-[64px] overflow-hidden rounded-full bg-muted">
+                                            <div
+                                              className={`h-full rounded-full transition-all duration-500 ease-out ${allTriggered ? "bg-green-500" : "progress-bar-orange"}`}
+                                              style={{ width: `${accelBarPct}%` }}
+                                            />
+                                          </div>
+                                          {!allTriggered && needed > 0 && (
+                                            <span className="text-[10px] text-muted-foreground tabular-nums">
+                                              need <span className="font-semibold text-foreground">{needed}</span>
+                                            </span>
+                                          )}
+                                          {triggeredRules.length > 0 && (
+                                            <div className="flex items-center gap-1 mt-0.5">
+                                              {triggeredRules.map((detail, i) => {
+                                                const tier = i + 1;
+                                                const isMax = tier === totalRules;
+                                                return (
+                                                  <UiTooltip key={i}>
+                                                    <TooltipTrigger asChild>
+                                                      <span className="inline-flex items-center gap-px text-xs font-bold cursor-help text-primary">
+                                                        {isMax ? (
+                                                          <><Lock className="h-3 w-3" /><span className="text-[8px]">MAX</span></>
+                                                        ) : (
+                                                          <><LockOpen className="h-3 w-3" /><span className="text-[8px]">{tier}</span></>
+                                                        )}
+                                                      </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="max-w-[240px]">
+                                                      <div className="text-xs leading-relaxed">
+                                                        <p className="font-semibold mb-1">{GOAL_METRIC_LABELS[detail.metric]} Accelerator</p>
+                                                        <p className="text-muted-foreground">
+                                                          {GOAL_METRIC_LABELS[detail.metric]} is <span className="font-semibold text-foreground">{detail.currentValue}</span>
+                                                          {" "}({detail.rule.conditionOperator} {detail.rule.conditionValue1})
+                                                        </p>
+                                                      </div>
+                                                    </TooltipContent>
+                                                  </UiTooltip>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </>
+                                      );
+                                    })() : (
                                       <>
                                         <span className="text-xs font-semibold text-foreground tabular-nums">{actual}</span>
                                         {typeCounts && actual > 0 && (
@@ -2244,7 +2536,7 @@ const TeamTab = memo(function TeamTab({
                                   {visibleMetrics.map((metric, metricIdx) => {
                                     const actual = getScopedMetricTotal(team, m, metric, referenceDate);
                                     const goal = getEffectiveGoal(team, m, metric);
-                                    const hasGoal = (metric !== 'wins' || winsHasGoal) && goal > 0;
+                                    const hasGoal = !!team.enabledGoals[metric] && goal > 0;
                                     const pct = hasGoal ? (actual / goal) * 100 : 0;
                                     const barPct = Math.min(pct, 100);
                                     const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
@@ -2438,7 +2730,7 @@ const TeamTab = memo(function TeamTab({
                     );
                     const convRates: { label: string; numKey?: keyof FunnelData; denKey?: keyof FunnelData; touchRate?: boolean }[] = hasMetricsTam
                       ? [
-                          { label: "Touch Rate", touchRate: true },
+                          { label: "% TAM", touchRate: true },
                           { label: "Call→Con %", numKey: "connects", denKey: "calls" },
                           { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
                           { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
@@ -2524,7 +2816,7 @@ const TeamTab = memo(function TeamTab({
                           })}
                           <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
                             {cr.touchRate
-                              ? (m.touchedTam > 0 ? `${(((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100).toFixed(0)}%` : "—")
+                              ? (m.touchedTam > 0 ? `${Math.min(100, ((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100).toFixed(0)}%` : "—")
                               : (() => {
                                   const totalDen = cr.denKey === "tam"
                                     ? weeks.reduce((s, w) => s + getCarriedTam(m, w.key, weekKeyList), 0)
@@ -2566,7 +2858,7 @@ const TeamTab = memo(function TeamTab({
                   );
                   const convRates: { label: string; numKey?: keyof FunnelData; denKey?: keyof FunnelData; touchRate?: boolean }[] = hasMetricsTam
                     ? [
-                        { label: "Touch Rate", touchRate: true },
+                        { label: "% TAM", touchRate: true },
                         { label: "Call→Con %", numKey: "connects", denKey: "calls" },
                         { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
                         { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
@@ -2591,7 +2883,7 @@ const TeamTab = memo(function TeamTab({
                   const teamTouchRate = (() => {
                     const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
                     const tt = members.reduce((s, m) => s + m.touchedTam, 0);
-                    return tt > 0 ? `${((ta / tt) * 100).toFixed(0)}%` : "—";
+                    return tt > 0 ? `${Math.min(100, (ta / tt) * 100).toFixed(0)}%` : "—";
                   })();
                   const nMonths = teamMonths.length;
                   const totalDataCols = interleavedCols.length;
@@ -3211,25 +3503,33 @@ function WeekOverWeekView({ team }: { team: Team }) {
                   const tam = hasMetricsTam ? m.touchedTam : getCarriedTam(m, w.key, weekKeyList);
                   return tam > 0 || f.calls > 0 || f.connects > 0 || f.demos > 0 || f.wins > 0;
                 });
-                const n = validWeeks.length;
+                const totals = validWeeks.reduce(
+                  (acc, w) => {
+                    const f = getMemberFunnel(m, w.key);
+                    const tam = hasMetricsTam ? 0 : getCarriedTam(m, w.key, weekKeyList);
+                    return {
+                      tam: acc.tam + tam,
+                      calls: acc.calls + (f.calls || 0),
+                      connects: acc.connects + (f.connects || 0),
+                      demos: acc.demos + (f.demos || 0),
+                      wins: acc.wins + (f.wins || 0),
+                    };
+                  },
+                  { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 }
+                );
                 const firstConvRate = hasMetricsTam
-                  ? (m.touchedTam > 0 ? ((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100 : 0)
-                  : (n > 0
-                      ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); const tam = getCarriedTam(m, w.key, weekKeyList); return s + (tam > 0 ? (f.calls / tam) * 100 : 0); }, 0) / n
-                      : 0);
-                const avgCallToConnect = n > 0
-                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.calls > 0 ? (f.connects / f.calls) * 100 : 0); }, 0) / n : 0;
-                const avgConnectToDemo = n > 0
-                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.connects > 0 ? (f.demos / f.connects) * 100 : 0); }, 0) / n : 0;
-                const avgDemoToWin = n > 0
-                  ? validWeeks.reduce((s, w) => { const f = getMemberFunnel(m, w.key); return s + (f.demos > 0 ? (f.wins / f.demos) * 100 : 0); }, 0) / n : 0;
+                  ? (m.touchedTam > 0 ? Math.min(100, ((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100) : 0)
+                  : (totals.tam > 0 ? (totals.calls / totals.tam) * 100 : 0);
+                const callToConnect = totals.calls > 0 ? (totals.connects / totals.calls) * 100 : 0;
+                const connectToDemo = totals.connects > 0 ? (totals.demos / totals.connects) * 100 : 0;
+                const demoToWin = totals.demos > 0 ? (totals.wins / totals.demos) * 100 : 0;
                 return (
                   <div key={m.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-semibold" style={{ color: PLAYER_COLORS[members.indexOf(m) % PLAYER_COLORS.length] }}>{m.name}:</span>
-                    <span>{hasMetricsTam ? "Touch Rate" : "TAM→Call"}: <strong className="text-foreground">{firstConvRate.toFixed(0)}%</strong></span>
-                    <span>Call→Connect: <strong className="text-foreground">{avgCallToConnect.toFixed(0)}%</strong></span>
-                    <span>Connect→Demo: <strong className="text-foreground">{avgConnectToDemo.toFixed(0)}%</strong></span>
-                    <span>Demo→Win: <strong className="text-foreground">{avgDemoToWin.toFixed(0)}%</strong></span>
+                    <span>{hasMetricsTam ? "% TAM" : "TAM→Call"}: <strong className="text-foreground">{firstConvRate.toFixed(0)}%</strong></span>
+                    <span>Call→Connect: <strong className="text-foreground">{callToConnect.toFixed(0)}%</strong></span>
+                    <span>Connect→Demo: <strong className="text-foreground">{connectToDemo.toFixed(0)}%</strong></span>
+                    <span>Demo→Win: <strong className="text-foreground">{demoToWin.toFixed(0)}%</strong></span>
                   </div>
                 );
               })}
@@ -3247,15 +3547,26 @@ function fmtNum(v: string | number): string {
   return Number.isFinite(n) ? n.toLocaleString() : v;
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card">
+function StatCard({ icon, label, value, tooltip }: { icon: React.ReactNode; label: string; value: string | number; tooltip?: string }) {
+  const card = (
+    <div className={`flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card ${tooltip ? "cursor-help" : ""}`}>
       {icon}
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
         <p className="font-display text-lg font-bold text-foreground">{fmtNum(value)}</p>
       </div>
     </div>
+  );
+
+  if (!tooltip) return card;
+
+  return (
+    <UiTooltip>
+      <TooltipTrigger asChild>{card}</TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[220px]">
+        <p className="text-xs leading-relaxed">{tooltip}</p>
+      </TooltipContent>
+    </UiTooltip>
   );
 }
 

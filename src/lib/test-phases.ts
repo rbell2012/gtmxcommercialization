@@ -3,8 +3,8 @@ export const PHASE_LABEL_OPTIONS = [
   "Ramp",
   "Run",
   "Recommendations",
-  "Pilot",
-  "Commercial Lead",
+  "Sales Org Pilot / Commercial Lead",
+  "GA / Commercial Lead",
 ] as const;
 
 export type PhaseLabelOption = (typeof PHASE_LABEL_OPTIONS)[number];

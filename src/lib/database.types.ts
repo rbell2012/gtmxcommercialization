@@ -22,6 +22,14 @@ export interface DbTeam {
   goal_enabled_wins: boolean;
   goal_enabled_feedback: boolean;
   goal_enabled_activity: boolean;
+  overall_goal_wins_enabled: boolean;
+  overall_goal_wins: number;
+  overall_goal_total_price_enabled: boolean;
+  overall_goal_total_price: number;
+  overall_goal_discount_threshold_enabled: boolean;
+  overall_goal_discount_threshold: number;
+  overall_goal_realized_price_enabled: boolean;
+  overall_goal_realized_price: number;
   accelerator_config: Record<string, unknown>;
   accelerator_mode: string;
   basic_accelerator_config: Record<string, unknown>;
@@ -36,6 +44,11 @@ export interface DbTeam {
   revenue_lever: string;
   business_goal: string;
   what_we_are_testing: string;
+  top_objections: string[];
+  biggest_risks: string[];
+  onboarding_process: string;
+  signals_submitted: boolean;
+  signals_last_edit: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -254,6 +267,9 @@ export interface DbMetricsFeedback {
   account_name: string | null;
   source: string | null;
   feedback: string | null;
+  comments: string | null;
+  chorus_link: string | null;
+  chorus_date: string | null;
   created_at: string;
   updated_at: string;
 }

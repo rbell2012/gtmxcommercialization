@@ -41,10 +41,14 @@ import {
   type TeamGoalsByLevel,
   type GoalScopeConfig,
   DEFAULT_GOAL_SCOPE_CONFIG,
+  DEFAULT_OVERALL_GOAL_CONFIG,
+  type OverallGoalConfig,
 } from "@/contexts/TeamsContext";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 import { getPhaseWinsLabel } from "@/lib/quota-helpers";
 import { useToast } from "@/hooks/use-toast";
+import ReactMarkdown from "react-markdown";
+import changelogRaw from "../../CHANGELOG.md?raw";
 
 function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -180,6 +184,7 @@ const Settings = () => {
   const [editBasicAcceleratorConfig, setEditBasicAcceleratorConfig] = useState<BasicAcceleratorConfig>({});
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
+  const [editOverallGoal, setEditOverallGoal] = useState<OverallGoalConfig>({ ...DEFAULT_OVERALL_GOAL_CONFIG });
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
   const [settingsPrevExpanded, setSettingsPrevExpanded] = useState(false);
   const [settingsNextExpanded, setSettingsNextExpanded] = useState(false);
@@ -296,6 +301,7 @@ const Settings = () => {
     setEditBasicAcceleratorConfig({ ...team.basicAcceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
+    setEditOverallGoal({ ...(team.overallGoal ?? DEFAULT_OVERALL_GOAL_CONFIG) });
     setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
     setSelectedEditMonth(null);
     const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
@@ -315,6 +321,7 @@ const Settings = () => {
         leadRep: editTeamLeadRep.trim(),
         startDate: editTeamStartDate || null,
         endDate: editTeamEndDate || null,
+        overallGoal: { ...editOverallGoal },
       }));
       upsertTeamGoalsHistory(editTeamId, toMonthKey(selectedEditMonth), {
         goalsParity: editTeamParity,
@@ -341,6 +348,7 @@ const Settings = () => {
         goalsParity: editTeamParity,
         teamGoals: { ...editTeamGoals },
         enabledGoals: { ...editEnabledGoals },
+        overallGoal: { ...editOverallGoal },
         acceleratorConfig: { ...editAcceleratorConfig },
         acceleratorMode: editAcceleratorMode,
         basicAcceleratorConfig: { ...editBasicAcceleratorConfig },
@@ -1038,6 +1046,119 @@ const Settings = () => {
                   </div>
                 </div>
 
+                {/* ── Overall Goal ── */}
+                <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-foreground">Overall Goal</h4>
+                    <span className="text-[10px] text-muted-foreground">Lifetime progress</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={editOverallGoal.winsEnabled}
+                          onCheckedChange={(checked) => setEditOverallGoal((prev) => ({ ...prev, winsEnabled: checked }))}
+                          className="scale-75"
+                        />
+                        <span className="text-xs font-medium text-foreground">Wins</span>
+                      </div>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={editOverallGoal.wins}
+                        disabled={!editOverallGoal.winsEnabled}
+                        onChange={(e) => {
+                          const num = Math.max(0, parseInt(e.target.value) || 0);
+                          setEditOverallGoal((prev) => ({ ...prev, wins: num }));
+                        }}
+                        className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={editOverallGoal.totalPriceEnabled}
+                          onCheckedChange={(checked) =>
+                            setEditOverallGoal((prev) => ({ ...prev, totalPriceEnabled: checked }))
+                          }
+                          className="scale-75"
+                        />
+                        <span className="text-xs font-medium text-foreground">Total Price</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editOverallGoal.totalPrice}
+                          disabled={!editOverallGoal.totalPriceEnabled}
+                          onChange={(e) => {
+                            const num = Math.max(0, parseFloat(e.target.value) || 0);
+                            setEditOverallGoal((prev) => ({ ...prev, totalPrice: num }));
+                          }}
+                          className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={editOverallGoal.discountThresholdEnabled}
+                          onCheckedChange={(checked) =>
+                            setEditOverallGoal((prev) => ({ ...prev, discountThresholdEnabled: checked }))
+                          }
+                          className="scale-75"
+                        />
+                        <span className="text-xs font-medium text-foreground">Discount Threshold</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editOverallGoal.discountThreshold}
+                          disabled={!editOverallGoal.discountThresholdEnabled}
+                          onChange={(e) => {
+                            const num = Math.max(0, parseFloat(e.target.value) || 0);
+                            setEditOverallGoal((prev) => ({ ...prev, discountThreshold: num }));
+                          }}
+                          className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={editOverallGoal.realizedPriceEnabled}
+                          onCheckedChange={(checked) =>
+                            setEditOverallGoal((prev) => ({ ...prev, realizedPriceEnabled: checked }))
+                          }
+                          className="scale-75"
+                        />
+                        <span className="text-xs font-medium text-foreground">Realized Price</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">$</span>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={editOverallGoal.realizedPrice}
+                          disabled={!editOverallGoal.realizedPriceEnabled}
+                          onChange={(e) => {
+                            const num = Math.max(0, parseFloat(e.target.value) || 0);
+                            setEditOverallGoal((prev) => ({ ...prev, realizedPrice: num }));
+                          }}
+                          className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* ── Relief Month ── */}
                 {(() => {
                   const reliefEnabled = editReliefMonthMembers.length > 0;
@@ -1144,6 +1265,10 @@ const Settings = () => {
                     }));
                   };
 
+                  const rosterMembers = editTeamMembers
+                    .map((id) => allMembersById.get(id))
+                    .filter(Boolean) as import("@/contexts/TeamsContext").TeamMember[];
+
                   return (
                     <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
                       <div className="flex items-center justify-between">
@@ -1189,6 +1314,7 @@ const Settings = () => {
                                   <span className="text-xs font-medium text-foreground">{GOAL_METRIC_LABELS[metric]}</span>
                                 </div>
                                 {cfg.enabled && (
+                                  <>
                                   <div className="ml-6 flex flex-wrap items-center gap-2 text-xs rounded-md bg-background/50 p-2 border border-border/30">
                                     <div className="flex items-center gap-1">
                                       <span className="text-muted-foreground">Min</span>
@@ -1242,6 +1368,31 @@ const Settings = () => {
                                       {(cfg.scope ?? 'individual') === 'team' ? 'TEAM' : 'SELF'}
                                     </button>
                                   </div>
+                                  <div className="ml-6 mt-1.5 space-y-1">
+                                    <p className="text-[10px] font-medium text-muted-foreground">Exclude members (not eligible for this accelerator this month)</p>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                      {rosterMembers.map((m) => {
+                                        const excluded = (cfg.excludedMembers ?? []).includes(m.id);
+                                        return (
+                                          <label key={m.id} className="flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={excluded}
+                                              onChange={(e) => {
+                                                const next = e.target.checked
+                                                  ? [...(cfg.excludedMembers ?? []), m.id]
+                                                  : (cfg.excludedMembers ?? []).filter((id) => id !== m.id);
+                                                updateBasicConfig(metric, { excludedMembers: next });
+                                              }}
+                                              className="h-3 w-3 rounded border-border accent-primary"
+                                            />
+                                            <span className="text-xs text-foreground">{m.name}</span>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                  </>
                                 )}
                               </div>
                             );
@@ -1355,6 +1506,33 @@ const Settings = () => {
                                   ))}
                                   {rules.length === 0 && (
                                     <p className="ml-2 text-[10px] text-muted-foreground italic">No rules. Click "+ Add Rule" to create one.</p>
+                                  )}
+                                  {(rules.length > 0 || (getBasicConfig(metric).excludedMembers?.length ?? 0) > 0) && (
+                                    <div className="ml-2 mt-1.5 space-y-1">
+                                      <p className="text-[10px] font-medium text-muted-foreground">Exclude members (not eligible for this accelerator this month)</p>
+                                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                        {rosterMembers.map((m) => {
+                                          const cfg = getBasicConfig(metric);
+                                          const excluded = (cfg.excludedMembers ?? []).includes(m.id);
+                                          return (
+                                            <label key={m.id} className="flex items-center gap-1.5 cursor-pointer">
+                                              <input
+                                                type="checkbox"
+                                                checked={excluded}
+                                                onChange={(e) => {
+                                                  const next = e.target.checked
+                                                    ? [...(cfg.excludedMembers ?? []), m.id]
+                                                    : (cfg.excludedMembers ?? []).filter((id) => id !== m.id);
+                                                  updateBasicConfig(metric, { excludedMembers: next });
+                                                }}
+                                                className="h-3 w-3 rounded border-border accent-primary"
+                                              />
+                                              <span className="text-xs text-foreground">{m.name}</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -1812,6 +1990,24 @@ const Settings = () => {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          <Separator className="my-8" />
+
+          {/* Changelog Section */}
+          <div>
+            <div className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg flex items-center justify-between">
+              <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
+                Changelog
+              </h2>
+            </div>
+            <Card className="border-border bg-card">
+              <CardContent className="p-6">
+                <div className="overflow-y-auto max-h-[600px] pr-2 text-foreground [&_h2]:font-display [&_h2]:text-xl [&_h2]:font-bold [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:first:mt-0 [&_h3]:font-display [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_p]:my-2 [&_p]:text-sm [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:my-0.5 [&_li]:text-sm [&_strong]:font-semibold [&_hr]:my-4 [&_hr]:border-border">
+                  <ReactMarkdown>{changelogRaw}</ReactMarkdown>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>

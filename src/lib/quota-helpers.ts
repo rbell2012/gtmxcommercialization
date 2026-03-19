@@ -134,6 +134,10 @@ export function isMemberOnRelief(team: Team, member: TeamMember): boolean {
   return (team.reliefMonthMembers ?? []).includes(member.id);
 }
 
+export function isMemberExcludedFromAccelerator(team: Team, memberId: string, metric: GoalMetric): boolean {
+  return (team.basicAcceleratorConfig?.[metric]?.excludedMembers ?? []).includes(memberId);
+}
+
 export function getEffectiveGoal(team: Team, member: TeamMember, metric: GoalMetric): number {
   const scope = team.goalScopeConfig?.[metric] ?? 'individual';
 
@@ -280,6 +284,7 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
     for (const metric of GOAL_METRICS) {
       const cfg = basicConfig[metric];
       if (!cfg?.enabled) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
       quota += computeBasicBonus(cfg, current);
     }
@@ -288,6 +293,7 @@ export function computeQuota(team: Team, member: TeamMember, referenceDate?: Dat
     for (const metric of GOAL_METRICS) {
       const rules = accelConfig[metric];
       if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       for (const rule of rules) {
         if (!rule?.enabled) continue;
         const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
@@ -312,6 +318,7 @@ export function countTriggeredAccelerators(team: Team, member: TeamMember, refer
     for (const metric of GOAL_METRICS) {
       const cfg = basicConfig[metric];
       if (!cfg?.enabled) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
       if (current >= cfg.minValue) count++;
     }
@@ -320,6 +327,7 @@ export function countTriggeredAccelerators(team: Team, member: TeamMember, refer
     for (const metric of GOAL_METRICS) {
       const rules = accelConfig[metric];
       if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       for (const rule of rules) {
         if (!rule?.enabled) continue;
         const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
@@ -383,6 +391,7 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
     for (const metric of GOAL_METRICS) {
       const cfg = basicConfig[metric];
       if (!cfg?.enabled) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
       const bonus = computeBasicBonus(cfg, current);
       if (bonus > 0) {
@@ -396,6 +405,7 @@ export function computeQuotaBreakdown(team: Team, member: TeamMember, referenceD
     for (const metric of GOAL_METRICS) {
       const rules = accelConfig[metric];
       if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       for (const rule of rules) {
         if (!rule?.enabled) continue;
         const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
@@ -427,6 +437,7 @@ export function getTriggeredAcceleratorDetails(team: Team, member: TeamMember, r
     for (const metric of GOAL_METRICS) {
       const cfg = basicConfig[metric];
       if (!cfg?.enabled) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       const current = getBasicAccelMetricTotal(team, member, metric, cfg, referenceDate);
       if (current >= cfg.minValue) {
         const bonus = computeBasicBonus(cfg, current);
@@ -438,6 +449,7 @@ export function getTriggeredAcceleratorDetails(team: Team, member: TeamMember, r
     for (const metric of GOAL_METRICS) {
       const rules = accelConfig[metric];
       if (!rules || !Array.isArray(rules) || rules.length === 0) continue;
+      if (isMemberExcludedFromAccelerator(team, member.id, metric)) continue;
       for (const rule of rules) {
         if (!rule?.enabled) continue;
         const current = getAccelMetricTotal(team, member, metric, rule, referenceDate);
@@ -467,6 +479,7 @@ export interface AcceleratorProgress {
 export function getAcceleratorProgress(
   team: Team, member: TeamMember, metric: GoalMetric, referenceDate?: Date,
 ): AcceleratorProgress | null {
+  if (isMemberExcludedFromAccelerator(team, member.id, metric)) return null;
   const rules = (team.acceleratorConfig ?? {})[metric];
   if (!rules || !Array.isArray(rules) || rules.length === 0) return null;
 
