@@ -208,6 +208,8 @@ export interface DbMetricsOps {
   opportunity_type: string | null;
   op_created_date: string | null;
   win_stage_date: string | null;
+  /** Postgres numeric; often string from API for precision */
+  opportunity_software_mrr: string | null;
   created_at: string;
   updated_at: string;
 }

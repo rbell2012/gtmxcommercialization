@@ -8,6 +8,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import type { DbSuperhex, DbMemberTeamHistory } from "@/lib/database.types";
 import { isSuperhexWinStage, isWinStage } from "@/lib/metrics-helpers";
 
@@ -250,8 +251,9 @@ export default function Data() {
   const [testTimeValue, setTestTimeValue] = useState<string>("");
   const [testDataTypes, setTestDataTypes] = useState<Set<DataTypeKey>>(new Set(ALL_DATA_TYPES));
   const [testDetailMode, setTestDetailMode] = useState<"summary" | "detailed">("summary");
-  const [testTeamOnly, setTestTeamOnly] = useState(false);
+  const [testTeamOnly, setTestTeamOnly] = useState(true);
   const [testRepFilter, setTestRepFilter] = useState<Set<string>>(new Set());
+  const [repSearch, setRepSearch] = useState("");
   const [testData, setTestData] = useState<Record<string, any[]>>({});
   const [testDataLoading, setTestDataLoading] = useState(false);
 
@@ -406,6 +408,12 @@ export default function Data() {
     [testDataTypes],
   );
 
+  const memberNameSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const m of members) s.add(m.name.toLowerCase().trim());
+    return s;
+  }, [members]);
+
   const availableReps = useMemo(() => {
     const repSet = new Set<string>();
     for (const rows of Object.values(testData)) {
@@ -413,14 +421,10 @@ export default function Data() {
         if (row.rep_name) repSet.add(row.rep_name);
       }
     }
-    return Array.from(repSet).sort((a, b) => a.localeCompare(b));
-  }, [testData]);
-
-  const memberNameSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const m of members) s.add(m.name.toLowerCase().trim());
-    return s;
-  }, [members]);
+    return Array.from(repSet)
+      .filter((rep) => !testTeamOnly || memberNameSet.has(rep.toLowerCase().trim()))
+      .sort((a, b) => a.localeCompare(b));
+  }, [testData, testTeamOnly, memberNameSet]);
 
   const filteredTestData = useMemo(() => {
     const out: Record<string, any[]> = {};
@@ -755,7 +759,7 @@ export default function Data() {
                 {/* Rep filter */}
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-muted-foreground">Rep:</span>
-                  <Popover>
+                  <Popover onOpenChange={(open) => { if (!open) setRepSearch(""); }}>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
@@ -771,35 +775,46 @@ export default function Data() {
                         <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-64 p-2 max-h-72 overflow-y-auto" align="start">
-                      <label
-                        className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent font-medium border-b border-border mb-1 pb-2"
-                      >
-                        <Checkbox
-                          checked={testRepFilter.size === 0}
-                          onCheckedChange={() => setTestRepFilter(new Set())}
-                        />
-                        All Reps
-                      </label>
-                      {availableReps.map((rep) => (
+                    <PopoverContent className="w-64 p-2" align="start">
+                      <Input
+                        placeholder="Filter reps…"
+                        value={repSearch}
+                        onChange={(e) => setRepSearch(e.target.value)}
+                        className="h-8 mb-2 text-sm"
+                        autoFocus
+                      />
+                      <div className="max-h-60 overflow-y-auto">
                         <label
-                          key={rep}
-                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                          className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent font-medium border-b border-border mb-1 pb-2"
                         >
                           <Checkbox
-                            checked={testRepFilter.has(rep)}
-                            onCheckedChange={(checked) => {
-                              setTestRepFilter((prev) => {
-                                const next = new Set(prev);
-                                if (checked) next.add(rep);
-                                else next.delete(rep);
-                                return next;
-                              });
-                            }}
+                            checked={testRepFilter.size === 0}
+                            onCheckedChange={() => setTestRepFilter(new Set())}
                           />
-                          {rep}
+                          All Reps
                         </label>
-                      ))}
+                        {availableReps
+                          .filter((rep) => rep.toLowerCase().includes(repSearch.toLowerCase()))
+                          .map((rep) => (
+                            <label
+                              key={rep}
+                              className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                            >
+                              <Checkbox
+                                checked={testRepFilter.has(rep)}
+                                onCheckedChange={(checked) => {
+                                  setTestRepFilter((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(rep);
+                                    else next.delete(rep);
+                                    return next;
+                                  });
+                                }}
+                              />
+                              {rep}
+                            </label>
+                          ))}
+                      </div>
                     </PopoverContent>
                   </Popover>
                 </div>

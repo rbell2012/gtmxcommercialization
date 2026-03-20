@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-19 (metrics_ops — opportunity_software_mrr)
+
+### Location — Database (`metrics_ops`), Types (`src/lib/database.types.ts`), Teams Context (`src/contexts/TeamsContext.tsx`), Data model (`docs/data-model.mmd`)
+
+**Rationale:** Store software MRR on each opportunity row for reporting and pipeline views.
+
+**Changes:**
+- Added nullable `numeric` column `opportunity_software_mrr` to `public.metrics_ops` (migration `20260319110000_add_opportunity_software_mrr_to_metrics_ops.sql`), applied to Supabase.
+- Extended `DbMetricsOps` and the `metrics_ops` `fetchAllRows` column list in `TeamsContext.tsx`; documented the field in `docs/data-model.mmd`.
+
+---
+
 ## 2026-03-19 (Chorus in Test Data & Account Name Hyperlink)
 
 ### Location — Data Page (`src/pages/Data.tsx`)
@@ -2533,4 +2545,15 @@
 **Rationale:** Pilot Regions should only appear for months whose project phase is one of the Commercial Lead variants, so managers see the correct controls only when they apply.
 **Changes:**
 - Updated `src/pages/Index.tsx` to render `PilotRegionsPicker` only when `activePhase.label` is `Sales Org Pilot / Commercial Lead`, `Recommendations`, or `GA / Commercial Lead`.
+---
+
+## Location - Supabase (database view, no front end page)
+**Rationale:** Needed a live, always-current view of all region reps participating in active pilot tests during the current calendar month, sourced from assigned sales teams — for reporting and cross-referencing pilot roster data.
+**Changes:**
+- Created migration `supabase/migrations/20260319050000_add_region_reps_to_pilot_reps_view.sql` defining the view `public.pilot_reps_this_month`.
+- View sources region reps from `metrics_sales_teams.team_members` (comma-separated names) joined to active pilots via `project_team_assignments`, filtered to the current test phase using a `month_index` offset from each pilot's `start_date`.
+- Excluded reps listed in `project_team_assignments.excluded_members` and stripped empty strings from trailing commas.
+- Added `rep_source` column (value: `'region_rep'`) for filtering; `member_id` and `level` are `null` for region reps as they are not rows in the `members` table.
+- Initially implemented with a `UNION ALL` including pilot `members`, then updated to remove the `member` leg — the view now returns region reps only.
+- Applied to live Supabase project `fgshslmhxkdmowisrhon` via MCP `apply_migration`; verified 46 region rep rows returned with `rep_source = 'region_rep'` only.
 ---

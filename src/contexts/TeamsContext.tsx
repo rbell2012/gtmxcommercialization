@@ -719,7 +719,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_calls", "rep_name, call_date"),
       fetchAllRows("metrics_connects", "rep_name, connect_date"),
       fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
-      fetchAllRows("metrics_ops", "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type"),
+      fetchAllRows(
+        "metrics_ops",
+        "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type, opportunity_software_mrr"
+      ),
       fetchAllRows("metrics_wins", "id, rep_name, win_date, account_name, opportunity_stage, opportunity_type"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
