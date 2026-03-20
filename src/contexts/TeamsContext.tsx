@@ -100,6 +100,8 @@ export interface OverallGoalConfig {
   discountThreshold: number;
   realizedPriceEnabled: boolean;
   realizedPrice: number;
+  /** Exact product names from metrics_ops.line_items to sum (pilot regions) */
+  lineItemTargets: string[];
 }
 
 export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
@@ -111,7 +113,22 @@ export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
   discountThreshold: 0,
   realizedPriceEnabled: false,
   realizedPrice: 0,
+  lineItemTargets: [],
 };
+
+function parseLineItemTargetsFromDb(raw: string | null | undefined): string[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x): x is string => typeof x === "string")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
 
 // ── App types ──
 
@@ -579,6 +596,7 @@ function assembleTeams(
         discountThreshold: t.overall_goal_discount_threshold ?? 0,
         realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
         realizedPrice: t.overall_goal_realized_price ?? 0,
+        lineItemTargets: parseLineItemTargetsFromDb(t.overall_goal_line_item_targets),
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
@@ -657,6 +675,8 @@ interface TeamsContextType {
   updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
   reloadAll: () => Promise<void>;
   loading: boolean;
+  /** Raw metrics_ops rows (includes line_items when loaded) */
+  opsRows: Record<string, unknown>[];
 }
 
 const TeamsContext = createContext<TeamsContextType | null>(null);
@@ -706,6 +726,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [salesTeams, setSalesTeams] = useState<SalesTeam[]>([]);
   const [projectedBookings, setProjectedBookings] = useState<ProjectedBooking[]>([]);
   const [projectTeamAssignments, setProjectTeamAssignments] = useState<ProjectTeamAssignment[]>([]);
+  const [opsRows, setOpsRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
 
   const cachedMetricsRef = useRef<CachedMetrics | null>(null);
@@ -721,7 +742,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
       fetchAllRows(
         "metrics_ops",
-        "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type, opportunity_software_mrr"
+        "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type, opportunity_software_mrr, line_items"
       ),
       fetchAllRows("metrics_wins", "id, rep_name, win_date, account_name, opportunity_stage, opportunity_type"),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
@@ -897,7 +918,20 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       supabase.from("project_team_assignments").select("*"),
     ]);
 
-    const { byWeek, byMonth, namesByMonth: cachedNames, winTypesByMonth, winTypeNamesByMonth, opsTypesByMonth, opsTypeNamesByMonth, opsRows, actRows, shRows, tamRows: tamRows_raw } = m;
+    const {
+      byWeek,
+      byMonth,
+      namesByMonth: cachedNames,
+      winTypesByMonth,
+      winTypeNamesByMonth,
+      opsTypesByMonth,
+      opsTypeNamesByMonth,
+      opsRows: metricsOpsRows,
+      actRows,
+      shRows,
+      tamRows: tamRows_raw,
+    } = m;
+    setOpsRows(metricsOpsRows);
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
     const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
@@ -1454,7 +1488,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           old.overallGoal.discountThresholdEnabled !== updated.overallGoal.discountThresholdEnabled ||
           old.overallGoal.discountThreshold !== updated.overallGoal.discountThreshold ||
           old.overallGoal.realizedPriceEnabled !== updated.overallGoal.realizedPriceEnabled ||
-          old.overallGoal.realizedPrice !== updated.overallGoal.realizedPrice
+          old.overallGoal.realizedPrice !== updated.overallGoal.realizedPrice ||
+          JSON.stringify(old.overallGoal.lineItemTargets ?? []) !== JSON.stringify(updated.overallGoal.lineItemTargets ?? [])
         );
 
         if (
@@ -1529,6 +1564,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 overall_goal_discount_threshold: updated.overallGoal.discountThreshold,
                 overall_goal_realized_price_enabled: updated.overallGoal.realizedPriceEnabled,
                 overall_goal_realized_price: updated.overallGoal.realizedPrice,
+                overall_goal_line_item_targets: JSON.stringify(updated.overallGoal.lineItemTargets ?? []),
                 accelerator_config: updated.acceleratorConfig,
                 accelerator_mode: updated.acceleratorMode,
                 basic_accelerator_config: updated.basicAcceleratorConfig,
@@ -1751,6 +1787,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         discountThreshold: t.overall_goal_discount_threshold ?? 0,
         realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
         realizedPrice: t.overall_goal_realized_price ?? 0,
+        lineItemTargets: parseLineItemTargetsFromDb(t.overall_goal_line_item_targets),
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
@@ -2179,9 +2216,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     updateExcludedMembers,
     reloadAll: loadAll,
     loading,
+    opsRows,
   }), [
     teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
-    allMembersById, archivedTeams, archivedMembers, loading,
+    allMembersById, archivedTeams, archivedMembers, loading, opsRows,
     salesTeams, projectedBookings, projectTeamAssignments,
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,

@@ -185,6 +185,7 @@ const Settings = () => {
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
   const [editOverallGoal, setEditOverallGoal] = useState<OverallGoalConfig>({ ...DEFAULT_OVERALL_GOAL_CONFIG });
+  const [lineItemTargetDraft, setLineItemTargetDraft] = useState("");
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
   const [settingsPrevExpanded, setSettingsPrevExpanded] = useState(false);
   const [settingsNextExpanded, setSettingsNextExpanded] = useState(false);
@@ -301,7 +302,8 @@ const Settings = () => {
     setEditBasicAcceleratorConfig({ ...team.basicAcceleratorConfig });
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
-    setEditOverallGoal({ ...(team.overallGoal ?? DEFAULT_OVERALL_GOAL_CONFIG) });
+    setEditOverallGoal({ ...DEFAULT_OVERALL_GOAL_CONFIG, ...(team.overallGoal ?? {}) });
+    setLineItemTargetDraft("");
     setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
     setSelectedEditMonth(null);
     const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
@@ -1154,6 +1156,81 @@ const Settings = () => {
                           }}
                           className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
                         />
+                      </div>
+                    </div>
+
+                    <div className="border-t border-border/60 pt-3 mt-1 space-y-2">
+                      <div>
+                        <span className="text-xs font-medium text-foreground">Line item targets</span>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Exact product names as in <code className="text-[10px]">metrics_ops.line_items</code>. Totals show on the pilot page when pilot regions are visible.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 min-h-[22px]">
+                        {editOverallGoal.lineItemTargets.map((name, idx) => (
+                          <Badge
+                            key={`${name}-${idx}`}
+                            variant="secondary"
+                            className="text-[10px] font-normal gap-1 pr-0.5 py-0 h-6"
+                          >
+                            <span className="max-w-[200px] truncate" title={name}>
+                              {name}
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                              aria-label={`Remove ${name}`}
+                              onClick={() =>
+                                setEditOverallGoal((prev) => ({
+                                  ...prev,
+                                  lineItemTargets: prev.lineItemTargets.filter((_, i) => i !== idx),
+                                }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          placeholder="Product name, then Add or Enter"
+                          value={lineItemTargetDraft}
+                          onChange={(e) => setLineItemTargetDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            const t = lineItemTargetDraft.trim();
+                            if (!t) return;
+                            setEditOverallGoal((prev) => ({
+                              ...prev,
+                              lineItemTargets: prev.lineItemTargets.includes(t)
+                                ? prev.lineItemTargets
+                                : [...prev.lineItemTargets, t],
+                            }));
+                            setLineItemTargetDraft("");
+                          }}
+                          className="h-7 flex-1 min-w-[140px] bg-background border-border/50 text-foreground text-[10px]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[10px]"
+                          onClick={() => {
+                            const t = lineItemTargetDraft.trim();
+                            if (!t) return;
+                            setEditOverallGoal((prev) => ({
+                              ...prev,
+                              lineItemTargets: prev.lineItemTargets.includes(t)
+                                ? prev.lineItemTargets
+                                : [...prev.lineItemTargets, t],
+                            }));
+                            setLineItemTargetDraft("");
+                          }}
+                        >
+                          Add
+                        </Button>
                       </div>
                     </div>
                   </div>

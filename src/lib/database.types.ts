@@ -30,6 +30,8 @@ export interface DbTeam {
   overall_goal_discount_threshold: number;
   overall_goal_realized_price_enabled: boolean;
   overall_goal_realized_price: number;
+  /** JSON string array of line item names for pilot-region aggregation */
+  overall_goal_line_item_targets: string | null;
   accelerator_config: Record<string, unknown>;
   accelerator_mode: string;
   basic_accelerator_config: Record<string, unknown>;

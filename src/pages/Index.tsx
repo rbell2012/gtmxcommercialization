@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, mem
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, Zap, X, ChevronsUpDown, Check } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment } from "@/contexts/TeamsContext";
+import { parseLineItemTotal } from "@/lib/lineItemParser";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -550,7 +551,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, opsRows } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -1334,20 +1335,46 @@ const Index = () => {
           </div>
         )}
 
-        {/* Pilot Regions */}
+        {/* Pilot Regions + line item aggregation (same phase visibility) */}
         {activeTeam &&
           activePhase &&
           ["Sales Org Pilot / Commercial Lead", "Recommendations", "GA / Commercial Lead"].includes(activePhase.label) && (
-            <PilotRegionsPicker
-              teamId={activeTeam.id}
-              monthIndex={activePhase.monthIndex}
-              phaseLabel={activePhase.monthLabel}
-              salesTeams={salesTeams}
-              projectTeamAssignments={projectTeamAssignments}
-              assignSalesTeam={assignSalesTeam}
-              unassignSalesTeam={unassignSalesTeam}
-              updateExcludedMembers={updateExcludedMembers}
-            />
+            <>
+              <PilotRegionsPicker
+                teamId={activeTeam.id}
+                monthIndex={activePhase.monthIndex}
+                phaseLabel={activePhase.monthLabel}
+                salesTeams={salesTeams}
+                projectTeamAssignments={projectTeamAssignments}
+                assignSalesTeam={assignSalesTeam}
+                unassignSalesTeam={unassignSalesTeam}
+                updateExcludedMembers={updateExcludedMembers}
+              />
+              {activeTeam.overallGoal.lineItemTargets.length > 0 && (() => {
+                const repSet = new Set(activeTeam.members.map((m) => m.name.toLowerCase().trim()));
+                const targets = activeTeam.overallGoal.lineItemTargets;
+                let total = 0;
+                for (const row of opsRows) {
+                  const rep = (row.rep_name as string | undefined)?.toLowerCase().trim();
+                  if (!rep || !repSet.has(rep)) continue;
+                  total += parseLineItemTotal(row.line_items as string | null | undefined, targets);
+                }
+                return (
+                  <div className="mt-3 rounded-md border border-border bg-secondary/10 p-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="text-xs font-semibold text-foreground">Tracked line items (ops)</span>
+                      <span className="text-sm font-mono font-semibold tabular-nums text-foreground">
+                        {total.toLocaleString("en-US", { style: "currency", currency: "USD" })}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Sum of configured targets across opportunities for this pilot&apos;s reps (from{" "}
+                      <code className="text-[10px]">metrics_ops.line_items</code>).
+                    </p>
+                  </div>
+                );
+              })()}
+            </>
           )}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
