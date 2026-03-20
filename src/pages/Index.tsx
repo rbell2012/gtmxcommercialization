@@ -1360,6 +1360,34 @@ const Index = () => {
           const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
           const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects'), 0);
           const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos'), 0);
+
+          // Per-metric breakdowns for the hover tooltips
+          const opsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops") }));
+          const demosBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos") }));
+          const winsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m) }));
+          const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback") }));
+          const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity") }));
+
+          // Per-member conversion rate breakdowns (numerator / denominator + percent)
+          const callToConnectRates = members.map((m) => {
+            const calls = getMemberLifetimeFunnelTotal(m, "calls");
+            const connects = getMemberLifetimeFunnelTotal(m, "connects");
+            const pct = calls > 0 ? (connects / calls) * 100 : 0;
+            return { label: m.name, calls, connects, pct };
+          });
+          const connectToDemoRates = members.map((m) => {
+            const connects = getMemberLifetimeFunnelTotal(m, "connects");
+            const demos = getMemberLifetimeFunnelTotal(m, "demos");
+            const pct = connects > 0 ? (demos / connects) * 100 : 0;
+            return { label: m.name, connects, demos, pct };
+          });
+          const demoToWinRates = members.map((m) => {
+            const demos = getMemberLifetimeFunnelTotal(m, "demos");
+            const wins = getMemberLifetimeWins(m);
+            const pct = demos > 0 ? (wins / demos) * 100 : 0;
+            return { label: m.name, demos, wins, pct };
+          });
+
           const og = activeTeam.overallGoal;
           const showWinsGoal = og.winsEnabled && og.wins > 0;
           const showTotalPriceGoal = og.totalPriceEnabled && og.totalPrice > 0;
@@ -1367,6 +1395,9 @@ const Index = () => {
           const showRealizedPriceGoal = og.realizedPriceEnabled && og.realizedPrice > 0;
           const showOverallGoal = showWinsGoal || showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal;
           const winsProgressPct = showWinsGoal ? Math.min(100, (lifetimeWins / og.wins) * 100) : 0;
+          const callToConnectTotalPct = lifetimeCalls > 0 ? (lifetimeConnects / lifetimeCalls) * 100 : 0;
+          const connectToDemoTotalPct = lifetimeConnects > 0 ? (lifetimeDemosF / lifetimeConnects) * 100 : 0;
+          const demoToWinTotalPct = lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0;
 
           return (
             <>
@@ -1401,9 +1432,31 @@ const Index = () => {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[240px]">
-                    <p className="text-xs leading-relaxed">
-                      % of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-xs leading-relaxed">
+                        % of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.
+                      </p>
+                      <div className="text-[11px] text-muted-foreground">
+                        Total: {lifetimeConnects.toLocaleString()} ÷ {lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
+                      </div>
+                      <div className="h-px bg-accent/20" />
+                      <div className="space-y-1 text-xs">
+                        {callToConnectRates.map((r) => (
+                          <div key={r.label} className="flex items-center justify-between gap-3">
+                            <span className="text-muted-foreground truncate">{r.label}</span>
+                            <span className="font-medium text-foreground whitespace-nowrap">
+                              {r.connects.toLocaleString()}/{r.calls.toLocaleString()} ({r.pct.toFixed(0)}%)
+                            </span>
+                          </div>
+                        ))}
+                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                          <span className="font-semibold text-foreground">Total</span>
+                          <span className="font-semibold text-accent whitespace-nowrap">
+                            {lifetimeConnects.toLocaleString()}/{lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </TooltipContent>
                 </UiTooltip>
                 <UiTooltip>
@@ -1414,9 +1467,31 @@ const Index = () => {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[240px]">
-                    <p className="text-xs leading-relaxed">
-                      % of live connections that converted to a demo. Calculated as: Demos ÷ Connects.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-xs leading-relaxed">
+                        % of live connections that converted to a demo. Calculated as: Demos ÷ Connects.
+                      </p>
+                      <div className="text-[11px] text-muted-foreground">
+                        Total: {lifetimeDemosF.toLocaleString()} ÷ {lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
+                      </div>
+                      <div className="h-px bg-accent/20" />
+                      <div className="space-y-1 text-xs">
+                        {connectToDemoRates.map((r) => (
+                          <div key={r.label} className="flex items-center justify-between gap-3">
+                            <span className="text-muted-foreground truncate">{r.label}</span>
+                            <span className="font-medium text-foreground whitespace-nowrap">
+                              {r.demos.toLocaleString()}/{r.connects.toLocaleString()} ({r.pct.toFixed(0)}%)
+                            </span>
+                          </div>
+                        ))}
+                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                          <span className="font-semibold text-foreground">Total</span>
+                          <span className="font-semibold text-accent whitespace-nowrap">
+                            {lifetimeDemosF.toLocaleString()}/{lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </TooltipContent>
                 </UiTooltip>
                 <UiTooltip>
@@ -1427,9 +1502,31 @@ const Index = () => {
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[240px]">
-                    <p className="text-xs leading-relaxed">
-                      % of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.
-                    </p>
+                    <div className="space-y-2">
+                      <p className="text-xs leading-relaxed">
+                        % of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.
+                      </p>
+                      <div className="text-[11px] text-muted-foreground">
+                        Total: {lifetimeWins.toLocaleString()} ÷ {lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
+                      </div>
+                      <div className="h-px bg-accent/20" />
+                      <div className="space-y-1 text-xs">
+                        {demoToWinRates.map((r) => (
+                          <div key={r.label} className="flex items-center justify-between gap-3">
+                            <span className="text-muted-foreground truncate">{r.label}</span>
+                            <span className="font-medium text-foreground whitespace-nowrap">
+                              {r.wins.toLocaleString()}/{r.demos.toLocaleString()} ({r.pct.toFixed(0)}%)
+                            </span>
+                          </div>
+                        ))}
+                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                          <span className="font-semibold text-foreground">Total</span>
+                          <span className="font-semibold text-accent whitespace-nowrap">
+                            {lifetimeWins.toLocaleString()}/{lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </TooltipContent>
                 </UiTooltip>
               </div>
@@ -1439,30 +1536,35 @@ const Index = () => {
                   label="Ops"
                   value={lifetimeOps}
                   tooltip="Total number of opportunities (ops) opened across all weeks of the test."
+                  breakdown={opsBreakdown}
                 />
                 <StatCard
                   icon={<Video className="h-5 w-5 text-primary" />}
                   label="Demos"
                   value={lifetimeDemos}
                   tooltip="Total 'Completed' Events with subject 'Demo' logged across all weeks of the test."
+                  breakdown={demosBreakdown}
                 />
                 <StatCard
                   icon={<TrendingUp className="h-5 w-5 text-accent" />}
                   label="Wins"
                   value={lifetimeWins}
                   tooltip="Total closed wins across all weeks of the test (summed from weekly funnel data)."
+                  breakdown={winsBreakdown}
                 />
                 <StatCard
                   icon={<MessageCircle className="h-5 w-5 text-primary" />}
                   label="Feedback"
                   value={lifetimeFeedback}
                   tooltip="Total feedback interactions logged in Google Sheets across all weeks of the test."
+                  breakdown={feedbackBreakdown}
                 />
                 <StatCard
                   icon={<Activity className="h-5 w-5 text-accent" />}
                   label="Activity"
                   value={lifetimeActivity}
                   tooltip="Total activity count (calls, emails, texts) logged across all weeks of the test."
+                  breakdown={activityBreakdown}
                 />
               </div>
             {showOverallGoal && (
@@ -3547,9 +3649,21 @@ function fmtNum(v: string | number): string {
   return Number.isFinite(n) ? n.toLocaleString() : v;
 }
 
-function StatCard({ icon, label, value, tooltip }: { icon: React.ReactNode; label: string; value: string | number; tooltip?: string }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  tooltip,
+  breakdown,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  tooltip?: string;
+  breakdown?: Array<{ label: string; value: number }>;
+}) {
   const card = (
-    <div className={`flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card ${tooltip ? "cursor-help" : ""}`}>
+    <div className={`flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card ${tooltip || breakdown ? "cursor-help" : ""}`}>
       {icon}
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
@@ -3558,13 +3672,32 @@ function StatCard({ icon, label, value, tooltip }: { icon: React.ReactNode; labe
     </div>
   );
 
-  if (!tooltip) return card;
+  if (!tooltip && !breakdown) return card;
 
   return (
     <UiTooltip>
       <TooltipTrigger asChild>{card}</TooltipTrigger>
       <TooltipContent side="top" className="max-w-[220px]">
-        <p className="text-xs leading-relaxed">{tooltip}</p>
+        <div className="space-y-2">
+          {tooltip && <p className="text-xs leading-relaxed">{tooltip}</p>}
+          {breakdown && breakdown.length > 0 && (
+            <>
+              <div className="h-px bg-accent/20" />
+              <div className="space-y-1 text-xs">
+                {breakdown.map((r) => (
+                  <div key={r.label} className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground truncate">{r.label}</span>
+                    <span className="font-medium text-foreground whitespace-nowrap">{fmtNum(r.value)}</span>
+                  </div>
+                ))}
+                <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                  <span className="font-semibold text-foreground">Total</span>
+                  <span className="font-semibold text-accent whitespace-nowrap">{fmtNum(value)}</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </TooltipContent>
     </UiTooltip>
   );

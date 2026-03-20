@@ -2557,3 +2557,13 @@
 - Initially implemented with a `UNION ALL` including pilot `members`, then updated to remove the `member` leg — the view now returns region reps only.
 - Applied to live Supabase project `fgshslmhxkdmowisrhon` via MCP `apply_migration`; verified 46 region rep rows returned with `rep_source = 'region_rep'` only.
 ---
+
+## Location - Front end Data page (`src/pages/Data.tsx`)
+**Rationale:** Improve usability of the Rep filter in the Reports section by adding Excel-style search filtering inside the dropdown, and synchronising the dropdown's options with the Team Only toggle so managers only see relevant reps.
+**Changes:**
+- Added a live search `Input` at the top of the Rep popover that auto-focuses on open and filters the rep list in real-time (case-insensitive), matching the Excel column-filter pattern.
+- Search text clears automatically when the popover closes so it always resets to a fresh state.
+- The scrollable rep list is now pinned below the fixed search box, keeping the input accessible at all times.
+- `memberNameSet` useMemo was moved above `availableReps` useMemo to resolve a JavaScript temporal dead zone crash that caused the page to render blank.
+- `availableReps` now filters by `memberNameSet` when the Team Only toggle is on, so only reps belonging to a known team member appear in the dropdown; toggling Team Only off restores all rep names from the data.
+---
