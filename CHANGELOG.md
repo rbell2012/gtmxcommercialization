@@ -2567,3 +2567,27 @@
 - `memberNameSet` useMemo was moved above `availableReps` useMemo to resolve a JavaScript temporal dead zone crash that caused the page to render blank.
 - `availableReps` now filters by `memberNameSet` when the Team Only toggle is on, so only reps belonging to a known team member appear in the dropdown; toggling Team Only off restores all rep names from the data.
 ---
+
+## Location - Front end Lifetime Stats hover tooltips (`src/pages/Index.tsx`)
+**Rationale:** Make the Lifetime Stats hover-to-view more transparent by showing the exact calculation inputs and the per-member breakdown behind each displayed metric/rate on a per-project basis.
+**Changes:**
+- Updated Lifetime Stats tooltips to include per-member breakdown rows for Ops, Demos, Wins, Feedback, and Activity, plus a Total row.
+- Updated conversion-rate hover tooltips (Call→Connect, Connect→Demo, Demo→Win) to show the numerator/denominator totals and a per-member conversion breakdown that matches the displayed percent.
+---
+
+## Location - Front end Quota page (`src/pages/Quota.tsx`)
+**Rationale:** Accelerator-configured metrics were not displayed as quota table columns unless they were enabled as goals, making it unclear which accelerators impact quota (for example, Feedback configured as an accelerator).
+**Changes:**
+- Updated `TeamQuotaCard` to include any `GoalMetric` that has either a goal enabled or an enabled accelerator (respects `team.acceleratorMode` and both basic and logic accelerator configs).
+- Updated `MemberQuotaRow` so the goal/progress UI (current/goal, pct bar, need/day) only renders when the metric is enabled as a goal, preventing misleading goal-style progress for accelerator-only columns.
+---
+## Location - Front end Quota page (`src/pages/Quota.tsx`)
+**Rationale:** Make it obvious how each accelerator column is calculated by surfacing the exact accelerator configuration (Basic linear scaling or Logic rule stack) that the user set up in Settings.
+**Changes:** - Added `AcceleratorConfigTooltip` to render the accelerator setup for a metric in the Quota table header (scope, formula/rules, and excluded members).
+- Updated the Quota metric column headers to show a `Zap` indicator and a hover tooltip for any metric with an enabled accelerator, matching `team.acceleratorMode` and the stored accelerator config.
+---
+## Location - Front end Quota + Project pages Monthly Goals (`src/pages/Quota.tsx`, `src/pages/Index.tsx`)
+**Rationale:** Surface the exact accelerator configuration (as authored in Settings) consistently across Quota and Project pages, so managers can quickly understand how each accelerator column is calculated.
+**Changes:** - Extracted the accelerator configuration tooltip into a shared component (`src/components/AcceleratorConfigTooltip.tsx`), and refactored `Quota.tsx` to use it.
+- Added `Zap` + hover tooltips to the Monthly Goals metric column headers on the project page (`Index.tsx`), including both the normal and relief-only table header variants.
+---

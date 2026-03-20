@@ -1,5 +1,5 @@
 import { useState, useMemo, memo, Component, type ReactNode, type ErrorInfo } from "react";
-import { Target, Calendar, LockOpen, Lock, TrendingUp } from "lucide-react";
+import { Target, Calendar, LockOpen, Lock, TrendingUp, Zap } from "lucide-react";
 import {
   useTeams,
   getTeamMembersForMonth,
@@ -21,6 +21,7 @@ import {
 } from "@/contexts/TeamsContext";
 import { getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getBusinessDaysRemaining, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, computeQuotaBreakdown, getPhaseWinsLabel, isMemberOnRelief, type TriggeredAccelerator, type QuotaBreakdown } from "@/lib/quota-helpers";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
 
 const METRIC_BAR_COLORS: string[] = [
@@ -598,11 +599,22 @@ function TeamQuotaCard({
   const activeMembers = getTeamMembersForMonth(rawTeam, referenceDate, memberTeamHistory, allMembersById)
     .map((m) => getHistoricalMember(m, referenceDate, memberGoalsHistory));
   const daysLeft = getBusinessDaysRemaining(team.endDate, referenceDate);
-  const baseMetrics = GOAL_METRICS.filter((m) => team.enabledGoals[m] && m !== 'wins' && m !== 'feedback');
+  const metricHasEnabledAccelerator = (metric: GoalMetric) => {
+    const mode = team.acceleratorMode ?? "basic";
+    if (mode === "basic") {
+      return !!team.basicAcceleratorConfig?.[metric]?.enabled;
+    }
+    const rules = team.acceleratorConfig?.[metric];
+    return Array.isArray(rules) && rules.some((r) => r?.enabled);
+  };
+
+  const baseMetrics = GOAL_METRICS.filter(
+    (m) => (team.enabledGoals[m] || metricHasEnabledAccelerator(m)) && m !== "wins" && m !== "feedback"
+  );
   const visibleMetrics: GoalMetric[] = [
     ...baseMetrics,
     'wins',
-    ...(team.enabledGoals.feedback ? ['feedback' as GoalMetric] : []),
+    ...(team.enabledGoals.feedback || metricHasEnabledAccelerator("feedback") ? ['feedback' as GoalMetric] : []),
   ];
 
   return (
@@ -631,12 +643,27 @@ function TeamQuotaCard({
                 </th>
                 {visibleMetrics.map((metric) => {
                   const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
+                  const hasAccelerator = metricHasEnabledAccelerator(metric);
                   return (
                     <th
                       key={metric}
                       className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider w-[140px]"
                     >
-                      {GOAL_METRIC_LABELS[metric]}
+                      {hasAccelerator ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center justify-center gap-1.5 cursor-help w-full">
+                              <span className="whitespace-nowrap">{GOAL_METRIC_LABELS[metric]}</span>
+                              <Zap className="h-3.5 w-3.5 text-primary/80" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-[380px] p-3">
+                            <AcceleratorConfigTooltip team={team} metric={metric} rosterMembers={activeMembers} />
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        GOAL_METRIC_LABELS[metric]
+                      )}
                       {isTeamScope && (
                         <span className="block text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
                       )}
@@ -888,11 +915,11 @@ const MemberQuotaRow = memo(function MemberQuotaRow({
         const current = getScopedMetricTotal(team, member, metric, referenceDate);
         const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
         const needed = onRelief ? 0 : Math.max(0, goal - current);
-        const pct = onRelief ? 100 : (goal > 0 ? Math.min((current / goal) * 100, 100) : 0);
+        const enabledAsGoal = metric === "wins" ? team.enabledGoals.wins : team.enabledGoals[metric];
+        const hasGoal = !!enabledAsGoal && goal > 0;
+        const pct = onRelief ? 100 : (hasGoal ? Math.min((current / goal) * 100, 100) : 0);
         const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
         const accountNames = hasAccountNames ? getScopedAccountNames(team, member, metric, referenceDate) : [];
-
-        const hasGoal = (metric !== 'wins' || team.enabledGoals.wins) && goal > 0;
 
         const cellContent = hasGoal ? (
           <div className="flex flex-col items-center gap-1">

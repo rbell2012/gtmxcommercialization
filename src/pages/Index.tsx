@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, X, ChevronsUpDown, Check } from "lucide-react";
+import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, Zap, X, ChevronsUpDown, Check } from "lucide-react";
 import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, PHASE_LABEL_OPTIONS, isAllowedPhaseLabel, type ComputedPhase } from "@/lib/test-phases";
 import RichTextEditor, { RichTextDisplay } from "@/components/RichTextEditor";
+import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
 
@@ -2238,7 +2239,17 @@ const TeamTab = memo(function TeamTab({
                               <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
                               {accelMetrics.map((metric) => (
                                 <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
-                                  {GOAL_METRIC_LABELS[metric]}
+                                  <UiTooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex items-center justify-center gap-1.5 cursor-help w-full">
+                                        <span className="whitespace-nowrap">{GOAL_METRIC_LABELS[metric]}</span>
+                                        <Zap className="h-3.5 w-3.5 text-primary/80" />
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" className="max-w-[380px] p-3">
+                                      <AcceleratorConfigTooltip team={team} metric={metric} rosterMembers={activeMembers} />
+                                    </TooltipContent>
+                                  </UiTooltip>
                                 </th>
                               ))}
                             </tr>
@@ -2402,9 +2413,24 @@ const TeamTab = memo(function TeamTab({
                             <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Member</th>
                             {visibleMetrics.map((metric) => {
                               const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
+                              const accelEnabled = hasAccel(metric);
                               return (
                                 <th key={metric} className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[80px]">
-                                  {GOAL_METRIC_LABELS[metric]}
+                                  {accelEnabled ? (
+                                    <UiTooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="inline-flex items-center justify-center gap-1.5 cursor-help w-full">
+                                          <span className="whitespace-nowrap">{GOAL_METRIC_LABELS[metric]}</span>
+                                          <Zap className="h-3.5 w-3.5 text-primary/80" />
+                                        </span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="bottom" className="max-w-[380px] p-3">
+                                        <AcceleratorConfigTooltip team={team} metric={metric} rosterMembers={activeMembers} />
+                                      </TooltipContent>
+                                    </UiTooltip>
+                                  ) : (
+                                    GOAL_METRIC_LABELS[metric]
+                                  )}
                                   {isTeamScope && (
                                     <span className="block text-[8px] font-bold uppercase tracking-wider text-primary/70">Team</span>
                                   )}
