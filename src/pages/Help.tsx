@@ -221,7 +221,9 @@ export default function Help() {
         <ul className="list-disc pl-5 space-y-1">
           <li>Phases are <strong>auto-generated</strong> from the team's start and end dates, with one phase per calendar month.</li>
           <li>The progress bar fills automatically: past months show 100%, the current month shows proportional progress, future months show 0%.</li>
-          <li>Below each month, a <strong>wins label</strong> shows the total wins for that month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only).</li>
+          <li>
+            Below each month, a <strong>wins label</strong> shows wins for that calendar month. When a wins goal is configured, the label displays as "X / Y wins" (actual vs. goal); otherwise it shows "X wins" (total only). When the team has <strong>opportunity name flags</strong> in overall goal settings, that count uses the same rules as <strong>Lifetime Stats</strong> wins (flagged opportunities, qualifying win stage, line-item targets when set, effective close date in that month, <strong>any rep</strong>) — so adding up phase months matches the lifetime total except for closes with no close date or a date outside the test window (those still count in lifetime but do not fall under a phase month). <strong>Monthly Data – Pilot Regions</strong> is narrower (pilot-assigned reps and product attach) and can differ from the phase footer for the same month.
+          </li>
           <li>The <strong>first line</strong> under each month is a <strong>dropdown</strong> with fixed options: Ramp, Run, Recommendations, Sales Org Pilot / Commercial Lead, GA / Commercial Lead. Choose one to label that phase.</li>
           <li>Below that, a <strong>priorities</strong> text field lets managers record per-month priorities. Priorities are only visible on the Pilots page; the Roadmap page shows only the phase label.</li>
           <li>
@@ -822,7 +824,9 @@ export default function Help() {
           <li>
             <strong>Check wins per phase</strong>: the wins label below each
             test phase month gives you an at-a-glance view of outcome
-            performance without opening Monthly Goals.
+            performance without opening Monthly Goals. Pilot-labeled months use
+            the same win rules as the Pilot Regions monthly block on the project
+            page.
           </li>
           <li>
             <strong>Plan ahead with <Link to="/roadmap" className="text-primary underline">Roadmap</Link></strong>:{" "}

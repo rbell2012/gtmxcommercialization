@@ -34,3 +34,15 @@ export function isSuperhexWinStage(opStage: string | null | undefined, isWon?: b
   if (isNaN(num)) return false;
   return num >= 14;
 }
+
+/** Monday-based week key; must match funnel aggregation in TeamsContext.loadMetrics */
+export function dateToWeekKey(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function dateToMonthKey(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}

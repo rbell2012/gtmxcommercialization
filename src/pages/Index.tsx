@@ -1,8 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Trophy, Plus, Users, TrendingUp, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, Zap, X, ChevronsUpDown, Check } from "lucide-react";
-import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment } from "@/contexts/TeamsContext";
-import { parseLineItemTotal } from "@/lib/lineItemParser";
+import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, Zap, X, ChevronsUpDown, Check, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment, type MetricsByWeekBundle } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -23,8 +22,48 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, PHASE_LABEL_OPTIONS, isAllowedPhaseLabel, type ComputedPhase } from "@/lib/test-phases";
 import RichTextEditor, { RichTextDisplay } from "@/components/RichTextEditor";
 import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
+import {
+  isPilotRegionPhaseLabel,
+  resolvePilotAssignments,
+  repsForSalesTeam,
+  toMonthKey as pilotToMonthKey,
+  getPilotWinsWithTargetBreakdown,
+  countPilotOpsInMonth,
+  countPilotDemosInMonth,
+  countPilotLossesInMonth,
+  getPilotKpiSnapshot,
+  getPilotKpiSnapshotForWeek,
+  getPilotAccountNamesForTeam,
+  compareWow,
+  sumMetricForRepsInWeek,
+  tamSumForReps,
+  pilotRepBreakdownWinsWithTarget,
+  pilotRepBreakdownLossesInMonth,
+  pilotSalesTeamShortLabel,
+  filterByOpportunityFlag,
+  filterByOpportunityFlagInverse,
+  sumWinsInWeekForReps,
+  getPilotAvgPriceAllTime,
+  countOpsWinsSplitForLifetimeStats,
+  type PilotKpiSnapshot,
+  type WowTrend,
+} from "@/lib/pilot-helpers";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
+
+function pilotWinsInWeek(
+  metricsByWeek: MetricsByWeekBundle,
+  winsDetailRows: Record<string, unknown>[] | undefined,
+  opportunityFlags: string[] | undefined,
+  repKeys: Set<string>,
+  weekKey: string,
+): number {
+  const flags = opportunityFlags ?? [];
+  if (flags.length > 0 && winsDetailRows && winsDetailRows.length > 0) {
+    return sumWinsInWeekForReps(winsDetailRows, repKeys, weekKey, flags);
+  }
+  return sumMetricForRepsInWeek(metricsByWeek, "wins", repKeys, weekKey);
+}
 
 function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -136,6 +175,39 @@ function readChartRange(): ChartRange {
 
 function saveChartRange(v: ChartRange) {
   try { localStorage.setItem(CHART_RANGE_STORAGE_KEY, v); } catch { /* noop */ }
+}
+
+function fmtPilotMoney(n: number | null): string {
+  if (n === null || Number.isNaN(n)) return "—";
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+function fmtPilotAttach(n: number | null): string {
+  if (n === null || Number.isNaN(n)) return "—";
+  return `${(n * 100).toFixed(0)}%`;
+}
+
+/** Rep name display: sentence-style words — first letter of each word capitalized, rest lowercase (e.g. ALL CAPS from CRM). */
+function repNameToSentenceCase(name: string): string {
+  const t = name.trim();
+  if (!t) return name;
+  return t
+    .split(/\s+/)
+    .map((word) => (word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : ""))
+    .join(" ");
+}
+
+/** Pilot Monthly Stats tooltips: "TOP" header then contributors with value > 0, sorted highest first, max 20. */
+function top20PilotMonthlyStatBreakdown(arr: Array<{ label: string; value: number }>) {
+  const rows = [...arr].filter((r) => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 20);
+  if (rows.length === 0) return undefined;
+  return [{ label: "TOP", value: 0, isSectionLabel: true }, ...rows];
+}
+
+function WowArrow({ trend }: { trend: WowTrend }) {
+  if (trend === "up") return <ArrowUp className="h-3.5 w-3.5 text-green-500 shrink-0 inline" aria-label="Up" />;
+  if (trend === "down") return <ArrowDown className="h-3.5 w-3.5 text-red-400 shrink-0 inline" aria-label="Down" />;
+  return <Minus className="h-3.5 w-3.5 text-muted-foreground shrink-0 inline" aria-label="Flat" />;
 }
 
 function getMemberFunnel(m: TeamMember, weekKey: string): WeeklyFunnel {
@@ -551,7 +623,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, opsRows } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -1081,7 +1153,14 @@ const Index = () => {
                         rows={1}
                         className="w-full text-xs text-center bg-transparent border-none shadow-none p-0 text-muted-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 resize-none overflow-hidden"
                       />
-                      <p className="text-[10px] text-muted-foreground">{getPhaseWinsLabel([activeTeam!], phase.year, phase.month)}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {getPhaseWinsLabel([activeTeam!], phase.year, phase.month, {
+                          opsRows,
+                          projectTeamAssignments,
+                          salesTeams,
+                          resolveTeamPhase: () => ({ monthIndex: phase.monthIndex, label: phase.label }),
+                        })}
+                      </p>
                     </div>
                   );
                 })}
@@ -1338,7 +1417,7 @@ const Index = () => {
         {/* Pilot Regions + line item aggregation (same phase visibility) */}
         {activeTeam &&
           activePhase &&
-          ["Sales Org Pilot / Commercial Lead", "Recommendations", "GA / Commercial Lead"].includes(activePhase.label) && (
+          isPilotRegionPhaseLabel(activePhase.label) && (
             <>
               <PilotRegionsPicker
                 teamId={activeTeam.id}
@@ -1350,39 +1429,39 @@ const Index = () => {
                 unassignSalesTeam={unassignSalesTeam}
                 updateExcludedMembers={updateExcludedMembers}
               />
-              {activeTeam.overallGoal.lineItemTargets.length > 0 && (() => {
-                const repSet = new Set(activeTeam.members.map((m) => m.name.toLowerCase().trim()));
-                const targets = activeTeam.overallGoal.lineItemTargets;
-                let total = 0;
-                for (const row of opsRows) {
-                  const rep = (row.rep_name as string | undefined)?.toLowerCase().trim();
-                  if (!rep || !repSet.has(rep)) continue;
-                  total += parseLineItemTotal(row.line_items as string | null | undefined, targets);
-                }
-                return (
-                  <div className="mt-3 rounded-md border border-border bg-secondary/10 p-3">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-xs font-semibold text-foreground">Tracked line items (ops)</span>
-                      <span className="text-sm font-mono font-semibold tabular-nums text-foreground">
-                        {total.toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Sum of configured targets across opportunities for this pilot&apos;s reps (from{" "}
-                      <code className="text-[10px]">metrics_ops.line_items</code>).
-                    </p>
-                  </div>
-                );
-              })()}
             </>
           )}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
         {activeTeam && (() => {
           const members = activeTeam.members;
+          const og = activeTeam.overallGoal;
+          const pilotOpsFiltered = filterByOpportunityFlag(opsRows, og.opportunityFlags ?? []);
+          const attributedRep = activeTeam.attributedRepMemberId
+            ? activeTeam.members.find((m) => m.id === activeTeam.attributedRepMemberId) ?? null
+            : null;
+          const hasOppWinsPath =
+            (og.opportunityFlags ?? []).length > 0 &&
+            (og.lineItemTargets ?? []).length > 0 &&
+            attributedRep != null;
+
+          const winsSplit = hasOppWinsPath
+            ? countOpsWinsSplitForLifetimeStats(
+                pilotOpsFiltered,
+                og.lineItemTargets ?? [],
+                computedPhases,
+                projectTeamAssignments,
+                salesTeams,
+                activeTeam.id,
+              )
+            : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
+
+          const lifetimeWins = hasOppWinsPath
+            ? winsSplit.total
+            : members.reduce((s, m) => s + getMemberLifetimeWins(m), 0);
+
           const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops'), 0);
           const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos'), 0);
-          const lifetimeWins = members.reduce((s, m) => s + getMemberLifetimeWins(m), 0);
           const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback'), 0);
           const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
           const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
@@ -1392,7 +1471,12 @@ const Index = () => {
           // Per-metric breakdowns for the hover tooltips
           const opsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops") }));
           const demosBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos") }));
-          const winsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m) }));
+          const winsBreakdown = hasOppWinsPath && attributedRep
+            ? [
+                { label: "Pilot phases (assigned reps)", value: winsSplit.pilotPhaseWins },
+                { label: "Other phases", value: winsSplit.otherPhaseWins },
+              ]
+            : members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m) }));
           const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback") }));
           const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity") }));
 
@@ -1409,14 +1493,21 @@ const Index = () => {
             const pct = connects > 0 ? (demos / connects) * 100 : 0;
             return { label: m.name, connects, demos, pct };
           });
-          const demoToWinRates = members.map((m) => {
-            const demos = getMemberLifetimeFunnelTotal(m, "demos");
-            const wins = getMemberLifetimeWins(m);
-            const pct = demos > 0 ? (wins / demos) * 100 : 0;
-            return { label: m.name, demos, wins, pct };
-          });
-
-          const og = activeTeam.overallGoal;
+          const demoToWinRates = hasOppWinsPath && attributedRep
+            ? [
+                {
+                  label: "Pilot + other phases",
+                  demos: lifetimeDemosF,
+                  wins: lifetimeWins,
+                  pct: lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0,
+                },
+              ]
+            : members.map((m) => {
+                const demos = getMemberLifetimeFunnelTotal(m, "demos");
+                const wins = getMemberLifetimeWins(m);
+                const pct = demos > 0 ? (wins / demos) * 100 : 0;
+                return { label: m.name, demos, wins, pct };
+              });
           const showWinsGoal = og.winsEnabled && og.wins > 0;
           const showTotalPriceGoal = og.totalPriceEnabled && og.totalPrice > 0;
           const showDiscountThresholdGoal = og.discountThresholdEnabled && og.discountThreshold > 0;
@@ -1426,6 +1517,21 @@ const Index = () => {
           const callToConnectTotalPct = lifetimeCalls > 0 ? (lifetimeConnects / lifetimeCalls) * 100 : 0;
           const connectToDemoTotalPct = lifetimeConnects > 0 ? (lifetimeDemosF / lifetimeConnects) * 100 : 0;
           const demoToWinTotalPct = lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0;
+
+          const pilotLifetimeCtx = isPilotRegionPhaseLabel(activePhase?.label ?? null)
+            ? resolvePilotAssignments(projectTeamAssignments, salesTeams, activeTeam.id, activePhase?.monthIndex ?? 0)
+            : null;
+          const lifetimeAvgPrice = pilotLifetimeCtx
+            ? getPilotAvgPriceAllTime(pilotOpsFiltered, pilotLifetimeCtx.pilotRepNames, og.lineItemTargets ?? [])
+            : null;
+          const discountThresholdCurrent =
+            og.totalPrice > 0 && lifetimeAvgPrice != null
+              ? 1 - lifetimeAvgPrice / og.totalPrice
+              : null;
+
+          const winsLifetimeTooltip = hasOppWinsPath
+            ? "Lifetime wins = pilot phases + other phases. Pilot phases: closes in months labeled Sales Org Pilot / Recommendations / GA, counting only reps assigned to pilot regions that month. Other phases: all other qualifying closes (other months, non-assigned pilot months, or pilot months where the closer is not on the roster), plus closes outside the test window. Same opportunity flags and line-item rules apply."
+            : "Total closed wins across all weeks of the test (summed from weekly funnel data).";
 
           return (
             <>
@@ -1577,7 +1683,7 @@ const Index = () => {
                   icon={<TrendingUp className="h-5 w-5 text-accent" />}
                   label="Wins"
                   value={lifetimeWins}
-                  tooltip="Total closed wins across all weeks of the test (summed from weekly funnel data)."
+                  tooltip={winsLifetimeTooltip}
                   breakdown={winsBreakdown}
                 />
                 <StatCard
@@ -1615,45 +1721,42 @@ const Index = () => {
                     </div>
                   )}
 
-                  {showTotalPriceGoal && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-foreground">Total Price</span>
-                        <span className="text-[11px] font-semibold text-accent">
-                          — / ${og.totalPrice.toLocaleString()} (coming soon)
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
-                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {showDiscountThresholdGoal && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-foreground">Discount Threshold</span>
-                        <span className="text-[11px] font-semibold text-accent">
-                          — / {og.discountThreshold.toLocaleString()}% (coming soon)
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
-                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {showRealizedPriceGoal && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-foreground">Realized Price</span>
-                        <span className="text-[11px] font-semibold text-accent">
-                          — / ${og.realizedPrice.toLocaleString()} (coming soon)
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
-                        <div className="h-full bg-accent/40" style={{ width: `0%` }} />
-                      </div>
+                  {(showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal) && (
+                    <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
+                      {showTotalPriceGoal && (
+                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                          <p className="text-[10px] text-muted-foreground">Total Price</p>
+                          <p className="font-display text-lg font-bold text-foreground">
+                            ${og.totalPrice.toLocaleString()}
+                          </p>
+                        </div>
+                      )}
+                      {showDiscountThresholdGoal && (
+                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                          <p className="text-[10px] text-muted-foreground">Discount %</p>
+                          <p className={`font-display text-lg font-bold ${discountThresholdCurrent != null ? "text-accent" : "text-foreground"}`}>
+                            {discountThresholdCurrent != null
+                              ? `${(discountThresholdCurrent * 100).toFixed(1)}%`
+                              : `${og.discountThreshold.toLocaleString()}%`}
+                          </p>
+                          {discountThresholdCurrent != null && (
+                            <p className="text-[10px] text-muted-foreground">Goal: {og.discountThreshold.toLocaleString()}%</p>
+                          )}
+                        </div>
+                      )}
+                      {showRealizedPriceGoal && (
+                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                          <p className="text-[10px] text-muted-foreground">Realized Price</p>
+                          <p className="font-display text-lg font-bold text-foreground">
+                            {lifetimeAvgPrice != null
+                              ? `$${lifetimeAvgPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                              : `$${og.realizedPrice.toLocaleString()}`}
+                          </p>
+                          {lifetimeAvgPrice != null && (
+                            <p className="text-[10px] text-muted-foreground">Goal: ${og.realizedPrice.toLocaleString()}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1810,7 +1913,18 @@ const Index = () => {
           </DialogContent>
         </Dialog>
 
-          {teams.map((team) => (
+          {teams.map((team) => {
+            const teamLabels = phaseLabels[team.id] ?? {};
+            const teamPriorities = phasePriorities[team.id] ?? {};
+            const tabPhases = generateTestPhases(team.startDate, team.endDate, teamLabels, teamPriorities);
+            const anchorMonth = selectedMonth ?? new Date();
+            const phaseForMonth =
+              tabPhases.find(
+                (p) => p.year === anchorMonth.getFullYear() && p.month === anchorMonth.getMonth(),
+              ) ?? tabPhases[0];
+            const isPilotView = !!phaseForMonth && isPilotRegionPhaseLabel(phaseForMonth.label);
+            const pilotMonthIndex = phaseForMonth?.monthIndex ?? 0;
+            return (
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
                 team={getHistoricalTeam(team, referenceDate, teamGoalsHistory)}
@@ -1841,9 +1955,19 @@ const Index = () => {
                 collapsedSections={collapsedSections}
                 toggleSection={toggleSection}
                 reloadAll={reloadAll}
+                isPilotView={isPilotView}
+                pilotMonthIndex={pilotMonthIndex}
+                opsRows={opsRows}
+                demoRows={demoRows}
+                tamRows={tamRows}
+                metricsByWeek={metricsByWeek}
+                winsDetailRows={winsDetailRows}
+                salesTeams={salesTeams}
+                projectTeamAssignments={projectTeamAssignments}
               />
             </TabsContent>
-          ))}
+            );
+          })}
         </Tabs>
 
 
@@ -1909,6 +2033,15 @@ const TeamTab = memo(function TeamTab({
   collapsedSections,
   toggleSection,
   reloadAll,
+  isPilotView,
+  pilotMonthIndex,
+  opsRows,
+  demoRows,
+  tamRows,
+  metricsByWeek,
+  winsDetailRows,
+  salesTeams,
+  projectTeamAssignments,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -1935,6 +2068,15 @@ const TeamTab = memo(function TeamTab({
   collapsedSections: Record<string, boolean>;
   toggleSection: (key: string) => void;
   reloadAll: () => Promise<void>;
+  isPilotView: boolean;
+  pilotMonthIndex: number;
+  opsRows: Record<string, unknown>[];
+  demoRows: Record<string, unknown>[];
+  tamRows: Record<string, unknown>[];
+  metricsByWeek: MetricsByWeekBundle;
+  winsDetailRows: Record<string, unknown>[];
+  salesTeams: SalesTeam[];
+  projectTeamAssignments: ProjectTeamAssignment[];
 }) {
 
   const funnelDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -1952,6 +2094,18 @@ const TeamTab = memo(function TeamTab({
   const [editDialogTarget, setEditDialogTarget] = useState<{ memberId: string; weekKey: string } | null>(null);
   const [copiedMetricKey, setCopiedMetricKey] = useState<string | null>(null);
   const [forceOpenKey, setForceOpenKey] = useState<string | null>(null);
+
+  type PilotTeamSortCol = "team" | "avgMrrWithout" | "avgMrrWith" | "avgPrice" | "attachRate";
+  const [pilotTeamSortCol, setPilotTeamSortCol] = useState<PilotTeamSortCol>("team");
+  const [pilotTeamSortDir, setPilotTeamSortDir] = useState<"asc" | "desc">("asc");
+  const handlePilotTeamSort = (col: PilotTeamSortCol) => {
+    if (col === pilotTeamSortCol) {
+      setPilotTeamSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setPilotTeamSortCol(col);
+      setPilotTeamSortDir("asc");
+    }
+  };
 
   const confirmEditSubmission = () => {
     if (!editDialogName.trim() || !editDialogTarget) return;
@@ -2054,6 +2208,137 @@ const TeamTab = memo(function TeamTab({
     )
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  const lineItemTargets = team.overallGoal.lineItemTargets ?? [];
+  const opportunityFlags = team.overallGoal.opportunityFlags ?? [];
+  const pilotOpsForKpis = useMemo(
+    () => filterByOpportunityFlag(opsRows, opportunityFlags),
+    [opsRows, opportunityFlags],
+  );
+  const pilotOpsWithoutForKpis = useMemo(
+    () => filterByOpportunityFlagInverse(opsRows, opportunityFlags),
+    [opsRows, opportunityFlags],
+  );
+  const pilotCtx = useMemo(() => {
+    if (!isPilotView) return null;
+    return resolvePilotAssignments(projectTeamAssignments, salesTeams, team.id, pilotMonthIndex);
+  }, [isPilotView, projectTeamAssignments, salesTeams, team.id, pilotMonthIndex]);
+
+  const monthKeyPilot = pilotToMonthKey(referenceDate ?? new Date());
+
+  const pilotKpis = useMemo(() => {
+    if (!isPilotView || !pilotCtx) return null;
+    const { pilotRepNames } = pilotCtx;
+    if (pilotRepNames.size === 0) {
+      return {
+        winsBreak: { total: 0, growth: 0, nb: 0 },
+        ops: 0,
+        demos: 0,
+        losses: 0,
+        kpi: {
+          avgMrrWithout: null,
+          avgMrrWith: null,
+          avgPrice: null,
+          attachRate: null,
+        } as PilotKpiSnapshot,
+        repWinRows: [] as ReturnType<typeof pilotRepBreakdownWinsWithTarget>,
+        repLossRows: [] as ReturnType<typeof pilotRepBreakdownLossesInMonth>,
+      };
+    }
+    const winsBreak = getPilotWinsWithTargetBreakdown(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot);
+    return {
+      winsBreak,
+      ops: countPilotOpsInMonth(pilotOpsForKpis, pilotRepNames, monthKeyPilot),
+      demos: countPilotDemosInMonth(demoRows, pilotRepNames, monthKeyPilot),
+      losses: countPilotLossesInMonth(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
+      kpi: getPilotKpiSnapshot(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis),
+      repWinRows: pilotRepBreakdownWinsWithTarget(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
+      repLossRows: pilotRepBreakdownLossesInMonth(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
+    };
+  }, [isPilotView, pilotCtx, pilotOpsForKpis, pilotOpsWithoutForKpis, demoRows, lineItemTargets, monthKeyPilot]);
+
+  const pilotWowWeeks = useMemo(() => {
+    const allW = getTeamWeekKeys(team.startDate, team.endDate);
+    const curr = getCurrentWeekKey();
+    const completed = allW.filter((w) => w.key < curr);
+    const w1 = completed[completed.length - 1]?.key;
+    const w0 = completed[completed.length - 2]?.key;
+    return { w0: w0 ?? null, w1: w1 ?? null };
+  }, [team.startDate, team.endDate]);
+
+  const pilotRepOpsDemosMap = useMemo(() => {
+    if (!isPilotView || !pilotCtx) return new Map<string, { ops: number; demos: number }>();
+    const m = new Map<string, { ops: number; demos: number }>();
+    for (const rk of pilotCtx.pilotRepNames) m.set(rk, { ops: 0, demos: 0 });
+    for (const row of pilotOpsForKpis) {
+      const rk = (row.rep_name as string)?.toLowerCase().trim();
+      if (!pilotCtx.pilotRepNames.has(rk)) continue;
+      const d = row.op_created_date as string | null;
+      if (!d || d.slice(0, 7) !== monthKeyPilot) continue;
+      const cur = m.get(rk);
+      if (cur) cur.ops += 1;
+    }
+    for (const row of demoRows) {
+      const rk = (row.rep_name as string)?.toLowerCase().trim();
+      if (!pilotCtx.pilotRepNames.has(rk)) continue;
+      const d = row.demo_date as string | null;
+      if (!d || d.slice(0, 7) !== monthKeyPilot) continue;
+      const cur = m.get(rk);
+      if (cur) cur.demos += 1;
+    }
+    return m;
+  }, [isPilotView, pilotCtx, pilotOpsForKpis, demoRows, monthKeyPilot]);
+
+  const pilotTeamRows = useMemo(() => {
+    if (!pilotCtx) return [];
+    const w0 = pilotWowWeeks.w0;
+    const w1 = pilotWowWeeks.w1;
+    const rows = pilotCtx.pilotSalesTeams.map((st) => {
+      const asn = projectTeamAssignments.find(
+        (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
+      );
+      const repSet = repsForSalesTeam(st, asn);
+      const snap = getPilotKpiSnapshot(pilotOpsForKpis, repSet, lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis);
+      const accts = getPilotAccountNamesForTeam(pilotOpsForKpis, repSet, lineItemTargets, monthKeyPilot);
+      const prevW = w0 && w1 ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w0, pilotOpsWithoutForKpis) : null;
+      const lastW = w0 && w1 ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w1, pilotOpsWithoutForKpis) : null;
+      return { st, snap, accts, prevW, lastW };
+    });
+    const dir = pilotTeamSortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      if (pilotTeamSortCol === "team") {
+        return dir * pilotSalesTeamShortLabel(a.st.displayName).localeCompare(pilotSalesTeamShortLabel(b.st.displayName));
+      }
+      const getNum = (r: (typeof rows)[number]): number => {
+        switch (pilotTeamSortCol) {
+          case "avgMrrWithout":
+            return r.snap.avgMrrWithout ?? -Infinity;
+          case "avgMrrWith":
+            return r.snap.avgMrrWith ?? -Infinity;
+          case "avgPrice":
+            return r.snap.avgPrice ?? -Infinity;
+          case "attachRate":
+            return r.snap.attachRate ?? -Infinity;
+          default:
+            return -Infinity;
+        }
+      };
+      return dir * (getNum(a) - getNum(b));
+    });
+  }, [
+    pilotCtx,
+    pilotWowWeeks.w0,
+    pilotWowWeeks.w1,
+    projectTeamAssignments,
+    team.id,
+    pilotMonthIndex,
+    pilotOpsForKpis,
+    lineItemTargets,
+    monthKeyPilot,
+    pilotOpsWithoutForKpis,
+    pilotTeamSortCol,
+    pilotTeamSortDir,
+  ]);
+
   return (
     <div className="space-y-8">
       {/* ===== TEST SIGNALS ===== */}
@@ -2069,11 +2354,13 @@ const TeamTab = memo(function TeamTab({
               <ChevronDown className="h-5 w-5 text-primary shrink-0" />
             )}
             <h2 className="font-display text-2xl font-bold tracking-tight text-primary">
-              📡 Monthly Data
+              📡 {isPilotView ? "Monthly Data - Pilot Regions" : "Monthly Data"}
             </h2>
           </div>
         </div>
         {!collapsedSections["test-signals"] && <div className="space-y-6">
+          {!isPilotView && (
+          <>
           {/* Team Total Bar */}
           <div className="relative overflow-hidden rounded-2xl border-2 border-secondary/30 bg-gradient-to-br from-secondary via-secondary/90 to-secondary/80 p-6 shadow-xl">
             <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl" />
@@ -2812,9 +3099,448 @@ const TeamTab = memo(function TeamTab({
               </div>
             );
           })()}
+          </>
+          )}
+
+          {isPilotView && pilotCtx && pilotKpis && (
+          <>
+            <div className="relative overflow-hidden rounded-2xl border-2 border-secondary/30 bg-gradient-to-br from-secondary via-secondary/90 to-secondary/80 p-6 shadow-xl">
+              <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl" />
+              <div className="absolute -left-4 -bottom-4 h-24 w-24 rounded-full bg-primary/10 blur-xl" />
+              <div className="relative z-10">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-display text-2xl font-bold text-secondary-foreground tracking-tight">{team.name}</h3>
+                    <p className="text-sm font-medium text-secondary-foreground/70">Led by {team.owner}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex cursor-help items-center gap-2 text-right">
+                          <Scale className="h-5 w-5 text-secondary-foreground/70" />
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Regions</p>
+                            <p className="font-display text-2xl font-bold text-secondary-foreground">{pilotCtx.regionCount}</p>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[280px] p-3">
+                        <p className="text-xs font-semibold mb-2">Pilot teams</p>
+                        <ul className="text-xs space-y-1 text-muted-foreground">
+                          {pilotCtx.pilotSalesTeams.map((st) => {
+                            const asn = projectTeamAssignments.find(
+                              (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
+                            );
+                            const n = repsForSalesTeam(st, asn).size;
+                            return (
+                              <li key={st.id}>
+                                <span className="text-foreground font-medium">{st.displayName}</span>: {n} reps
+                              </li>
+                            );
+                          })}
+                          {pilotCtx.pilotSalesTeams.length === 0 && <li>None assigned for this month</li>}
+                        </ul>
+                      </TooltipContent>
+                    </UiTooltip>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex cursor-help items-center gap-2 text-right">
+                          <Users className="h-5 w-5 text-secondary-foreground/70" />
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Reps</p>
+                            <p className="font-display text-2xl font-bold text-secondary-foreground">{pilotCtx.repCount}</p>
+                          </div>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[320px] p-3">
+                        <p className="text-xs font-semibold mb-2">Rep activity ({monthKeyPilot})</p>
+                        <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
+                          {Array.from(pilotCtx.pilotRepNames).map((rk) => {
+                            const od = pilotRepOpsDemosMap.get(rk) ?? { ops: 0, demos: 0 };
+                            const wins = pilotKpis.repWinRows.find((r) => r.repKey === rk)?.wins ?? 0;
+                            const label = repNameToSentenceCase(
+                              pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
+                            );
+                            return (
+                              <li key={rk} className="flex justify-between gap-2">
+                                <span className="text-foreground truncate">{label}</span>
+                                <span className="text-muted-foreground tabular-nums shrink-0">
+                                  {od.ops} ops · {od.demos} demos · {wins} wins*
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        <p className="text-[10px] text-muted-foreground mt-2">*Wins with target line items</p>
+                      </TooltipContent>
+                    </UiTooltip>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="cursor-help text-right">
+                          <div className="font-display text-4xl font-black text-primary">{pilotKpis.winsBreak.total}</div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground/50">Wins</p>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[260px] p-3">
+                        <div className="text-xs space-y-2">
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">Total Growth Wins</span>
+                            <span className="font-semibold tabular-nums">{pilotKpis.winsBreak.growth}</span>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">Total New Business Wins</span>
+                            <span className="font-semibold tabular-nums">{pilotKpis.winsBreak.nb}</span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground pt-1 border-t border-border space-y-1">
+                            <p>
+                              Wins with configured line items only (
+                              {lineItemTargets.length ? lineItemTargets.join(", ") : "no targets set"})
+                            </p>
+                            <p>
+                              {opportunityFlags.length > 0 ? (
+                                <>
+                                  Opportunity flags (name must contain any):{" "}
+                                  {opportunityFlags.join(", ")}
+                                </>
+                              ) : (
+                                <>Opportunity flags: none — all opportunity names count</>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </UiTooltip>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                  {(() => {
+                    const repBreak = (snap: (rep: string) => PilotKpiSnapshot) =>
+                      Array.from(pilotCtx.pilotRepNames).map((rk) => {
+                        const k = snap(rk);
+                        const lab = repNameToSentenceCase(
+                          pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
+                        );
+                        return { label: lab, repKey: rk, snap: k };
+                      });
+                    const snapForRep = (rk: string) =>
+                      getPilotKpiSnapshot(pilotOpsForKpis, new Set([rk]), lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis);
+                    const top10bottom10 = (
+                      arr: Array<{ label: string; value: number; display?: string }>,
+                    ) => {
+                      const sorted = [...arr].sort((a, b) => b.value - a.value);
+                      if (sorted.length <= 20) return sorted;
+                      const top = sorted.slice(0, 10);
+                      const bottom = sorted.slice(-10);
+                      return [
+                        { label: "TOP", value: 0, isSectionLabel: true },
+                        ...top,
+                        { label: "", value: -1, isSeparator: true },
+                        { label: "BOTTOM", value: 0, isSectionLabel: true },
+                        ...bottom,
+                      ];
+                    };
+                    const b1 = repBreak(snapForRep).map(({ label, snap }) => ({
+                      label,
+                      value: snap.avgMrrWithout !== null ? Math.round(snap.avgMrrWithout) : 0,
+                      display: fmtPilotMoney(snap.avgMrrWithout),
+                    }));
+                    const b2 = repBreak(snapForRep).map(({ label, snap }) => ({
+                      label,
+                      value: snap.avgMrrWith !== null ? Math.round(snap.avgMrrWith) : 0,
+                      display: fmtPilotMoney(snap.avgMrrWith),
+                    }));
+                    const b3 = repBreak(snapForRep).map(({ label, snap }) => ({
+                      label,
+                      value: snap.avgPrice !== null ? Math.round(snap.avgPrice) : 0,
+                      display: fmtPilotMoney(snap.avgPrice),
+                    }));
+                    const b4 = top10bottom10(
+                      repBreak(snapForRep).map(({ label, snap }) => ({
+                        label,
+                        value: snap.attachRate ?? 0,
+                        display: fmtPilotAttach(snap.attachRate),
+                      })),
+                    );
+                    return (
+                      <>
+                        <StatCard
+                          icon={<TrendingUp className="h-5 w-5 text-primary" />}
+                          label="Avg MRR (without product)"
+                          value={fmtPilotMoney(pilotKpis.kpi.avgMrrWithout)}
+                          breakdown={top10bottom10(b1)}
+                        />
+                        <StatCard
+                          icon={<TrendingUp className="h-5 w-5 text-accent" />}
+                          label="Avg MRR (with product)"
+                          value={fmtPilotMoney(pilotKpis.kpi.avgMrrWith)}
+                          breakdown={top10bottom10(b2)}
+                        />
+                        <StatCard
+                          icon={<Handshake className="h-5 w-5 text-primary" />}
+                          label="Avg Price (of product)"
+                          value={fmtPilotMoney(pilotKpis.kpi.avgPrice)}
+                          breakdown={top10bottom10(b3)}
+                        />
+                        <StatCard
+                          icon={<Scale className="h-5 w-5 text-accent" />}
+                          label="Attach Rate"
+                          value={fmtPilotAttach(pilotKpis.kpi.attachRate)}
+                          breakdown={b4}
+                        />
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border-2 border-primary/30 bg-card p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                <h3 className="font-display text-sm font-bold uppercase tracking-wider text-primary">Monthly Stats</h3>
+                <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-[10px] font-semibold text-primary">
+                  {(referenceDate ?? new Date()).toLocaleString("en-US", { month: "short", year: "numeric" })}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard
+                  icon={<Handshake className="h-5 w-5 text-accent" />}
+                  label="Ops"
+                  value={pilotKpis.ops}
+                  breakdown={top20PilotMonthlyStatBreakdown(
+                    Array.from(pilotCtx.pilotRepNames).map((rk) => ({
+                      label: repNameToSentenceCase(
+                        pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
+                      ),
+                      value: pilotRepOpsDemosMap.get(rk)?.ops ?? 0,
+                    })),
+                  )}
+                />
+                <StatCard
+                  icon={<Video className="h-5 w-5 text-primary" />}
+                  label="Demos"
+                  value={pilotKpis.demos}
+                  breakdown={top20PilotMonthlyStatBreakdown(
+                    Array.from(pilotCtx.pilotRepNames).map((rk) => ({
+                      label: repNameToSentenceCase(
+                        pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
+                      ),
+                      value: pilotRepOpsDemosMap.get(rk)?.demos ?? 0,
+                    })),
+                  )}
+                />
+                <StatCard
+                  icon={<TrendingUp className="h-5 w-5 text-accent" />}
+                  label="Wins"
+                  value={pilotKpis.winsBreak.total}
+                  breakdown={top20PilotMonthlyStatBreakdown(
+                    pilotKpis.repWinRows.map((r) => ({
+                      label: repNameToSentenceCase(r.displayName),
+                      value: r.wins,
+                    })),
+                  )}
+                />
+                <StatCard
+                  icon={<TrendingDown className="h-5 w-5 text-destructive" />}
+                  label="Losses"
+                  value={pilotKpis.losses}
+                  breakdown={top20PilotMonthlyStatBreakdown(
+                    pilotKpis.repLossRows.map((r) => ({
+                      label: repNameToSentenceCase(r.displayName),
+                      value: r.losses,
+                    })),
+                  )}
+                />
+              </div>
+            </div>
+
+            <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
+              <h3 className="font-display text-lg font-semibold text-foreground mb-4">Monthly Goals (by team)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 pr-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <button
+                          type="button"
+                          onClick={() => handlePilotTeamSort("team")}
+                          className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                        >
+                          Team
+                          {pilotTeamSortCol === "team" ? (
+                            pilotTeamSortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[100px]">
+                        <button
+                          type="button"
+                          onClick={() => handlePilotTeamSort("avgMrrWithout")}
+                          className="inline-flex w-full items-center justify-center gap-1 hover:text-foreground transition-colors"
+                        >
+                          Avg MRR (w/o)
+                          {pilotTeamSortCol === "avgMrrWithout" ? (
+                            pilotTeamSortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[100px]">
+                        <button
+                          type="button"
+                          onClick={() => handlePilotTeamSort("avgMrrWith")}
+                          className="inline-flex w-full items-center justify-center gap-1 hover:text-foreground transition-colors"
+                        >
+                          Avg MRR (w/)
+                          {pilotTeamSortCol === "avgMrrWith" ? (
+                            pilotTeamSortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[100px]">
+                        <button
+                          type="button"
+                          onClick={() => handlePilotTeamSort("avgPrice")}
+                          className="inline-flex w-full items-center justify-center gap-1 hover:text-foreground transition-colors"
+                        >
+                          Avg Price
+                          {pilotTeamSortCol === "avgPrice" ? (
+                            pilotTeamSortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-center py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider min-w-[90px]">
+                        <button
+                          type="button"
+                          onClick={() => handlePilotTeamSort("attachRate")}
+                          className="inline-flex w-full items-center justify-center gap-1 hover:text-foreground transition-colors"
+                        >
+                          Attach Rate
+                          {pilotTeamSortCol === "attachRate" ? (
+                            pilotTeamSortDir === "asc" ? (
+                              <ArrowUp className="h-3 w-3 shrink-0" />
+                            ) : (
+                              <ArrowDown className="h-3 w-3 shrink-0" />
+                            )
+                          ) : (
+                            <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-40" />
+                          )}
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pilotTeamRows.map(({ st, snap, accts, prevW, lastW }) => {
+                      const w0 = pilotWowWeeks.w0;
+                      const w1 = pilotWowWeeks.w1;
+                      return (
+                        <tr key={st.id} className="border-b border-border/30">
+                          <td className="py-3 pr-3 font-medium text-foreground whitespace-nowrap">{pilotSalesTeamShortLabel(st.displayName)}</td>
+                          <td className="py-3 px-2 text-center">
+                            <UiTooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-pointer items-center justify-center gap-0.5 tabular-nums text-xs font-semibold">
+                                  {fmtPilotMoney(snap.avgMrrWithout)}
+                                  <WowArrow trend={w0 && w1 ? compareWow(lastW?.avgMrrWithout ?? null, prevW?.avgMrrWithout ?? null) : "flat"} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-md p-3">
+                                <p className="text-xs font-semibold mb-1">Accounts</p>
+                                <p className="text-xs text-muted-foreground">{accts.avgMrrWithout.join(", ") || "—"}</p>
+                              </TooltipContent>
+                            </UiTooltip>
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            <UiTooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-pointer items-center justify-center gap-0.5 tabular-nums text-xs font-semibold">
+                                  {fmtPilotMoney(snap.avgMrrWith)}
+                                  <WowArrow trend={w0 && w1 ? compareWow(lastW?.avgMrrWith ?? null, prevW?.avgMrrWith ?? null) : "flat"} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-md p-3">
+                                <p className="text-xs font-semibold mb-1">Accounts</p>
+                                <p className="text-xs text-muted-foreground">{accts.avgMrrWith.join(", ") || "—"}</p>
+                              </TooltipContent>
+                            </UiTooltip>
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            <UiTooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-pointer items-center justify-center gap-0.5 tabular-nums text-xs font-semibold">
+                                  {fmtPilotMoney(snap.avgPrice)}
+                                  <WowArrow trend={w0 && w1 ? compareWow(lastW?.avgPrice ?? null, prevW?.avgPrice ?? null) : "flat"} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-md p-3">
+                                <p className="text-xs font-semibold mb-1">Accounts</p>
+                                <p className="text-xs text-muted-foreground">{accts.avgPrice.join(", ") || "—"}</p>
+                              </TooltipContent>
+                            </UiTooltip>
+                          </td>
+                          <td className="py-3 px-2 text-center">
+                            <UiTooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex cursor-pointer items-center justify-center gap-0.5 tabular-nums text-xs font-semibold">
+                                  {fmtPilotAttach(snap.attachRate)}
+                                  <WowArrow trend={w0 && w1 ? compareWow(lastW?.attachRate ?? null, prevW?.attachRate ?? null) : "flat"} />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-md p-3">
+                                <p className="text-xs font-semibold mb-1">With target / All wins</p>
+                                <p className="text-xs text-muted-foreground mb-1">{accts.attachWithTarget.join(", ") || "—"}</p>
+                                <p className="text-xs font-semibold">All wins</p>
+                                <p className="text-xs text-muted-foreground">{accts.attachAllWins.join(", ") || "—"}</p>
+                              </TooltipContent>
+                            </UiTooltip>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {pilotCtx.pilotSalesTeams.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                          Assign pilot regions for this month to see team goals.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {pilotWowWeeks.w0 && pilotWowWeeks.w1 && (
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Arrows: WoW trend ({pilotWowWeeks.w0} → {pilotWowWeeks.w1}) on KPIs derived from wins in each week.
+                </p>
+              )}
+            </div>
+          </>
+          )}
 
           {/* Empty state */}
-          {activeMembers.length === 0 && (
+          {!isPilotView && activeMembers.length === 0 && (
             <div className="rounded-lg border border-border border-dashed bg-card/50 p-10 text-center glow-card">
               <Users className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
               <p className="mb-4 text-muted-foreground">No members yet on {team.name}</p>
@@ -2825,12 +3551,27 @@ const TeamTab = memo(function TeamTab({
           )}
 
           {/* Week Over Week */}
-          <WeekOverWeekView team={team} />
+          <WeekOverWeekView
+            team={team}
+            pilotFunnel={
+              isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0
+                ? {
+                    pilotSalesTeams: pilotCtx.pilotSalesTeams,
+                    projectTeamAssignments,
+                    teamId: team.id,
+                    pilotMonthIndex,
+                    metricsByWeek,
+                    tamRows,
+                    winsDetailRows,
+                  }
+                : undefined
+            }
+          />
         </div>}
       </div>
 
       {/* ===== WEEKLY DATA GRID ===== */}
-      {members.length > 0 && (
+      {(members.length > 0 || (isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0)) && (
         <div id="weekly-data" className="scroll-mt-16">
           <div
             className="mb-5 rounded-xl bg-secondary px-6 py-4 shadow-lg cursor-pointer select-none"
@@ -2851,7 +3592,9 @@ const TeamTab = memo(function TeamTab({
             <table className="w-full text-sm border-separate border-spacing-0">
               <thead>
                 <tr className="border-b border-border">
-                  <th ref={playerColRef} className="sticky left-0 z-30 bg-card text-left py-2 pl-5 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Player</th>
+                  <th ref={playerColRef} className="sticky left-0 z-30 bg-card text-left py-2 pl-5 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                    {isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0 ? "Team" : "Player"}
+                  </th>
                   <th className="sticky z-20 bg-card text-left py-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap" style={{ left: playerColW }}>Metric</th>
                   {interleavedCols.map((col) =>
                     col.type === "week" ? (
@@ -2865,9 +3608,165 @@ const TeamTab = memo(function TeamTab({
               </thead>
               <tbody>
                 {(() => {
-                  const hasMetricsTam = members.some((m) => m.touchedTam > 0);
                   const weeks = teamWeeks;
                   const weekKeyList = weeks.map((wk) => wk.key);
+                  if (isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0) {
+                    const hasMetricsTamPilot = pilotCtx.pilotSalesTeams.some((st) => {
+                      const asn = projectTeamAssignments.find(
+                        (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
+                      );
+                      return tamSumForReps(tamRows, repsForSalesTeam(st, asn)) > 0;
+                    });
+                    return pilotCtx.pilotSalesTeams.map((st) => {
+                      const assignment = projectTeamAssignments.find(
+                        (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
+                      );
+                      const repSet = repsForSalesTeam(st, assignment);
+                      const teamTam = tamSumForReps(tamRows, repSet);
+                      const pilotFunnelVal = (metKey: keyof FunnelData, wk: string) =>
+                        metKey === "tam"
+                          ? hasMetricsTamPilot
+                            ? teamTam
+                            : 0
+                          : metKey === "wins"
+                            ? pilotWinsInWeek(metricsByWeek, winsDetailRows, team.overallGoal.opportunityFlags, repSet, wk)
+                            : sumMetricForRepsInWeek(metricsByWeek, metKey, repSet, wk);
+                      const allMetricRows: { label: string; key: keyof FunnelData }[] = [
+                        { label: "TAM", key: "tam" },
+                        { label: "Activity", key: "activity" },
+                        { label: "Call", key: "calls" },
+                        { label: "Connect", key: "connects" },
+                        { label: "Ops", key: "ops" },
+                        { label: "Demo", key: "demos" },
+                        { label: "Win", key: "wins" },
+                        { label: "Feedback", key: "feedback" },
+                      ];
+                      const alwaysShow = new Set<string>(["tam", "connects", "wins", "activity"]);
+                      const metricRows = allMetricRows.filter(
+                        (r) => alwaysShow.has(r.key) || team.enabledGoals[r.key as keyof typeof team.enabledGoals],
+                      );
+                      const convRates: { label: string; numKey?: keyof FunnelData; denKey?: keyof FunnelData; touchRate?: boolean }[] = hasMetricsTamPilot
+                        ? [
+                            { label: "% TAM", touchRate: true },
+                            { label: "Call→Con %", numKey: "connects", denKey: "calls" },
+                            { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
+                            { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
+                          ]
+                        : [
+                            { label: "TAM→Call %", numKey: "calls", denKey: "tam" },
+                            { label: "Call→Con %", numKey: "connects", denKey: "calls" },
+                            { label: "Con→Demo %", numKey: "demos", denKey: "connects" },
+                            { label: "Demo→Win %", numKey: "wins", denKey: "demos" },
+                          ];
+                      const allRows = [
+                        ...metricRows.map((met, metIdx) => (
+                          <tr key={`${st.id}-${met.key}`} className={`${metIdx === 0 ? "border-t-2 border-border" : ""}`}>
+                            {metIdx === 0 && (
+                              <td
+                                rowSpan={metricRows.length + convRates.length}
+                                className="sticky left-0 z-30 bg-card py-2 pl-5 pr-2 font-semibold align-top border-r border-border/50 whitespace-nowrap text-foreground"
+                              >
+                                {st.displayName}
+                              </td>
+                            )}
+                            <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
+                            {interleavedCols.map((col) => {
+                              if (col.type === "week") {
+                                const val = pilotFunnelVal(met.key, col.key);
+                                return (
+                                  <td key={col.key} className="text-center py-1 px-2 text-foreground tabular-nums">
+                                    {val > 0 ? val : <span className="text-muted-foreground/40">—</span>}
+                                  </td>
+                                );
+                              }
+                              const moVal =
+                                met.key === "tam"
+                                  ? hasMetricsTamPilot
+                                    ? teamTam
+                                    : 0
+                                  : col.weekKeys.reduce((s, wk) => s + pilotFunnelVal(met.key, wk), 0);
+                              return (
+                                <td key={`mo-${col.key}`} className="text-center py-1 px-2 font-semibold text-foreground tabular-nums bg-muted/30">
+                                  {moVal > 0 ? moVal : <span className="text-muted-foreground/40">—</span>}
+                                </td>
+                              );
+                            })}
+                            <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-primary tabular-nums">
+                              {met.key === "tam"
+                                ? hasMetricsTamPilot
+                                  ? teamTam || "—"
+                                  : "—"
+                                : weeks.reduce((s, w) => s + pilotFunnelVal(met.key, w.key), 0)}
+                            </td>
+                          </tr>
+                        )),
+                        ...convRates.map((cr) => (
+                          <tr key={`${st.id}-${cr.label}`} className="bg-muted/30">
+                            <td className="sticky z-20 bg-card py-1 px-2 text-xs font-medium text-accent whitespace-nowrap" style={{ left: playerColW }}>{cr.label}</td>
+                            {cr.touchRate ? (
+                              interleavedCols.map((col) => (
+                                <td
+                                  key={col.type === "week" ? col.key : `mo-${col.key}`}
+                                  className={`text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold ${col.type === "month" ? "bg-muted/30" : ""}`}
+                                >
+                                  <span className="text-muted-foreground/40">—</span>
+                                </td>
+                              ))
+                            ) : (
+                              interleavedCols.map((col) => {
+                                if (col.type === "week") {
+                                  const den =
+                                    cr.denKey === "tam"
+                                      ? hasMetricsTamPilot
+                                        ? teamTam
+                                        : 0
+                                      : pilotFunnelVal(cr.denKey!, col.key);
+                                  const num = pilotFunnelVal(cr.numKey!, col.key);
+                                  const pct = den > 0 ? ((num / den) * 100).toFixed(0) : "—";
+                                  return (
+                                    <td key={col.key} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold">
+                                      {pct === "—" ? <span className="text-muted-foreground/40">—</span> : `${pct}%`}
+                                    </td>
+                                  );
+                                }
+                                const moDen =
+                                  cr.denKey === "tam"
+                                    ? hasMetricsTamPilot
+                                      ? teamTam * col.weekKeys.length
+                                      : 0
+                                    : col.weekKeys.reduce((s, wk) => s + pilotFunnelVal(cr.denKey!, wk), 0);
+                                const moNum = col.weekKeys.reduce((s, wk) => s + pilotFunnelVal(cr.numKey!, wk), 0);
+                                const moPct = moDen > 0 ? ((moNum / moDen) * 100).toFixed(0) : "—";
+                                return (
+                                  <td key={`mo-${col.key}`} className="text-center py-1 px-2 text-accent tabular-nums text-xs font-semibold bg-muted/30">
+                                    {moPct === "—" ? <span className="text-muted-foreground/40">—</span> : `${moPct}%`}
+                                  </td>
+                                );
+                              })
+                            )}
+                            <td className="sticky right-0 z-10 bg-card text-center py-1 pl-2 pr-5 font-semibold text-accent tabular-nums text-xs">
+                              {cr.touchRate ? (
+                                "—"
+                              ) : (
+                                (() => {
+                                  const totalDen =
+                                    cr.denKey === "tam"
+                                      ? hasMetricsTamPilot
+                                        ? teamTam * weeks.length
+                                        : 0
+                                      : weeks.reduce((s, w) => s + pilotFunnelVal(cr.denKey!, w.key), 0);
+                                  const totalNum = weeks.reduce((s, w) => s + pilotFunnelVal(cr.numKey!, w.key), 0);
+                                  return totalDen > 0 ? `${((totalNum / totalDen) * 100).toFixed(0)}%` : "—";
+                                })()
+                              )}
+                            </td>
+                          </tr>
+                        )),
+                      ];
+                      return allRows;
+                    }).flat();
+                  }
+                  const hasMetricsTam = members.some((m) => m.touchedTam > 0);
                   return members.map((m, mIdx) => {
                     const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                       { label: "TAM", key: "tam" },
@@ -2987,6 +3886,8 @@ const TeamTab = memo(function TeamTab({
                     return allRows;
                   });
                 })()}
+                {!isPilotView && (
+                <>
                 {/* ── Team Monthly Aggregate ── */}
                 <tr>
                   <td colSpan={interleavedCols.length + 3} className="py-0">
@@ -3115,6 +4016,8 @@ const TeamTab = memo(function TeamTab({
                     )),
                   ];
                 })()}
+                </>
+                )}
               </tbody>
             </table>
           </div>}
@@ -3444,13 +4347,48 @@ function getDefaultMetrics(team: Team): Set<string> {
   return defaults;
 }
 
-function WeekOverWeekView({ team }: { team: Team }) {
+type WeekOverWeekPilotFunnel = {
+  pilotSalesTeams: SalesTeam[];
+  projectTeamAssignments: ProjectTeamAssignment[];
+  teamId: string;
+  pilotMonthIndex: number;
+  metricsByWeek: MetricsByWeekBundle;
+  tamRows: Record<string, unknown>[];
+  winsDetailRows: Record<string, unknown>[];
+};
+
+type PilotFunnelRow = { id: string; name: string; repKeys: Set<string>; tamTotal: number };
+
+function WeekOverWeekView({
+  team,
+  pilotFunnel,
+}: {
+  team: Team;
+  pilotFunnel?: WeekOverWeekPilotFunnel;
+}) {
   const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(() => getDefaultMetrics(team));
   const [chartRange, setChartRange] = useState<ChartRange>(readChartRange);
   useEffect(() => { setSelectedMetrics(getDefaultMetrics(team)); }, [team.id]);
   const chartColors = useChartColors();
   const members = team.members;
+
+  const pilotRows: PilotFunnelRow[] | null = (() => {
+    if (!pilotFunnel?.pilotSalesTeams.length) return null;
+    const { pilotSalesTeams, projectTeamAssignments, teamId, pilotMonthIndex, tamRows } = pilotFunnel;
+    return pilotSalesTeams.map((st) => {
+      const asn = projectTeamAssignments.find(
+        (a) => a.teamId === teamId && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
+      );
+      const repKeys = repsForSalesTeam(st, asn);
+      return { id: st.id, name: st.displayName, repKeys, tamTotal: tamSumForReps(tamRows, repKeys) };
+    });
+  })();
+
+  const isPilotChart = pilotRows !== null && pilotRows.length > 0;
+  const bundle = pilotFunnel?.metricsByWeek;
+  const pilotWinsDetailRows = pilotFunnel?.winsDetailRows;
+  const pilotOppFlag = team.overallGoal.opportunityFlags;
 
   const allWeeks = getTeamWeekKeys(team.startDate, team.endDate);
   const maxWeeks = chartRange === "all" ? allWeeks.length : parseInt(chartRange);
@@ -3482,23 +4420,60 @@ function WeekOverWeekView({ team }: { team: Team }) {
   ];
 
   const weekKeyList = weeks.map((w) => w.key);
-  const hasMetricsTam = members.some((m) => m.touchedTam > 0);
+  const hasMetricsTam = isPilotChart
+    ? (pilotRows ?? []).some((p) => p.tamTotal > 0)
+    : members.some((m) => m.touchedTam > 0);
 
   const chartData = weeks.map((week) => {
-    const row: any = { week: week.label };
+    const row: Record<string, unknown> = { week: week.label };
+    if (isPilotChart && pilotRows && bundle) {
+      metricKeys.forEach(({ key, label }) => {
+        if (key === "tam") {
+          row[label] = hasMetricsTam
+            ? pilotRows.reduce((s, p) => s + p.tamTotal, 0)
+            : 0;
+        } else {
+          row[label] = pilotRows.reduce(
+            (s, p) =>
+              s +
+              (key === "wins"
+                ? pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, week.key)
+                : sumMetricForRepsInWeek(bundle, key, p.repKeys, week.key)),
+            0,
+          );
+        }
+      });
+      pilotRows.forEach((p, pi) => {
+        if (!selectedPlayers.has(p.id)) return;
+        metricKeys.forEach(({ key, label }) => {
+          row[`${p.name} ${label}`] =
+            key === "tam"
+              ? (hasMetricsTam ? p.tamTotal : 0)
+              : key === "wins"
+                ? pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, week.key)
+                : sumMetricForRepsInWeek(bundle, key, p.repKeys, week.key);
+        });
+      });
+      row._roles = {};
+      return row;
+    }
     metricKeys.forEach(({ key, label }) => {
-      row[label] = key === "tam"
-        ? (hasMetricsTam
+      row[label] =
+        key === "tam"
+          ? hasMetricsTam
             ? members.reduce((s, m) => s + m.touchedTam, 0)
-            : members.reduce((s, m) => s + getCarriedTam(m, week.key, weekKeyList), 0))
-        : members.reduce((s, m) => s + getMemberFunnel(m, week.key)[key], 0);
+            : members.reduce((s, m) => s + getCarriedTam(m, week.key, weekKeyList), 0)
+          : members.reduce((s, m) => s + getMemberFunnel(m, week.key)[key], 0);
     });
     members.forEach((m) => {
       if (selectedPlayers.has(m.id)) {
         metricKeys.forEach(({ key, label }) => {
-          row[`${m.name} ${label}`] = key === "tam"
-            ? (hasMetricsTam ? m.touchedTam : getCarriedTam(m, week.key, weekKeyList))
-            : getMemberFunnel(m, week.key)[key];
+          row[`${m.name} ${label}`] =
+            key === "tam"
+              ? hasMetricsTam
+                ? m.touchedTam
+                : getCarriedTam(m, week.key, weekKeyList)
+              : getMemberFunnel(m, week.key)[key];
         });
       }
     });
@@ -3530,6 +4505,8 @@ function WeekOverWeekView({ team }: { team: Team }) {
   };
 
   const selectedMembers = members.filter((m) => selectedPlayers.has(m.id));
+  const selectedPilotRows =
+    isPilotChart && pilotRows ? pilotRows.filter((p) => selectedPlayers.has(p.id)) : [];
   const PLAYER_COLORS = [
     "hsl(350, 60%, 58%)",
     "hsl(180, 45%, 48%)",
@@ -3613,44 +4590,67 @@ function WeekOverWeekView({ team }: { team: Team }) {
               ) : null
             )}
             
-            {members.map((m, i) =>
-              selectedPlayers.has(m.id)
+            {(isPilotChart && pilotRows ? pilotRows : members).map((ent, i) => {
+              const id = isPilotChart ? (ent as PilotFunnelRow).id : (ent as TeamMember).id;
+              const name = isPilotChart ? (ent as PilotFunnelRow).name : (ent as TeamMember).name;
+              return selectedPlayers.has(id)
                 ? metricKeys.filter(({ label }) => selectedMetrics.has(label)).map(({ label }) => (
-                    <Line key={`${m.id}-${label}`} type="monotone" dataKey={`${m.name} ${label}`} stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3 }} />
+                    <Line key={`${id}-${label}`} type="monotone" dataKey={`${name} ${label}`} stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3 }} />
                   ))
-                : null
-            )}
+                : null;
+            })}
           </LineChart>
         </ResponsiveContainer>
       </div>
 
-      {members.length > 0 && (
+      {(members.length > 0 || isPilotChart) && (
         <div className="mt-4 border-t border-border pt-3">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Select players</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            {isPilotChart ? "Select teams" : "Select players"}
+          </p>
           <div className="flex flex-wrap gap-2">
-            {members.map((m, i) => {
-              const isActive = selectedPlayers.has(m.id);
-              const weekFunnel = getMemberFunnel(m, currentWeek) as WeeklyFunnel;
-              const role = weekFunnel.role || "—";
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => togglePlayer(m.id)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all flex flex-col items-center ${
-                    isActive
-                      ? "shadow"
-                      : `bg-muted text-muted-foreground hover:bg-muted/80 ${!m.isActive ? "opacity-50" : ""}`
-                  }`}
-                  style={isActive ? { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length], color: "white" } : {}}
-                >
-                  <span>{m.name}{!m.isActive ? " (Former)" : ""}</span>
-                  <span className="text-[10px] opacity-70 font-normal">{role}</span>
-                </button>
-              );
-            })}
+            {isPilotChart && pilotRows
+              ? pilotRows.map((p, i) => {
+                  const isActive = selectedPlayers.has(p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => togglePlayer(p.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all flex flex-col items-center ${
+                        isActive ? "shadow" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                      style={isActive ? { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length], color: "white" } : {}}
+                    >
+                      <span>{p.name}</span>
+                      <span className="text-[10px] opacity-70 font-normal">Pilot region</span>
+                    </button>
+                  );
+                })
+              : members.map((m, i) => {
+                  const isActive = selectedPlayers.has(m.id);
+                  const weekFunnel = getMemberFunnel(m, currentWeek) as WeeklyFunnel;
+                  const role = weekFunnel.role || "—";
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => togglePlayer(m.id)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all flex flex-col items-center ${
+                        isActive
+                          ? "shadow"
+                          : `bg-muted text-muted-foreground hover:bg-muted/80 ${!m.isActive ? "opacity-50" : ""}`
+                      }`}
+                      style={isActive ? { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length], color: "white" } : {}}
+                    >
+                      <span>{m.name}{!m.isActive ? " (Former)" : ""}</span>
+                      <span className="text-[10px] opacity-70 font-normal">{role}</span>
+                    </button>
+                  );
+                })}
           </div>
 
-          {selectedMembers.length > 0 && (
+          {!isPilotChart && selectedMembers.length > 0 && (
             <div className="mt-3 space-y-2">
               {selectedMembers.map((m) => {
                 const validWeeks = weeks.filter((w) => {
@@ -3670,7 +4670,7 @@ function WeekOverWeekView({ team }: { team: Team }) {
                       wins: acc.wins + (f.wins || 0),
                     };
                   },
-                  { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 }
+                  { tam: 0, calls: 0, connects: 0, demos: 0, wins: 0 },
                 );
                 const firstConvRate = hasMetricsTam
                   ? (m.touchedTam > 0 ? Math.min(100, ((m.touchedAccountsByTeam[team.id] ?? 0) / m.touchedTam) * 100) : 0)
@@ -3681,6 +4681,47 @@ function WeekOverWeekView({ team }: { team: Team }) {
                 return (
                   <div key={m.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                     <span className="font-semibold" style={{ color: PLAYER_COLORS[members.indexOf(m) % PLAYER_COLORS.length] }}>{m.name}:</span>
+                    <span>{hasMetricsTam ? "% TAM" : "TAM→Call"}: <strong className="text-foreground">{firstConvRate.toFixed(0)}%</strong></span>
+                    <span>Call→Connect: <strong className="text-foreground">{callToConnect.toFixed(0)}%</strong></span>
+                    <span>Connect→Demo: <strong className="text-foreground">{connectToDemo.toFixed(0)}%</strong></span>
+                    <span>Demo→Win: <strong className="text-foreground">{demoToWin.toFixed(0)}%</strong></span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {isPilotChart && bundle && selectedPilotRows.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {selectedPilotRows.map((p) => {
+                const idx = pilotRows!.indexOf(p);
+                const validWeeks = weeks.filter((w) => {
+                  const tam = hasMetricsTam ? p.tamTotal : 0;
+                  const calls = sumMetricForRepsInWeek(bundle, "calls", p.repKeys, w.key);
+                  const connects = sumMetricForRepsInWeek(bundle, "connects", p.repKeys, w.key);
+                  const demos = sumMetricForRepsInWeek(bundle, "demos", p.repKeys, w.key);
+                  const wins = pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, w.key);
+                  return tam > 0 || calls > 0 || connects > 0 || demos > 0 || wins > 0;
+                });
+                const totals = validWeeks.reduce(
+                  (acc, w) => ({
+                    tam: acc.tam,
+                    calls: acc.calls + sumMetricForRepsInWeek(bundle, "calls", p.repKeys, w.key),
+                    connects: acc.connects + sumMetricForRepsInWeek(bundle, "connects", p.repKeys, w.key),
+                    demos: acc.demos + sumMetricForRepsInWeek(bundle, "demos", p.repKeys, w.key),
+                    wins: acc.wins + pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, w.key),
+                  }),
+                  { tam: hasMetricsTam ? 0 : p.tamTotal, calls: 0, connects: 0, demos: 0, wins: 0 },
+                );
+                const firstConvRate = hasMetricsTam
+                  ? (p.tamTotal > 0 ? Math.min(100, (totals.calls / p.tamTotal) * 100) : 0)
+                  : (totals.tam > 0 ? (totals.calls / totals.tam) * 100 : 0);
+                const callToConnect = totals.calls > 0 ? (totals.connects / totals.calls) * 100 : 0;
+                const connectToDemo = totals.connects > 0 ? (totals.demos / totals.connects) * 100 : 0;
+                const demoToWin = totals.demos > 0 ? (totals.wins / totals.demos) * 100 : 0;
+                return (
+                  <div key={p.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span className="font-semibold" style={{ color: PLAYER_COLORS[idx % PLAYER_COLORS.length] }}>{p.name}:</span>
                     <span>{hasMetricsTam ? "% TAM" : "TAM→Call"}: <strong className="text-foreground">{firstConvRate.toFixed(0)}%</strong></span>
                     <span>Call→Connect: <strong className="text-foreground">{callToConnect.toFixed(0)}%</strong></span>
                     <span>Connect→Demo: <strong className="text-foreground">{connectToDemo.toFixed(0)}%</strong></span>
@@ -3702,6 +4743,14 @@ function fmtNum(v: string | number): string {
   return Number.isFinite(n) ? n.toLocaleString() : v;
 }
 
+type StatCardBreakdownRow = {
+  label: string;
+  value: number;
+  display?: string;
+  isSeparator?: boolean;
+  isSectionLabel?: boolean;
+};
+
 function StatCard({
   icon,
   label,
@@ -3713,7 +4762,7 @@ function StatCard({
   label: string;
   value: string | number;
   tooltip?: string;
-  breakdown?: Array<{ label: string; value: number }>;
+  breakdown?: StatCardBreakdownRow[];
 }) {
   const card = (
     <div className={`flex items-center gap-3 rounded-lg border border-border bg-card p-4 glow-card ${tooltip || breakdown ? "cursor-help" : ""}`}>
@@ -3725,24 +4774,37 @@ function StatCard({
     </div>
   );
 
-  if (!tooltip && !breakdown) return card;
+  if (!tooltip && (!breakdown || breakdown.length === 0)) return card;
 
   return (
     <UiTooltip>
       <TooltipTrigger asChild>{card}</TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[220px]">
+      <TooltipContent side="top" className="max-w-[260px]">
         <div className="space-y-2">
           {tooltip && <p className="text-xs leading-relaxed">{tooltip}</p>}
           {breakdown && breakdown.length > 0 && (
             <>
               <div className="h-px bg-accent/20" />
               <div className="space-y-1 text-xs">
-                {breakdown.map((r) => (
-                  <div key={r.label} className="flex items-center justify-between gap-3">
-                    <span className="text-muted-foreground truncate">{r.label}</span>
-                    <span className="font-medium text-foreground whitespace-nowrap">{fmtNum(r.value)}</span>
-                  </div>
-                ))}
+                {breakdown.map((r, i) =>
+                  r.isSeparator ? (
+                    <div key={`sep-${i}`} className="border-t border-dashed border-accent/30 my-0.5" />
+                  ) : r.isSectionLabel ? (
+                    <div
+                      key={`sec-${i}-${r.label}`}
+                      className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground pt-1 first:pt-0"
+                    >
+                      {r.label}
+                    </div>
+                  ) : (
+                    <div key={`${i}-${r.label}`} className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground truncate">{r.label}</span>
+                      <span className="font-medium text-foreground whitespace-nowrap">
+                        {r.display ?? fmtNum(r.value)}
+                      </span>
+                    </div>
+                  ),
+                )}
                 <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
                   <span className="font-semibold text-foreground">Total</span>
                   <span className="font-semibold text-accent whitespace-nowrap">{fmtNum(value)}</span>

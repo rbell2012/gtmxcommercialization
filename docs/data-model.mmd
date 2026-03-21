@@ -34,6 +34,7 @@ erDiagram
         jsonb basic_accelerator_config
         jsonb team_goals_by_level
         jsonb goal_scope_config
+        text attributed_rep_member_id "FK logical → members.id; attributed wins path"
         text mission_purpose
         bool mission_submitted
         timestamptz mission_last_edit
@@ -227,6 +228,7 @@ erDiagram
         text gtmx_team
         text account_prospecting_notes
         text opportunity_type
+        numeric opportunity_software_mrr
         timestamptz created_at
         timestamptz updated_at
     }

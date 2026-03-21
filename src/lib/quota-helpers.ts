@@ -1,4 +1,13 @@
-import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames } from "@/contexts/TeamsContext";
+import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames, type ProjectTeamAssignment, type SalesTeam } from "@/contexts/TeamsContext";
+import { getPilotPhaseWinsCount } from "@/lib/pilot-helpers";
+
+/** Optional context so Test Phases wins match Pilot Regions KPI for pilot-labeled months. */
+export type PhaseWinsContext = {
+  opsRows: Record<string, unknown>[];
+  projectTeamAssignments: ProjectTeamAssignment[];
+  salesTeams: SalesTeam[];
+  resolveTeamPhase: (team: Team) => { monthIndex: number; label: string } | null;
+};
 
 /**
  * Sum a single metric for a calendar month using monthlyMetrics (which
@@ -86,16 +95,37 @@ export function getTeamMetricTotal(team: Team, metric: GoalMetric, referenceDate
     .reduce((sum, m) => sum + getMemberMetricTotal(m, metric, referenceDate), 0);
 }
 
-export function getPhaseWinsLabel(teams: Team[], year: number, month: number): string {
+function memberWinsSumForMonth(team: Team, phaseDate: Date): number {
+  return (team.members ?? []).reduce((s, m) => s + getMemberMetricTotal(m, "wins", phaseDate), 0);
+}
+
+export function getPhaseWinsLabel(teams: Team[], year: number, month: number, opts?: PhaseWinsContext): string {
   const phaseDate = new Date(year, month, 15);
   let totalWins = 0;
   let totalGoal = 0;
   for (const team of teams) {
-    totalWins += (team.members ?? []).reduce((s, m) => s + getMemberMetricTotal(m, 'wins', phaseDate), 0);
+    const phaseMeta = opts?.resolveTeamPhase(team) ?? null;
+    let winsForTeam: number;
+    if (opts && phaseMeta) {
+      const pilot = getPilotPhaseWinsCount(
+        team,
+        phaseMeta.label,
+        phaseMeta.monthIndex,
+        year,
+        month,
+        opts.opsRows,
+        opts.projectTeamAssignments,
+        opts.salesTeams,
+      );
+      winsForTeam = pilot !== null ? pilot : memberWinsSumForMonth(team, phaseDate);
+    } else {
+      winsForTeam = memberWinsSumForMonth(team, phaseDate);
+    }
+    totalWins += winsForTeam;
     if (team.enabledGoals?.wins) {
       totalGoal += (team.members ?? [])
         .filter((m) => m.isActive)
-        .reduce((s, m) => s + getEffectiveGoal(team, m, 'wins'), 0);
+        .reduce((s, m) => s + getEffectiveGoal(team, m, "wins"), 0);
     }
   }
   return totalGoal > 0 ? `${totalWins} / ${totalGoal} wins` : `${totalWins} wins`;

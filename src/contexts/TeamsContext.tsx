@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useMemo, u
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment } from "@/lib/database.types";
-import { isWinStage } from "@/lib/metrics-helpers";
+import { dateToMonthKey, dateToWeekKey, isWinStage } from "@/lib/metrics-helpers";
 
 // ── Goal metrics system ──
 
@@ -102,6 +102,8 @@ export interface OverallGoalConfig {
   realizedPrice: number;
   /** Exact product names from metrics_ops.line_items to sum (pilot regions) */
   lineItemTargets: string[];
+  /** When non-empty, only opps whose name contains ANY of these substrings count toward wins / pilot KPIs */
+  opportunityFlags: string[];
 }
 
 export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
@@ -114,6 +116,7 @@ export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
   realizedPriceEnabled: false,
   realizedPrice: 0,
   lineItemTargets: [],
+  opportunityFlags: [],
 };
 
 function parseLineItemTargetsFromDb(raw: string | null | undefined): string[] {
@@ -233,6 +236,8 @@ export interface Team {
   teamGoalsByLevel: TeamGoalsByLevel;
   goalScopeConfig: GoalScopeConfig;
   reliefMonthMembers: string[];
+  /** When set with opportunityFlags + lineItemTargets, lifetime wins use opsRows attribution */
+  attributedRepMemberId: string | null;
   members: TeamMember[];
 }
 
@@ -458,10 +463,16 @@ interface CachedMetrics {
   opsTypesByMonth: WinTypeAgg;
   opsTypeNamesByMonth: WinTypeNamesAgg;
   opsRows: Record<string, unknown>[];
+  demoRows: Record<string, unknown>[];
   actRows: Record<string, unknown>[];
   shRows: Record<string, unknown>[];
   tamRows: Record<string, unknown>[];
+  /** metrics_wins rows merged with win_stage_date; used for per-team opportunity name filtering */
+  winsDetailRows: Record<string, unknown>[];
 }
+
+/** Weekly pipeline counts by rep key (lowercased) then ISO week key */
+export type MetricsByWeekBundle = CachedMetrics["byWeek"];
 
 // ── helpers to convert between DB rows and app shapes ──
 
@@ -597,6 +608,7 @@ function assembleTeams(
         realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
         realizedPrice: t.overall_goal_realized_price ?? 0,
         lineItemTargets: parseLineItemTargetsFromDb(t.overall_goal_line_item_targets),
+        opportunityFlags: parseLineItemTargetsFromDb(t.overall_goal_opportunity_flag),
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
@@ -604,6 +616,7 @@ function assembleTeams(
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       reliefMonthMembers: (t.relief_month_members as string[]) ?? [],
+      attributedRepMemberId: t.attributed_rep_member_id ?? null,
       members: sortedDbMembers.filter((m) => m.team_id === t.id).map(toAppMember),
     }));
 
@@ -677,6 +690,14 @@ interface TeamsContextType {
   loading: boolean;
   /** Raw metrics_ops rows (includes line_items when loaded) */
   opsRows: Record<string, unknown>[];
+  /** Raw metrics_demos rows */
+  demoRows: Record<string, unknown>[];
+  /** Raw metrics_tam rows */
+  tamRows: Record<string, unknown>[];
+  /** Pipeline metrics aggregated by week per rep (for pilot team rollups) */
+  metricsByWeek: MetricsByWeekBundle;
+  /** Qualified metrics_wins rows with _effective_date; for pilot weekly wins when opportunity flag is set */
+  winsDetailRows: Record<string, unknown>[];
 }
 
 const TeamsContext = createContext<TeamsContextType | null>(null);
@@ -727,6 +748,18 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [projectedBookings, setProjectedBookings] = useState<ProjectedBooking[]>([]);
   const [projectTeamAssignments, setProjectTeamAssignments] = useState<ProjectTeamAssignment[]>([]);
   const [opsRows, setOpsRows] = useState<Record<string, unknown>[]>([]);
+  const [demoRows, setDemoRows] = useState<Record<string, unknown>[]>([]);
+  const [winsDetailRows, setWinsDetailRows] = useState<Record<string, unknown>[]>([]);
+  const [tamRows, setTamRows] = useState<Record<string, unknown>[]>([]);
+  const [metricsByWeek, setMetricsByWeek] = useState<MetricsByWeekBundle>({
+    activity: new Map(),
+    calls: new Map(),
+    connects: new Map(),
+    demos: new Map(),
+    ops: new Map(),
+    wins: new Map(),
+    feedback: new Map(),
+  });
   const [loading, setLoading] = useState(true);
 
   const cachedMetricsRef = useRef<CachedMetrics | null>(null);
@@ -742,23 +775,16 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       fetchAllRows("metrics_demos", "rep_name, demo_date, account_name"),
       fetchAllRows(
         "metrics_ops",
-        "id, rep_name, op_date, op_created_date, opportunity_name, win_stage_date, opportunity_type, opportunity_software_mrr, line_items"
+        "id, rep_name, op_date, op_created_date, opportunity_name, opportunity_stage, win_stage_date, opportunity_type, opportunity_software_mrr, line_items"
       ),
-      fetchAllRows("metrics_wins", "id, rep_name, win_date, account_name, opportunity_stage, opportunity_type"),
+      fetchAllRows(
+        "metrics_wins",
+        "id, rep_name, win_date, account_name, opportunity_name, opportunity_stage, opportunity_type, opportunity_software_mrr",
+      ),
       fetchAllRows("metrics_feedback", "rep_name, feedback_date"),
       fetchAllRows("superhex", "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date"),
       fetchAllRows("metrics_tam", "rep_name, tam"),
     ]);
-
-    const dateToWeekKey = (dateStr: string): string => {
-      const d = new Date(dateStr + "T00:00:00");
-      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    };
-    const dateToMonthKey = (dateStr: string): string => {
-      const d = new Date(dateStr + "T00:00:00");
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    };
 
     const aggregateBy = (rows: Record<string, unknown>[], dateField: string, keyFn: (d: string) => string): AggCounts => {
       const result: AggCounts = new Map();
@@ -895,7 +921,21 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const metrics: CachedMetrics = { byWeek, byMonth, namesByMonth, winTypesByMonth, winTypeNamesByMonth, opsTypesByMonth, opsTypeNamesByMonth, opsRows, actRows, shRows, tamRows };
+    const metrics: CachedMetrics = {
+      byWeek,
+      byMonth,
+      namesByMonth,
+      winTypesByMonth,
+      winTypeNamesByMonth,
+      opsTypesByMonth,
+      opsTypeNamesByMonth,
+      opsRows,
+      demoRows,
+      actRows,
+      shRows,
+      tamRows,
+      winsDetailRows: winsWithEffectiveDate,
+    };
     cachedMetricsRef.current = metrics;
     return metrics;
   }, []);
@@ -927,11 +967,17 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       opsTypesByMonth,
       opsTypeNamesByMonth,
       opsRows: metricsOpsRows,
+      demoRows: metricsDemoRows,
       actRows,
       shRows,
       tamRows: tamRows_raw,
+      winsDetailRows: metricsWinsDetailRows,
     } = m;
     setOpsRows(metricsOpsRows);
+    setDemoRows(metricsDemoRows);
+    setTamRows(tamRows_raw);
+    setMetricsByWeek(m.byWeek);
+    setWinsDetailRows(metricsWinsDetailRows ?? []);
 
     const dbMembers = (mRes.data ?? []) as DbMember[];
     const dbFunnels = (fRes.data ?? []) as DbWeeklyFunnel[];
@@ -1112,6 +1158,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       }
       member.metricAccountNames = namesByMonth;
 
+      const sortFn = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+
       const repWinTypes = winTypesByMonth.get(repKey);
       if (repWinTypes) {
         const wt: Record<string, WinTypeCounts> = {};
@@ -1122,8 +1170,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       } else {
         member.monthlyWinTypes = {};
       }
-
-      const sortFn = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 
       const repWinTypeNames = winTypeNamesByMonth.get(repKey);
       if (repWinTypeNames) {
@@ -1489,7 +1535,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           old.overallGoal.discountThreshold !== updated.overallGoal.discountThreshold ||
           old.overallGoal.realizedPriceEnabled !== updated.overallGoal.realizedPriceEnabled ||
           old.overallGoal.realizedPrice !== updated.overallGoal.realizedPrice ||
-          JSON.stringify(old.overallGoal.lineItemTargets ?? []) !== JSON.stringify(updated.overallGoal.lineItemTargets ?? [])
+          JSON.stringify(old.overallGoal.lineItemTargets ?? []) !== JSON.stringify(updated.overallGoal.lineItemTargets ?? []) ||
+          JSON.stringify(old.overallGoal.opportunityFlags ?? []) !== JSON.stringify(updated.overallGoal.opportunityFlags ?? [])
         );
 
         if (
@@ -1515,6 +1562,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.onboardingProcess !== updated.onboardingProcess ||
             old.signalsSubmitted !== updated.signalsSubmitted ||
             old.signalsLastEdit !== updated.signalsLastEdit ||
+            old.attributedRepMemberId !== updated.attributedRepMemberId ||
             goalsChanged ||
             overallGoalChanged)
         ) {
@@ -1565,12 +1613,14 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
                 overall_goal_realized_price_enabled: updated.overallGoal.realizedPriceEnabled,
                 overall_goal_realized_price: updated.overallGoal.realizedPrice,
                 overall_goal_line_item_targets: JSON.stringify(updated.overallGoal.lineItemTargets ?? []),
+                overall_goal_opportunity_flag: JSON.stringify(updated.overallGoal.opportunityFlags ?? []),
                 accelerator_config: updated.acceleratorConfig,
                 accelerator_mode: updated.acceleratorMode,
                 basic_accelerator_config: updated.basicAcceleratorConfig,
                 team_goals_by_level: updated.teamGoalsByLevel,
                 goal_scope_config: updated.goalScopeConfig,
                 relief_month_members: updated.reliefMonthMembers,
+                attributed_rep_member_id: updated.attributedRepMemberId,
               })
               .eq("id", teamId),
             "update team",
@@ -1683,6 +1733,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           teamGoalsByLevel: { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
           goalScopeConfig: { ...DEFAULT_GOAL_SCOPE_CONFIG },
           reliefMonthMembers: [],
+          attributedRepMemberId: null,
           members: [],
         };
         dbMutate(
@@ -1788,6 +1839,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         realizedPriceEnabled: t.overall_goal_realized_price_enabled ?? false,
         realizedPrice: t.overall_goal_realized_price ?? 0,
         lineItemTargets: parseLineItemTargetsFromDb(t.overall_goal_line_item_targets),
+        opportunityFlags: parseLineItemTargetsFromDb(t.overall_goal_opportunity_flag),
       },
       acceleratorConfig: (t.accelerator_config as AcceleratorConfig) ?? {},
       acceleratorMode: (t.accelerator_mode as AcceleratorMode) ?? 'basic',
@@ -1795,6 +1847,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       teamGoalsByLevel: (t.team_goals_by_level as TeamGoalsByLevel) ?? { ...DEFAULT_TEAM_GOALS_BY_LEVEL },
       goalScopeConfig: (t.goal_scope_config as GoalScopeConfig) ?? { ...DEFAULT_GOAL_SCOPE_CONFIG },
       reliefMonthMembers: (t.relief_month_members as string[]) ?? [],
+      attributedRepMemberId: t.attributed_rep_member_id ?? null,
       members: [],
     };
 
@@ -2217,9 +2270,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     reloadAll: loadAll,
     loading,
     opsRows,
+    demoRows,
+    tamRows,
+    metricsByWeek,
+    winsDetailRows,
   }), [
     teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
-    allMembersById, archivedTeams, archivedMembers, loading, opsRows,
+    allMembersById, archivedTeams, archivedMembers, loading, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows,
     salesTeams, projectedBookings, projectTeamAssignments,
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,

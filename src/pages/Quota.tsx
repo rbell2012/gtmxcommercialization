@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, Component, type ReactNode, type ErrorInfo } from "react";
+import { useState, useMemo, useEffect, memo, Component, type ReactNode, type ErrorInfo } from "react";
 import { Target, Calendar, LockOpen, Lock, TrendingUp, Zap } from "lucide-react";
 import {
   useTeams,
@@ -23,6 +23,8 @@ import { getScopedMetricTotal, getScopedAccountNames, getEffectiveGoal, getBusin
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { supabase } from "@/lib/supabase";
+import type { DbTeamPhaseLabel } from "@/lib/database.types";
 
 const METRIC_BAR_COLORS: string[] = [
   "progress-bar-orange",
@@ -56,12 +58,35 @@ function mergePhases(teams: Team[]): ComputedPhase[] {
 }
 
 const Quota = () => {
-  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, salesTeams, projectedBookings, projectTeamAssignments } = useTeams();
+  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, salesTeams, projectedBookings, projectTeamAssignments, opsRows } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const [previousExpanded, setPreviousExpanded] = useState(false);
   const [nextExpanded, setNextExpanded] = useState(false);
   const referenceDate = selectedMonth ?? undefined;
+
+  const [phaseLabelsByTeamId, setPhaseLabelsByTeamId] = useState<Record<string, Record<number, string>>>({});
+  const activeTeamIdsKey = useMemo(() => activeTeams.map((t) => t.id).sort().join(","), [activeTeams]);
+
+  useEffect(() => {
+    if (!activeTeamIdsKey) {
+      setPhaseLabelsByTeamId({});
+      return;
+    }
+    const ids = activeTeamIdsKey.split(",");
+    void supabase
+      .from("team_phase_labels")
+      .select("*")
+      .in("team_id", ids)
+      .then(({ data }) => {
+        const next: Record<string, Record<number, string>> = {};
+        for (const row of (data ?? []) as DbTeamPhaseLabel[]) {
+          if (!next[row.team_id]) next[row.team_id] = {};
+          next[row.team_id][row.month_index] = row.label;
+        }
+        setPhaseLabelsByTeamId(next);
+      });
+  }, [activeTeamIdsKey]);
 
   const allPhases = useMemo(() => mergePhases(activeTeams), [activeTeams]);
 
@@ -187,7 +212,19 @@ const Quota = () => {
                     <p className={`text-xs font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>
                       {monthName}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">{getPhaseWinsLabel(activeTeams, phase.year, phase.month)}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {getPhaseWinsLabel(activeTeams, phase.year, phase.month, {
+                        opsRows,
+                        projectTeamAssignments,
+                        salesTeams,
+                        resolveTeamPhase: (team) => {
+                          const labels = phaseLabelsByTeamId[team.id] ?? {};
+                          const teamPhases = generateTestPhases(team.startDate, team.endDate, labels);
+                          const p = teamPhases.find((ph) => ph.year === phase.year && ph.month === phase.month);
+                          return p ? { monthIndex: p.monthIndex, label: p.label } : null;
+                        },
+                      })}
+                    </p>
                   </div>
                 );
               })}

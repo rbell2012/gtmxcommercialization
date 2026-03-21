@@ -32,6 +32,10 @@ export interface DbTeam {
   overall_goal_realized_price: number;
   /** JSON string array of line item names for pilot-region aggregation */
   overall_goal_line_item_targets: string | null;
+  /** Substring filter on opportunity_name for wins / pilot KPIs when set */
+  overall_goal_opportunity_flag: string | null;
+  /** Member id for attributed-rep wins path (opsRows + flags + line items) */
+  attributed_rep_member_id: string | null;
   accelerator_config: Record<string, unknown>;
   accelerator_mode: string;
   basic_accelerator_config: Record<string, unknown>;
@@ -227,6 +231,8 @@ export interface DbMetricsWins {
   gtmx_team: string | null;
   account_prospecting_notes: string | null;
   opportunity_type: string | null;
+  /** Postgres numeric; often string from API for precision */
+  opportunity_software_mrr: string | null;
   created_at: string;
   updated_at: string;
 }

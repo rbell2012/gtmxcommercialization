@@ -1,5 +1,259 @@
 # Changelog
 
+## Location — Pilots (`Index.tsx`), Quota, Settings, Help; libs `pilot-helpers.ts`, `quota-helpers.ts`
+
+**Rationale:** Test Phases “wins” under each month did not match reality for Guest Pro–style projects: they only summed roster funnel data while wins live on Salesforce ops (pilot reps); later, summing phase months still diverged from Lifetime Stats because pilot months used a narrower KPI (roster + product attach) than lifetime attribution. Users need phase footers aligned with ops-backed lifetime totals where flags are configured, while the Pilot Regions block stays a focused roster KPI.
+
+**Changes:**
+- Extended `getPhaseWinsLabel` with optional `PhaseWinsContext` (ops rows, pilot assignments, sales teams, `resolveTeamPhase`) and added `getPilotPhaseWinsCount` in `pilot-helpers.ts`.
+- **Pilots page:** Test Phases passes full context from `useTeams()` and each column’s phase metadata.
+- **Quota / Settings:** Load `team_phase_labels` where needed; Quota resolves per-team phase `monthIndex` from calendar month (not merged timeline index); Settings loads labels for the team being edited.
+- **Ops-flag teams:** Phase monthly wins use flagged ops + win stage + `lineItemsMatchTargetNames` + effective close month for **any rep**, matching the monthly slice of `countOpsWinsSplitForLifetimeStats` so summed phases match Lifetime Stats except undated or out-of-window closes.
+- **Monthly Data – Pilot Regions** unchanged (roster-scoped attach KPI); Help documents the difference vs phase footers.
+---
+
+## Location — `getPilotPhaseWinsCount` (`src/lib/pilot-helpers.ts`), Help
+
+**Rationale:** Summing Test Phases monthly wins could be **lower** than Lifetime Stats (e.g. 61 vs 66) because pilot-labeled months used `getPilotWinsWithTargetBreakdown` (pilot roster + `parseLineItemTotal` / product attach) while lifetime uses `lineItemsMatchTargetNames` for **every** qualifying close and attributes pilot-month off-roster closes to “other phases.”
+
+**Changes:**
+- When opportunity flags are set, **every** phase month now uses one rule: flagged ops + win stage + `lineItemsMatchTargetNames` + effective close month (any rep), matching the monthly slice of `countOpsWinsSplitForLifetimeStats`. Summing across in-window months aligns with lifetime except undated / out-of-window closes.
+- **Monthly Data – Pilot Regions** KPI unchanged (roster + attach); Help clarifies it can differ from the phase footer.
+
+---
+
+## Location — `getPilotPhaseWinsCount` (`src/lib/pilot-helpers.ts`) — non-pilot months (historical)
+
+**Rationale:** Test Phases showed **0 wins** for non-pilot months on ops-flag teams because those months fell back to member funnel totals.
+
+**Changes (later unified; see newest `getPilotPhaseWinsCount` entry):** non-pilot months with flags gained an ops-based monthly count (any rep, `lineItemsMatchTargetNames`).
+
+---
+
+## Location — Test Phases wins label (`src/lib/pilot-helpers.ts`, `src/lib/quota-helpers.ts`, `src/pages/Index.tsx`, `src/pages/Quota.tsx`, `src/pages/Settings.tsx`, `src/pages/Help.tsx`)
+
+**Rationale:** Test Phases showed **0 wins** while pilot KPIs showed real counts because the label summed only project roster funnel wins.
+
+**Changes:**
+- Added `getPilotPhaseWinsCount` and `PhaseWinsContext` on `getPhaseWinsLabel` (ops + assignments + per-phase label/monthIndex). **Index / Quota / Settings** wired to pass context. Phase footer rules evolved to match Lifetime Stats monthly slice (see newest changelog entry); **Monthly Data – Pilot Regions** remains the roster-scoped KPI.
+
+---
+
+## Location — Settings, Index (Lifetime Stats), TeamsContext, Supabase `teams`, pilot-helpers
+
+**Rationale:** Fix Guest Pro (and any team that opts in) showing **0 lifetime wins** when real closes sit on pilot Salesforce reps under `#guestpro`-tagged ops, while GTMx members’ funnel data did not match opportunity-flag filtering. Make attribution **explicit and opt-in** via Settings, count wins from `metrics_ops` with flags + line items, then clarify **pilot vs non-pilot** months so lifetime wins read as pilot-phase (assigned reps) + other phases—not “attributed only.”
+
+**Changes:**
+- Added `teams.attributed_rep_member_id` and **Attributed rep** checkbox (max one) on Settings → edit team → Team Members, with tooltip; gates the special lifetime wins path together with opportunity flags and line item targets.
+- Removed opportunity-flag filtering from `TeamsContext` funnel/monthly wins so member funnels show unfiltered wins again.
+- **Lifetime Stats** (when all three gates are set): `countOpsWinsSplitForLifetimeStats` partitions qualifying closes by `computedPhases` and pilot rosters; card shows total = pilot + other; breakdown and tooltip describe the split; demo→win uses “Pilot + other phases.”
+- Kept `countOpsWinsAllTime` for reuse; `docs/data-model.mmd` documents `attributed_rep_member_id`.
+
+---
+
+## Location — Lifetime Stats wins split (`src/lib/pilot-helpers.ts`, `src/pages/Index.tsx`)
+
+**Rationale:** The attributed-rep lifetime wins path previously summed all qualifying ops in one number; users expect an explicit **pilot phases vs other phases** breakdown. Totals remain the same partition of every qualifying close (no double-count).
+
+**Changes:**
+- Added `countOpsWinsSplitForLifetimeStats` and `LifetimeStatsPhaseSlice` — for each calendar month in `computedPhases`, if the phase label is a pilot region and pilot assignments exist, closes count toward **pilot** only when the rep is on that month’s roster; otherwise they count toward **other** (non-pilot months, empty pilot roster, non-roster closer in a pilot month, missing close date, or close outside the test window).
+- `Index` Lifetime Stats (attributed-rep path): `lifetimeWins` uses `pilotPhaseWins + otherPhaseWins`; wins card breakdown shows “Pilot phases (assigned reps)” and “Other phases”; tooltip explains the split; demo→win row label “Pilot + other phases”.
+
+---
+
+## Location — Lifetime wins, attributed rep, Supabase `teams` (`src/pages/Index.tsx`, `src/lib/pilot-helpers.ts`, `src/contexts/TeamsContext.tsx`, `src/pages/Settings.tsx`, `supabase/migrations/20260320180000_add_attributed_rep_to_teams.sql`)
+
+**Rationale:** Guest Pro lifetime wins showed 0 because wins were filtered by opportunity flags on GTMx members' funnel data while real Guest Pro closes live on pilot Salesforce reps. Reverted per-member funnel wins filtering by opportunity flags; added an opt-in **Attributed rep** on each team so Lifetime Stats can count `metrics_ops` wins (opportunity flags + line item targets) across all reps and credit one commercial lead.
+
+**Changes:**
+- Migration: `teams.attributed_rep_member_id` (nullable text, member id).
+- `Team` / `DbTeam`: `attributedRepMemberId`; load/save in `TeamsContext` (`updateTeam`, `assembleTeams`, new team, unarchive).
+- `Settings` → edit team → Team Members: checkbox left of each name (max one), tooltip describing attributed-rep behavior; persisted with team save; cleared if that member is removed from roster.
+- `countOpsWinsAllTime` in `pilot-helpers.ts` — win-stage + line-item match (still available; attributed path now uses `countOpsWinsSplitForLifetimeStats` — see newer changelog entry).
+- `Index` Lifetime Stats: when opportunity flags, line item targets, and attributed rep are all set, wins use the split helper and a two-line breakdown (see newer changelog entry).
+- `TeamsContext` `loadCore`: removed opportunity-flag branches from `funnelByWeek.wins`, monthly wins corrections, and win-type/account-name overrides (restores unfiltered wins on member funnels).
+
+---
+
+## Location — Lifetime Stats / Overall Goal section (`src/pages/Index.tsx`, `src/lib/pilot-helpers.ts`)
+
+**Rationale:** The Overall Goal section inside Lifetime Stats previously showed Total Price, Discount Threshold, and Realized Price as static "— / $X (coming soon)" placeholders. The goal was to make these live and visually consistent with the Call→Connect / Connect→Demo / Demo→Win stat cards above them.
+
+**Changes:**
+- Added `getPilotAvgPriceAllTime` to `src/lib/pilot-helpers.ts` — computes the average target line-item price across all pilot wins with target (no month filter, spans entire test).
+- In `Index.tsx`, imported `getPilotAvgPriceAllTime` and computed two derived values inside the Lifetime Stats IIFE when a pilot-region phase is active:
+  - `lifetimeAvgPrice` — all-time avg price via `getPilotAvgPriceAllTime` filtered by opportunity flags and rep assignments.
+  - `discountThresholdCurrent` — `1 - (lifetimeAvgPrice / og.totalPrice)`, displayed as a percentage.
+- Replaced the "coming soon" placeholder rows with stat-card-style tiles matching the funnel cards above (`rounded-md bg-accent/5 border border-accent/10`).
+- Card layout (top to bottom): metric name (small muted label) → current value as large bold number in accent color (or goal if no current) → "Goal: X" subtitle (small muted, only when a current value exists).
+- Total Price card always shows the goal value with no current (no "Goal:" prefix needed).
+- Wins progress bar in the Overall Goal section is unchanged.
+
+---
+
+## Location — Project / Pilot page (`src/pages/Index.tsx`)
+
+**Rationale:** Remove the **Tracked line items (ops)** summary card from the pilot regions area; it was redundant for users and duplicated information already driven by `lineItemTargets` elsewhere, while keeping all persisted settings and pilot KPI logic unchanged.
+
+**Changes:**
+- Removed the conditional block that summed `parseLineItemTotal` over pilot reps’ `metrics_ops` rows and rendered the bordered card with title, `$` total, and `metrics_ops.line_items` helper text.
+- Dropped the unused `parseLineItemTotal` import from `@/lib/lineItemParser` in `Index.tsx` (parser and `lineItemTargets` in Settings / `TeamsContext` / `pilot-helpers.ts` are unchanged).
+
+---
+
+## Location — Supabase `public.teams`; Settings / team persistence (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Production was missing the `overall_goal_opportunity_flag` column while the client already included it in `updateTeam` payloads, so saves failed with “Save failed: update team” and flags looked saved in the UI (optimistic update) but disappeared after reload because the column was absent / values never persisted.
+
+**Changes:**
+- Applied `ALTER TABLE teams ADD COLUMN IF NOT EXISTS overall_goal_opportunity_flag text` to the live Supabase project (migration aligned with `supabase/migrations/20260320160000_add_overall_goal_opportunity_flag.sql`).
+- Confirmed via SQL that teams can persist non-null JSON array strings (e.g. Guest Pro stored `["#guestpro"]`).
+
+---
+
+## Location - Monthly Data / Pilot Regions (`src/pages/Index.tsx`)
+
+**Rationale:** **Monthly Goals (by team)** should support click-to-sort on every column so users can order rows A–Z / Z–A by team name and ascending / descending by KPI values (Avg MRR w/o, w/, Avg Price, Attach Rate) instead of a fixed list order.
+
+**Changes:** - Added `pilotTeamSortCol` / `pilotTeamSortDir` state, `handlePilotTeamSort` (new column → asc; same column → flip direction), and memoized `pilotTeamRows` that builds per-team KPI + WoW snapshots then sorts before render.
+- Replaced static header cells with `button` headers using `ArrowUp` / `ArrowDown` for the active sort and `ChevronsUpDown` on inactive columns; `tbody` maps the sorted `pilotTeamRows` array.
+
+---
+
+## Location — Project / Pilot page (`src/pages/Index.tsx`); supporting: `src/lib/pilot-helpers.ts`
+
+**Rationale:** Pilot-region **Monthly Stats** (Ops, Demos, Wins, Losses) hovers should surface the highest contributors only (up to 20, excluding zeros), in rank order, with a clear **TOP** section label; Losses needed the same pattern as the other metrics.
+
+**Changes:**
+- Added `pilotRepBreakdownLossesInMonth()` in `pilot-helpers.ts` (per-rep lost opportunities in month with target line items, sorted by count descending); `pilotKpis` now includes `repLossRows` (empty when no pilot reps).
+- Introduced `top20PilotMonthlyStatBreakdown()` in `Index.tsx`: filters `value > 0`, sorts high → low, caps at 20, prepends `isSectionLabel` row **TOP** under the tooltip rule, returns `undefined` when no rows.
+- Pilot Monthly Stats `StatCard`s: Ops, Demos, Wins, and Losses use that helper for breakdowns; Losses gains a hover like the others.
+- `StatCard`: skip wrapping in a tooltip when `breakdown` is missing or empty (unless a `tooltip` string is set), avoiding empty hover chrome.
+
+---
+
+## Location — Project / Pilot page (`src/pages/Index.tsx`); supporting: `src/lib/pilot-helpers.ts`
+
+**Rationale:** **Avg MRR (without product)** in pilot-region **Monthly Data** should measure wins where the pilot product is not in scope for the cohort — i.e. use the *inverse* of the opportunity-name flag filter (“does not contain any flag”), not the same flagged pool with only line-item targets excluded. That pool often had no qualifying wins, which showed as `$0`. When `opportunityFlags` is empty, both pools stay “all rows” (same as before).
+
+**Changes:**
+- Added `filterByOpportunityFlagInverse()` in `pilot-helpers.ts`: when flags are set, keeps rows whose `opportunity_name` does not contain any flag; when flags are empty, returns all rows (mirrors `filterByOpportunityFlag` empty behavior).
+- `getPilotKpiSnapshot` and `getPilotKpiSnapshotForWeek` accept optional `opsRowsWithout`; `avgMrrWithout` is computed from that dataset (fallback: same as `opsRows`). `avgMrrWith`, `avgPrice`, and `attachRate` still use the flagged `opsRows` pool.
+- In `Index.tsx`, memo `pilotOpsWithoutForKpis` from `filterByOpportunityFlagInverse(opsRows, opportunityFlags)`; pass it into main pilot KPI snapshot, per-rep KPI breakdown `snapForRep`, per-sales-team Monthly Goals row, and WoW week snapshots for `avgMrrWithout`; added `pilotOpsWithoutForKpis` to the `pilotKpis` `useMemo` dependency array.
+
+---
+
+## Location — Project / Pilot page (`src/pages/Index.tsx`)
+
+**Rationale:** Make pilot-region **Monthly Data** KPI and stat hovers easier to scan (ranked reps, real attach data, currency-aligned values, readable names) and scale when many reps are assigned.
+
+**Changes:**
+- Pilot **Wins** tooltip: always shows opportunity flags on a second line — when set, “name must contain any” plus the list; when empty, “none — all opportunity names count” (matches Settings).
+- Extended `StatCard` breakdown rows with optional `display`, `isSeparator`, and `isSectionLabel`; widened KPI tooltip to `max-w-[260px]`; separator renders a dashed rule between truncated lists.
+- **Pilot KPI row** (Avg MRR without/with product, Avg Price, Attach Rate): per-rep hover lists sort by value descending; when there are more than 20 reps, show **TOP** (label) + top 10, dashed separator, **BOTTOM** + bottom 10.
+- **Attach Rate** tile: replaced definition-only tooltip with per-rep attach rates (`fmtPilotAttach`) in the breakdown; MRR and price rows use `fmtPilotMoney` in `display` so hover values show `$`.
+- Added `repNameToSentenceCase()` and applied it to pilot rep labels in the **Reps** hover list, KPI breakdowns (via `repBreak`), and **Monthly Stats** Ops/Demos/Wins `StatCard` breakdowns so names render as capitalized words instead of raw CRM casing.
+
+---
+
+## Location — `src/lib/pilot-helpers.ts`
+
+**Rationale:** Pilot **Avg Price** averaged wins that matched a line-item target name at `$0.00`, counting each as n=1 with value 0 and deflating the metric.
+
+**Changes:**
+- `getPilotAvgPrice` and `getPilotKpiSnapshotForWeek` only include an opportunity when the sum of target-matching line item amounts is **> 0** (same per-opportunity sum as before; exclude zero-sum wins from the average).
+- `getPilotAccountNamesForTeam` **Avg Price** tooltip list aligned: only opportunities with that positive target sum are listed.
+
+---
+
+## Location — Settings (`src/pages/Settings.tsx`); Project / Pilot page (`src/pages/Index.tsx`); supporting: `src/contexts/TeamsContext.tsx`, `src/lib/pilot-helpers.ts`, `src/lib/metrics-helpers.ts`, `src/lib/database.types.ts`
+
+**Rationale:** Allow teams to specify one or more keyword flags so that only opportunities whose `opportunity_name` contains any of those flags are counted toward wins, losses, avg price, and related KPIs — enabling targeted tracking of specific opportunity cohorts (e.g. named pilots or product-flag deals) without changing how other opportunities are reported.
+
+**Changes:**
+- Added `overall_goal_opportunity_flag text` column to `public.teams` via migration `20260320160000_add_overall_goal_opportunity_flag.sql`; column stores a JSON string array (same format as `overall_goal_line_item_targets`).
+- Extended `OverallGoalConfig` with `opportunityFlags: string[]` (default `[]`); updated DB→app mapping (`parseLineItemTargetsFromDb`) and save logic (`JSON.stringify`) in `TeamsContext.tsx`; added to `overallGoalChanged` detection.
+- Added `metrics_wins` fetch column `opportunity_name` so win rows carry the opportunity name for flag matching.
+- Introduced `winsDetailRows` state on `TeamsContext` (qualified `metrics_wins` rows with `_effective_date` merged in); exposed on context for downstream use.
+- Per-member win counts recomputed through flag filter during `loadCore`: weekly funnel wins, monthly metric corrections, `monthlyWinTypes` (Growth/NB split), `monthlyWinTypeNames`, and win account names all reflect only flagged opportunities when flags are set.
+- Added `filterByOpportunityFlag(rows, flags)` and `sumWinsInWeekForReps(rows, repKeys, weekKey, flags)` to `pilot-helpers.ts`; shared `dateToWeekKey` / `dateToMonthKey` moved to `metrics-helpers.ts` and re-exported from `pilot-helpers.ts`.
+- In `TeamTab` (`Index.tsx`), `pilotOpsForKpis` pre-filters `opsRows` through the flag before passing to all pilot KPI functions (wins breakdown, ops count, losses, avg MRR, avg price, attach rate, per-sales-team KPI table, account name hovers).
+- Weekly win cells in the pilot Weekly Data grid and the Week-over-Week chart use `pilotWinsInWeek`, which routes through `sumWinsInWeekForReps` on `winsDetailRows` when flags are active.
+- **Settings UI:** Replaced the single "Opportunity flag" text input with a chip/badge editor matching the Line item targets UX — type a flag value, press Enter or **Add**, and it appears as a removable chip; multiple flags supported with OR matching logic.
+- Empty flags array = no filtering (all opportunities included); non-empty = case-insensitive substring match on `opportunity_name` against any flag.
+
+---
+
+## Location — Project / Pilot page (`src/pages/Index.tsx`); supporting: `src/lib/pilot-helpers.ts`, `src/lib/lineItemParser.ts`, `src/contexts/TeamsContext.tsx`
+
+**Rationale:** Deliver a pilot-phase-specific **Monthly Data** experience for assigned sales regions and reps (line-item-aware wins, MRR/price/attach KPIs, team-level goals, funnel and weekly rollups) and shorten noisy sales-team titles in the pilot Monthly Goals table to the leader segment after the final ` - `.
+
+**Changes:**
+- When the selected test phase is a pilot-region phase (`isPilotRegionPhaseLabel`), replace the standard Monthly Data block with **Monthly Data - Pilot Regions**: Regions / Reps / Wins (with rep and NB vs Growth tooltips), four KPI tiles (avg MRR with/without target products, avg target line-item price, attach rate), Monthly Stats (Ops, Demos, Wins, Losses with pilot loss rules), and **Monthly Goals (by team)** with WoW arrows and account hovers.
+- Aggregate **Funnel Overview** (`WeekOverWeekView`) and **Weekly Data** by assigned pilot sales team using `metricsByWeek`, `tamRows`, and `demoRows` from context; hide the legacy per-member team monthly aggregate row in pilot mode.
+- Add `pilot-helpers.ts` (assignment resolution, ops/month filtering, win/loss/MRR/attach math, weekly KPI snapshots) and `lineItemsMatchTargetNames()` / `pilotSalesTeamShortLabel()` in supporting libs; extend `metrics_ops` fetch with `opportunity_stage` and expose `demoRows`, `tamRows`, `metricsByWeek` on `TeamsContext`.
+- Align **Pilot Regions** picker visibility with `isPilotRegionPhaseLabel()` for a single source of truth.
+
+---
+
+## Location — Settings (`src/pages/Settings.tsx`); hosted Supabase `public.teams`
+
+**Rationale:** Saving **Line item targets** (Overall Goal) failed with `Could not find the 'overall_goal_line_item_targets' column of 'teams' in the schema cache` because migration `20260320120000_add_overall_goal_line_item_targets.sql` was present locally but had not been recorded/applied on the remote project.
+
+**Changes:**
+- Applied migration `add_overall_goal_line_item_targets` on hosted Supabase: added nullable `text` column `overall_goal_line_item_targets` on `public.teams` (with column comment), aligning remote schema with the existing migration file and app reads/writes in `TeamsContext.tsx`.
+
+---
+
+## Location — Supabase `public.metrics_wins`; types (`src/lib/database.types.ts`); Teams context (`src/contexts/TeamsContext.tsx`); data model (`docs/data-model.mmd`). No dedicated UI page changed (data is loaded for any consumer of context).
+
+**Rationale:** Align closed-won rows with opportunities by persisting software MRR on each `metrics_wins` row (same concept as `metrics_ops.opportunity_software_mrr`) so reporting and downstream features can use win-level MRR when the pipeline supplies it.
+
+**Changes:**
+- Added nullable `numeric` column `opportunity_software_mrr` to `public.metrics_wins` via migration `20260320140000_add_opportunity_software_mrr_to_metrics_wins.sql` and applied it to the hosted Supabase project.
+- Extended `DbMetricsWins` with `opportunity_software_mrr`, included the column in the `metrics_wins` `fetchAllRows` select list in `TeamsContext.tsx`, and documented it in `docs/data-model.mmd`.
+
+---
+
+## 2026-03-20 (Pilot Monthly Goals — short team label)
+
+### Location — `src/lib/pilot-helpers.ts`, `src/pages/Index.tsx`
+
+**Changes:** Added `pilotSalesTeamShortLabel()` (text after final ` - `) and use it for the pilot **Monthly Goals (by team)** row labels so long `displayName` strings show leader-style names only.
+
+---
+
+## 2026-03-20 (Pilot Region — Monthly Data view)
+
+### Location — `src/pages/Index.tsx`, `src/lib/pilot-helpers.ts`, `src/lib/lineItemParser.ts`, `src/contexts/TeamsContext.tsx`
+
+**Rationale:** When a project month is in a pilot-region phase, replace the standard Monthly Data block with pilot-focused metrics (regions/reps, line-item-aware wins, KPIs, stats, team-level goals, and funnel/weekly views rolled up by assigned sales teams).
+
+**Changes:**
+- Added `lineItemsMatchTargetNames()` in `lineItemParser.ts` so $0 target SKUs still count as attached.
+- Extended `metrics_ops` fetch with `opportunity_stage`; `CachedMetrics` / context now expose `demoRows`, `tamRows`, and `metricsByWeek` for pilot rollups.
+- New `pilot-helpers.ts`: assignment resolution, win/loss/MRR/price/attach math from `metrics_ops` + `metrics_demos`, WoW snapshots by week, account lists for tooltips.
+- `TeamTab`: conditional header **Monthly Data - Pilot Regions**, top bar (Regions / Reps / Wins with tooltips), four KPI tiles, Ops/Demos/Wins/Losses stats, **Monthly Goals (by team)** table with WoW arrows and account hovers, `WeekOverWeekView` + **Weekly Data** aggregated by pilot sales team when pilot phase applies (per-tab phase from `generateTestPhases`).
+- `PilotRegionsPicker` visibility now uses shared `isPilotRegionPhaseLabel()`.
+
+---
+
+## 2026-03-20 (Pilot regions — dynamic line item aggregation)
+
+### Location — Settings (`src/pages/Settings.tsx`), Project/Pilot page (`src/pages/Index.tsx`), Teams context (`src/contexts/TeamsContext.tsx`), line item parser (`src/lib/lineItemParser.ts`), database migration (`supabase/migrations/20260320120000_add_overall_goal_line_item_targets.sql`), types (`src/lib/database.types.ts`)
+
+**Rationale:** Let each project define exact product names from `metrics_ops.line_items`, parse dollar amounts with correct comma-separated boundaries, and show a single rolled-up total only when pilot regions are visible (same phases as `PilotRegionsPicker`), so pilots can track configured SKU/value without changing the existing region UI.
+
+**Changes:**
+- Added `overall_goal_line_item_targets` on `public.teams` (nullable `text`, JSON array of names) via migration `20260320120000_add_overall_goal_line_item_targets.sql`; extended `DbTeam` with the new field.
+- Extended `OverallGoalConfig` with `lineItemTargets: string[]`, default `[]`, load/parse from DB and persist via `JSON.stringify` on team update; included `lineItemTargets` in overall-goal change detection.
+- Included `line_items` in the `metrics_ops` `fetchAllRows` select list; exposed raw `opsRows` on `TeamsContext` for consumers.
+- Added `parseLineItemTotal()` in `src/lib/lineItemParser.ts` using segment-aware regex `(?:^|,)\s*([^($]+?)\s*\(\$([0-9,.]+)\)/g` for exact name matches (avoids shorter names matching longer product titles and avoids swallowing commas between items).
+- In Settings **Overall Goal**, added “Line item targets”: tag chips, remove, text input with Enter/Add; merges with `DEFAULT_OVERALL_GOAL_CONFIG` when opening a team for edit.
+- On `Index.tsx`, under the same pilot-phase condition as pilot regions, when `lineItemTargets.length > 0`, sum `parseLineItemTotal` across `opsRows` whose `rep_name` matches the active team’s members and show **Tracked line items (ops)** with a USD total.
+
+---
+
 ## 2026-03-19 (metrics_ops — opportunity_software_mrr)
 
 ### Location — Database (`metrics_ops`), Types (`src/lib/database.types.ts`), Teams Context (`src/contexts/TeamsContext.tsx`), Data model (`docs/data-model.mmd`)

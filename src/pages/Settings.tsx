@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import type { DbTeamPhaseLabel } from "@/lib/database.types";
 import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   useTeams,
   toMonthKey,
@@ -95,6 +99,9 @@ const Settings = () => {
     archivedMembers,
     loadArchivedMembers,
     unarchiveMember,
+    opsRows,
+    projectTeamAssignments,
+    salesTeams,
   } = useTeams();
   const { toast } = useToast();
 
@@ -186,12 +193,16 @@ const Settings = () => {
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
   const [editOverallGoal, setEditOverallGoal] = useState<OverallGoalConfig>({ ...DEFAULT_OVERALL_GOAL_CONFIG });
   const [lineItemTargetDraft, setLineItemTargetDraft] = useState("");
+  const [opportunityFlagDraft, setOpportunityFlagDraft] = useState("");
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
   const [settingsPrevExpanded, setSettingsPrevExpanded] = useState(false);
   const [settingsNextExpanded, setSettingsNextExpanded] = useState(false);
   const [editTeamMembers, setEditTeamMembers] = useState<string[]>([]);
   const [editTeamMembersInitial, setEditTeamMembersInitial] = useState<string[]>([]);
+  /** At most one; wins matching opportunity + line-item flags attribute to this member when not in pilot phases */
+  const [editAttributedRepMemberId, setEditAttributedRepMemberId] = useState<string | null>(null);
   const [editReliefMonthMembers, setEditReliefMonthMembers] = useState<string[]>([]);
+  const [editDialogPhaseLabels, setEditDialogPhaseLabels] = useState<Record<number, string>>({});
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -205,6 +216,24 @@ const Settings = () => {
   useEffect(() => {
     if (archivedExpanded) loadArchivedTeams();
   }, [archivedExpanded, loadArchivedTeams]);
+
+  useEffect(() => {
+    if (!editTeamId) {
+      setEditDialogPhaseLabels({});
+      return;
+    }
+    void supabase
+      .from("team_phase_labels")
+      .select("*")
+      .eq("team_id", editTeamId)
+      .then(({ data }) => {
+        const labels: Record<number, string> = {};
+        for (const row of (data ?? []) as DbTeamPhaseLabel[]) {
+          labels[row.month_index] = row.label;
+        }
+        setEditDialogPhaseLabels(labels);
+      });
+  }, [editTeamId]);
 
   const confirmUnarchiveTeam = async () => {
     if (!unarchiveTeamId) return;
@@ -304,15 +333,23 @@ const Settings = () => {
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
     setEditOverallGoal({ ...DEFAULT_OVERALL_GOAL_CONFIG, ...(team.overallGoal ?? {}) });
     setLineItemTargetDraft("");
+    setOpportunityFlagDraft("");
     setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
     setSelectedEditMonth(null);
     const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
     setEditTeamMembers(currentRoster);
     setEditTeamMembersInitial(currentRoster);
+    let ar = team.attributedRepMemberId ?? null;
+    if (ar && !currentRoster.includes(ar)) ar = null;
+    setEditAttributedRepMemberId(ar);
   };
 
   const saveEditTeam = () => {
     if (!editTeamId || !editTeamName.trim()) return;
+    const validAttributedRep =
+      editAttributedRepMemberId && editTeamMembers.includes(editAttributedRepMemberId)
+        ? editAttributedRepMemberId
+        : null;
     const isNonCurrentMonth = selectedEditMonth && !isCurrentMonth(selectedEditMonth);
 
     if (isNonCurrentMonth) {
@@ -324,6 +361,7 @@ const Settings = () => {
         startDate: editTeamStartDate || null,
         endDate: editTeamEndDate || null,
         overallGoal: { ...editOverallGoal },
+        attributedRepMemberId: validAttributedRep,
       }));
       upsertTeamGoalsHistory(editTeamId, toMonthKey(selectedEditMonth), {
         goalsParity: editTeamParity,
@@ -357,6 +395,7 @@ const Settings = () => {
         teamGoalsByLevel: JSON.parse(JSON.stringify(editTeamGoalsByLevel)),
         goalScopeConfig: { ...editGoalScopeConfig },
         reliefMonthMembers: [...editReliefMonthMembers],
+        attributedRepMemberId: validAttributedRep,
       }));
 
       const added = editTeamMembers.filter((id) => !editTeamMembersInitial.includes(id));
@@ -670,7 +709,7 @@ const Settings = () => {
 
                 {/* ── Test Phases Selector ── */}
                 {(() => {
-                  const phases = generateTestPhases(editTeamStartDate || null, editTeamEndDate || null, {});
+                  const phases = generateTestPhases(editTeamStartDate || null, editTeamEndDate || null, editDialogPhaseLabels);
                   if (phases.length === 0) return null;
                   const now = new Date();
                   const colors = ["hsl(24, 80%, 53%)", "hsl(210, 65%, 50%)", "hsl(30, 80%, 50%)", "hsl(160, 50%, 48%)", "hsl(280, 50%, 55%)", "hsl(45, 70%, 52%)"];
@@ -829,7 +868,19 @@ const Settings = () => {
                               <p className={`text-[10px] font-semibold ${phaseIsSelected ? "text-primary" : colorClasses[phase.monthIndex % colorClasses.length]}`}>
                                 {phase.monthLabel}
                               </p>
-                              <p className="text-[9px] text-muted-foreground">{(() => { const t = teams.find((t) => t.id === editTeamId); return t ? getPhaseWinsLabel([t], phase.year, phase.month) : "0"; })()}</p>
+                              <p className="text-[9px] text-muted-foreground">
+                                {(() => {
+                                  const t = teams.find((tm) => tm.id === editTeamId);
+                                  return t
+                                    ? getPhaseWinsLabel([t], phase.year, phase.month, {
+                                        opsRows,
+                                        projectTeamAssignments,
+                                        salesTeams,
+                                        resolveTeamPhase: () => ({ monthIndex: phase.monthIndex, label: phase.label }),
+                                      })
+                                    : "0";
+                                })()}
+                              </p>
                             </div>
                           );
                         })}
@@ -897,18 +948,47 @@ const Settings = () => {
                         <div className="space-y-1">
                           {roster.map((m) => (
                             <div key={m.id} className="flex items-center justify-between rounded-md bg-background/50 px-2.5 py-1.5 border border-border/30">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-foreground">{m.name}</span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <UiTooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="shrink-0 flex items-center">
+                                      <Checkbox
+                                        id={`attr-rep-${m.id}`}
+                                        checked={editAttributedRepMemberId === m.id}
+                                        onCheckedChange={(checked) => {
+                                          if (checked === true) setEditAttributedRepMemberId(m.id);
+                                          else if (editAttributedRepMemberId === m.id) setEditAttributedRepMemberId(null);
+                                        }}
+                                        aria-label="Attributed rep for flagged wins"
+                                        className="h-3.5 w-3.5"
+                                      />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs text-xs">
+                                    <p className="font-semibold mb-1">Attributed rep</p>
+                                    <p>
+                                      When checked, any opportunity matching this project&apos;s opportunity flags and line
+                                      item targets that closes outside of a pilot region phase is counted as a win for this
+                                      member in Lifetime Stats. Only one member can be selected.
+                                    </p>
+                                  </TooltipContent>
+                                </UiTooltip>
+                                <label htmlFor={`attr-rep-${m.id}`} className="text-xs font-medium text-foreground truncate cursor-pointer">
+                                  {m.name}
+                                </label>
                                 {m.level && (
-                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                                  <Badge variant="outline" className="text-[9px] px-1.5 py-0 shrink-0">
                                     {MEMBER_LEVEL_LABELS[m.level]}
                                   </Badge>
                                 )}
                               </div>
                               <button
                                 type="button"
-                                onClick={() => setEditTeamMembers((prev) => prev.filter((id) => id !== m.id))}
-                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                onClick={() => {
+                                  setEditTeamMembers((prev) => prev.filter((id) => id !== m.id));
+                                  if (editAttributedRepMemberId === m.id) setEditAttributedRepMemberId(null);
+                                }}
+                                className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
                                 title="Remove from team"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1156,6 +1236,81 @@ const Settings = () => {
                           }}
                           className="h-7 w-24 bg-background border-border/50 text-foreground text-[10px] text-center p-0"
                         />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-1">
+                      <div>
+                        <span className="text-xs font-medium text-foreground">Opportunity flags</span>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Only opportunities whose name contains ANY of these values (case-insensitive) count toward wins, losses, and avg price. Leave empty to include all.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 min-h-[22px]">
+                        {(editOverallGoal.opportunityFlags ?? []).map((flag, idx) => (
+                          <Badge
+                            key={`${flag}-${idx}`}
+                            variant="secondary"
+                            className="text-[10px] font-normal gap-1 pr-0.5 py-0 h-6"
+                          >
+                            <span className="max-w-[200px] truncate" title={flag}>
+                              {flag}
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                              aria-label={`Remove ${flag}`}
+                              onClick={() =>
+                                setEditOverallGoal((prev) => ({
+                                  ...prev,
+                                  opportunityFlags: (prev.opportunityFlags ?? []).filter((_, i) => i !== idx),
+                                }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          placeholder="Flag text, then Add or Enter"
+                          value={opportunityFlagDraft}
+                          onChange={(e) => setOpportunityFlagDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            const t = opportunityFlagDraft.trim();
+                            if (!t) return;
+                            setEditOverallGoal((prev) => ({
+                              ...prev,
+                              opportunityFlags: (prev.opportunityFlags ?? []).includes(t)
+                                ? (prev.opportunityFlags ?? [])
+                                : [...(prev.opportunityFlags ?? []), t],
+                            }));
+                            setOpportunityFlagDraft("");
+                          }}
+                          className="h-7 flex-1 min-w-[140px] bg-background border-border/50 text-foreground text-[10px]"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[10px]"
+                          onClick={() => {
+                            const t = opportunityFlagDraft.trim();
+                            if (!t) return;
+                            setEditOverallGoal((prev) => ({
+                              ...prev,
+                              opportunityFlags: (prev.opportunityFlags ?? []).includes(t)
+                                ? (prev.opportunityFlags ?? [])
+                                : [...(prev.opportunityFlags ?? []), t],
+                            }));
+                            setOpportunityFlagDraft("");
+                          }}
+                        >
+                          Add
+                        </Button>
                       </div>
                     </div>
 
