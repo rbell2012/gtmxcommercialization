@@ -20,9 +20,9 @@ import {
   pilotNameToSlug,
   type Team,
   type TeamMember,
-  type GoalMetric,
+  type MemberTeamHistoryEntry,
 } from "@/contexts/TeamsContext";
-import { getMemberLifetimeMetricTotal } from "@/lib/quota-helpers";
+import { getMemberAssignedMonths, getMemberLifetimeMetricTotal, getMemberLifetimeWins } from "@/lib/quota-helpers";
 
 function formatDateRange(startDate: string | null, endDate: string | null): string | null {
   if (!startDate) return null;
@@ -64,14 +64,6 @@ function getTestBusinessDaysRemaining(endDate: string | null): number {
   return count;
 }
 
-function getMemberLifetimeWins(m: TeamMember): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
-}
-
-function getMemberLifetimeFunnelTotal(m: TeamMember, field: "calls" | "connects" | "demos" | "wins"): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + (f[field] || 0), 0);
-}
-
 function fmtNum(v: number): string {
   return v.toLocaleString();
 }
@@ -88,17 +80,29 @@ function StatChip({ icon, label, value }: { icon: React.ReactNode; label: string
   );
 }
 
-function ProjectCard({ team, index }: { team: Team; index: number }) {
+function ProjectCard({
+  team,
+  index,
+  memberTeamHistory,
+}: {
+  team: Team;
+  index: number;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+}) {
   const navigate = useNavigate();
   const members = team.members.filter((m) => m.isActive);
+  const allowedMonthsByMember = new Map(
+    members.map((m) => [m.id, getMemberAssignedMonths(m.id, team.id, memberTeamHistory)])
+  );
+  const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
   const progress = computeOverallProgress(team.startDate, team.endDate);
   const dateRange = formatDateRange(team.startDate, team.endDate);
 
-  const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "ops"), 0);
-  const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "demos"), 0);
-  const lifetimeWins = members.reduce((s, m) => s + getMemberLifetimeWins(m), 0);
-  const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "feedback"), 0);
-  const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity"), 0);
+  const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)), 0);
+  const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)), 0);
+  const lifetimeWins = members.reduce((s, m) => s + getMemberLifetimeWins(m, allowedMonthsFor(m)), 0);
+  const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "feedback", allowedMonthsFor(m)), 0);
+  const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)), 0);
 
   const slug = pilotNameToSlug(team.name);
   const path = `/${slug}`;
@@ -220,7 +224,7 @@ function PageOverviewCard({
 }
 
 const Home = ({ isUnlocked }: { isUnlocked: boolean }) => {
-  const { teams, loading } = useTeams();
+  const { teams, loading, memberTeamHistory } = useTeams();
   const navigate = useNavigate();
   const activeTeams = teams.filter((t) => t.isActive);
 
@@ -264,7 +268,7 @@ const Home = ({ isUnlocked }: { isUnlocked: boolean }) => {
           ) : (
             <div className="grid gap-5 lg:grid-cols-2">
               {activeTeams.map((team, i) => (
-                <ProjectCard key={team.id} team={team} index={i} />
+                <ProjectCard key={team.id} team={team} index={i} memberTeamHistory={memberTeamHistory} />
               ))}
             </div>
           )}

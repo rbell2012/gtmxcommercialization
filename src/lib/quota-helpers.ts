@@ -1,4 +1,4 @@
-import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames, type ProjectTeamAssignment, type SalesTeam } from "@/contexts/TeamsContext";
+import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames, type ProjectTeamAssignment, type SalesTeam, type MemberTeamHistoryEntry } from "@/contexts/TeamsContext";
 import { getPilotPhaseWinsCount } from "@/lib/pilot-helpers";
 
 /** Optional context so Test Phases wins match Pilot Regions KPI for pilot-labeled months. */
@@ -29,14 +29,59 @@ export function getMemberMetricTotal(m: TeamMember, metric: GoalMetric, referenc
   );
 }
 
-export function getMemberLifetimeMetricTotal(m: TeamMember, metric: GoalMetric): number {
+export function getMemberAssignedMonths(
+  memberId: string,
+  teamId: string,
+  history: MemberTeamHistoryEntry[],
+): Set<string> {
+  const months = new Set<string>();
+  for (const entry of history) {
+    if (entry.memberId !== memberId || entry.teamId !== teamId) continue;
+    const start = new Date(entry.startedAt);
+    const end = entry.endedAt ? new Date(entry.endedAt) : new Date();
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= endMonth) {
+      months.add(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+  return months;
+}
+
+export function getMemberLifetimeMetricTotal(
+  m: TeamMember,
+  metric: GoalMetric,
+  allowedMonths?: Set<string>,
+): number {
+  const inRange = (monthKey: string): boolean => !allowedMonths?.size || allowedMonths.has(monthKey);
   if (m.monthlyMetrics && Object.keys(m.monthlyMetrics).length > 0) {
-    return Object.values(m.monthlyMetrics).reduce(
-      (s, f) => s + ((f as any)[metric] || 0), 0
+    return Object.entries(m.monthlyMetrics).reduce(
+      (s, [monthKey, f]) => (inRange(monthKey) ? s + ((f as any)[metric] || 0) : s), 0
     );
   }
-  return Object.values(m.funnelByWeek || {}).reduce(
-    (s, f) => s + ((f as any)[metric] || 0), 0
+  return Object.entries(m.funnelByWeek || {}).reduce(
+    (s, [weekKey, f]) => (inRange(weekKey.substring(0, 7)) ? s + ((f as any)[metric] || 0) : s), 0
+  );
+}
+
+export function getMemberLifetimeWins(m: TeamMember, allowedMonths?: Set<string>): number {
+  const inRange = (monthKey: string): boolean => !allowedMonths?.size || allowedMonths.has(monthKey);
+  return Object.entries(m.funnelByWeek || {}).reduce(
+    (s, [weekKey, f]) => (inRange(weekKey.substring(0, 7)) ? s + f.wins : s),
+    0
+  );
+}
+
+export function getMemberLifetimeFunnelTotal(
+  m: TeamMember,
+  field: "calls" | "connects" | "demos" | "wins",
+  allowedMonths?: Set<string>,
+): number {
+  const inRange = (monthKey: string): boolean => !allowedMonths?.size || allowedMonths.has(monthKey);
+  return Object.entries(m.funnelByWeek || {}).reduce(
+    (s, [weekKey, f]) => (inRange(weekKey.substring(0, 7)) ? s + (f[field] || 0) : s),
+    0
   );
 }
 

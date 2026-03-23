@@ -15,7 +15,7 @@ import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
 import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
-import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, isMemberExcludedFromAccelerator, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
+import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getMemberAssignedMonths, getMemberLifetimeWins, getMemberLifetimeFunnelTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, isMemberExcludedFromAccelerator, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
@@ -231,14 +231,6 @@ function getMemberTotalWins(m: TeamMember, referenceDate?: Date): number {
     (s, [weekKey, f]) => (weekKey.startsWith(prefix) ? s + f.wins : s),
     0
   );
-}
-
-function getMemberLifetimeWins(m: TeamMember): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + f.wins, 0);
-}
-
-function getMemberLifetimeFunnelTotal(m: TeamMember, field: 'calls' | 'connects' | 'demos' | 'wins'): number {
-  return Object.values(m.funnelByWeek || {}).reduce((s, f) => s + (f[field] || 0), 0);
 }
 
 function getTeamMonthKeys(teamWeeks: { key: string; label: string }[]): { key: string; label: string; weekKeys: string[]; colSpan: number }[] {
@@ -1455,41 +1447,45 @@ const Index = () => {
                 activeTeam.id,
               )
             : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
+          const allowedMonthsByMember = new Map(
+            members.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory)])
+          );
+          const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
 
           const lifetimeWins = hasOppWinsPath
             ? winsSplit.total
-            : members.reduce((s, m) => s + getMemberLifetimeWins(m), 0);
+            : members.reduce((s, m) => s + getMemberLifetimeWins(m, allowedMonthsFor(m)), 0);
 
-          const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops'), 0);
-          const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos'), 0);
-          const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback'), 0);
-          const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
-          const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls'), 0);
-          const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects'), 0);
-          const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos'), 0);
+          const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops', allowedMonthsFor(m)), 0);
+          const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos', allowedMonthsFor(m)), 0);
+          const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback', allowedMonthsFor(m)), 0);
+          const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
+          const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls', allowedMonthsFor(m)), 0);
+          const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects', allowedMonthsFor(m)), 0);
+          const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos', allowedMonthsFor(m)), 0);
 
           // Per-metric breakdowns for the hover tooltips
-          const opsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops") }));
-          const demosBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos") }));
+          const opsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)) }));
+          const demosBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)) }));
           const winsBreakdown = hasOppWinsPath && attributedRep
             ? [
                 { label: "Pilot phases (assigned reps)", value: winsSplit.pilotPhaseWins },
                 { label: "Other phases", value: winsSplit.otherPhaseWins },
               ]
-            : members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m) }));
-          const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback") }));
-          const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity") }));
+            : members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m, allowedMonthsFor(m)) }));
+          const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback", allowedMonthsFor(m)) }));
+          const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)) }));
 
           // Per-member conversion rate breakdowns (numerator / denominator + percent)
           const callToConnectRates = members.map((m) => {
-            const calls = getMemberLifetimeFunnelTotal(m, "calls");
-            const connects = getMemberLifetimeFunnelTotal(m, "connects");
+            const calls = getMemberLifetimeFunnelTotal(m, "calls", allowedMonthsFor(m));
+            const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
             const pct = calls > 0 ? (connects / calls) * 100 : 0;
             return { label: m.name, calls, connects, pct };
           });
           const connectToDemoRates = members.map((m) => {
-            const connects = getMemberLifetimeFunnelTotal(m, "connects");
-            const demos = getMemberLifetimeFunnelTotal(m, "demos");
+            const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
+            const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
             const pct = connects > 0 ? (demos / connects) * 100 : 0;
             return { label: m.name, connects, demos, pct };
           });
@@ -1503,8 +1499,8 @@ const Index = () => {
                 },
               ]
             : members.map((m) => {
-                const demos = getMemberLifetimeFunnelTotal(m, "demos");
-                const wins = getMemberLifetimeWins(m);
+                const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
+                const wins = getMemberLifetimeWins(m, allowedMonthsFor(m));
                 const pct = demos > 0 ? (wins / demos) * 100 : 0;
                 return { label: m.name, demos, wins, pct };
               });
@@ -1770,11 +1766,15 @@ const Index = () => {
         {/* Total TAM — external metrics data if available, else manual input */}
         {activeTeam && (() => {
           const activeMembers = getTeamMembersForMonth(activeTeam, referenceDate, memberTeamHistory, allMembersById);
+          const allowedMonthsByMember = new Map(
+            activeMembers.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory)])
+          );
+          const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
           const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
           if (hasMetricsTam) {
             const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
             const teamTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
-            const teamActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
+            const teamActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
             const membersWithTam = activeMembers.filter((m) => m.touchedTam > 0);
             const avgTam = membersWithTam.length > 0 ? Math.round(teamTam / membersWithTam.length) : 0;
             const pctOfTam = Math.min(100, teamTam > 0 ? (teamTouched / teamTam) * 100 : 0);
@@ -1803,7 +1803,7 @@ const Index = () => {
             );
           }
           const fbTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
-          const fbActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity'), 0);
+          const fbActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
           const fbAvg = activeMembers.length > 0 ? Math.round((activeTeam.totalTam || 0) / activeMembers.length) : 0;
           const totalTam = activeTeam.totalTam || 0;
           const fbPctOfTam = Math.min(100, totalTam > 0 ? (fbTouched / totalTam) * 100 : 0);
