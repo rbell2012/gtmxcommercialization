@@ -1,5 +1,27 @@
 # Changelog
 
+## Location — Team tab monthly metrics (`src/pages/Index.tsx`)
+
+**Rationale:** Monthly conversion tiles and monthly stat cards had no hover breakdowns, while Lifetime Stats already used tooltips with definitions, totals, and per-member rows. Users need the same insight for the selected month’s funnel rates and volume metrics.
+
+**Changes:**
+- Wrapped monthly **Call→Connect**, **Connect→Demo**, and **Demo→Win** tiles in `UiTooltip` with definition text, aggregate numerator/denominator and %, per-member monthly funnel breakdowns (from `funnelByWeek` + `getMemberTotalWins` for wins), and a footer total line; added `cursor-help` on those tiles.
+- Added per-`activeMembers` breakdown arrays for monthly **Ops**, **Demos**, **Wins**, **Feedback**, and **Activity** via `getMemberMetricTotal` / `getMemberTotalWins`, and passed `tooltip` + `breakdown` into each monthly `StatCard` so hover matches the lifetime stat-card pattern.
+
+---
+
+## Location — Lifetime Stats, Home project cards, TAM touches (`src/lib/quota-helpers.ts`, `src/pages/Index.tsx`, `src/pages/Home.tsx`)
+
+**Rationale:** Lifetime Stats and related rollups summed every week/month of metrics for each member, so reps with long Salesforce history inflated Call→Connect tooltips, ops/demos/feedback/activity, and funnel conversion denominators. Stats should reflect only calendar months when each member was actually assigned to that project, including mid-test joins, early exits, and rejoins.
+
+**Changes:**
+- Added `getMemberAssignedMonths(memberId, teamId, history)` to expand `member_team_history` windows into a `Set<YYYY-MM>` (multiple non-contiguous windows supported).
+- Extended `getMemberLifetimeMetricTotal` with optional `allowedMonths`; added shared `getMemberLifetimeWins` and `getMemberLifetimeFunnelTotal` with the same filter (monthlyMetrics + funnelByWeek by week-key month prefix).
+- **Index:** Lifetime Stats totals, tooltip breakdowns, conversion-rate rows, and TAM **Avg Touches/Acct** activity sums use per-member allowed months from `memberTeamHistory`.
+- **Home:** `useTeams()` passes `memberTeamHistory` into `ProjectCard`; lifetime chips on project cards use the same per-member filtering.
+
+---
+
 ## Location — Pilots (`Index.tsx`), Quota, Settings, Help; libs `pilot-helpers.ts`, `quota-helpers.ts`
 
 **Rationale:** Test Phases “wins” under each month did not match reality for Guest Pro–style projects: they only summed roster funnel data while wins live on Salesforce ops (pilot reps); later, summing phase months still diverged from Lifetime Stats because pilot months used a narrower KPI (roster + product attach) than lifetime attribution. Users need phase footers aligned with ops-backed lifetime totals where flags are configured, while the Pilot Regions block stays a focused roster KPI.

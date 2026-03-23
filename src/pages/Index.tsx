@@ -2196,6 +2196,11 @@ const TeamTab = memo(function TeamTab({
   const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos', referenceDate), 0);
   const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback', referenceDate), 0);
   const teamTotalActivity = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'activity', referenceDate), 0);
+  const monthlyOpsBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "ops", referenceDate) }));
+  const monthlyDemosBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "demos", referenceDate) }));
+  const monthlyWinsBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberTotalWins(m, referenceDate) }));
+  const monthlyFeedbackBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "feedback", referenceDate) }));
+  const monthlyActivityBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "activity", referenceDate) }));
 
   const chartData = members.map((m) => ({
     name: m.name,
@@ -2407,52 +2412,179 @@ const TeamTab = memo(function TeamTab({
               {/* Monthly Conversion Rates */}
               {(() => {
                 const now = referenceDate ?? new Date();
-                  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
-                  const monthSum = (field: 'calls' | 'connects' | 'demos') =>
-                    members.reduce((s, m) => Object.entries(m.funnelByWeek || {}).reduce(
-                      (ws, [wk, f]) => wk.startsWith(monthPrefix) ? ws + (f[field] || 0) : ws, 0) + s, 0);
-                  const totals = {
-                    calls: monthSum('calls'),
-                    connects: monthSum('connects'),
-                    demos: monthSum('demos'),
-                    wins: teamTotal,
-                  };
-                  return (
-                    <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
-                      <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        {(() => {
-                          const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
-                          const tt = members.reduce((s, m) => s + m.touchedTam, 0);
-                          const hasMetrics = tt > 0;
-                          if (hasMetrics) {
-                            return (
-                              <>
-                                <p className="font-display text-lg font-bold text-primary">{Math.min(100, (ta / tt) * 100).toFixed(0)}%</p>
-                                <p className="text-[10px] text-secondary-foreground/50">% TAM</p>
-                              </>
-                            );
-                          }
+                const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`;
+                const monthSum = (field: "calls" | "connects" | "demos") =>
+                  members.reduce(
+                    (s, m) =>
+                      Object.entries(m.funnelByWeek || {}).reduce(
+                        (ws, [wk, f]) => (wk.startsWith(monthPrefix) ? ws + (f[field] || 0) : ws),
+                        0
+                      ) + s,
+                    0
+                  );
+                const memberMonthRates = members.map((m) => {
+                  const calls = Object.entries(m.funnelByWeek || {}).reduce(
+                    (s, [wk, f]) => (wk.startsWith(monthPrefix) ? s + (f.calls || 0) : s),
+                    0
+                  );
+                  const connects = Object.entries(m.funnelByWeek || {}).reduce(
+                    (s, [wk, f]) => (wk.startsWith(monthPrefix) ? s + (f.connects || 0) : s),
+                    0
+                  );
+                  const demos = Object.entries(m.funnelByWeek || {}).reduce(
+                    (s, [wk, f]) => (wk.startsWith(monthPrefix) ? s + (f.demos || 0) : s),
+                    0
+                  );
+                  const wins = getMemberTotalWins(m, referenceDate);
+                  return { label: m.name, calls, connects, demos, wins };
+                });
+                const totals = {
+                  calls: monthSum("calls"),
+                  connects: monthSum("connects"),
+                  demos: monthSum("demos"),
+                  wins: teamTotal,
+                };
+                const monthlyCallToConnectPct = totals.calls > 0 ? (totals.connects / totals.calls) * 100 : 0;
+                const monthlyConnectToDemoPct = totals.connects > 0 ? (totals.demos / totals.connects) * 100 : 0;
+                const monthlyDemoToWinPct = totals.demos > 0 ? (totals.wins / totals.demos) * 100 : 0;
+                return (
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                    <div className="rounded-md bg-secondary-foreground/5 py-2">
+                      {(() => {
+                        const ta = members.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
+                        const tt = members.reduce((s, m) => s + m.touchedTam, 0);
+                        const hasMetrics = tt > 0;
+                        if (hasMetrics) {
                           return (
                             <>
-                              <p className="font-display text-lg font-bold text-primary">{team.totalTam > 0 ? ((totals.calls / team.totalTam) * 100).toFixed(0) : 0}%</p>
-                              <p className="text-[10px] text-secondary-foreground/50">TAM→Call</p>
+                              <p className="font-display text-lg font-bold text-primary">{Math.min(100, (ta / tt) * 100).toFixed(0)}%</p>
+                              <p className="text-[10px] text-secondary-foreground/50">% TAM</p>
                             </>
                           );
-                        })()}
-                      </div>
-                      <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-secondary-foreground">{totals.calls > 0 ? ((totals.connects / totals.calls) * 100).toFixed(0) : 0}%</p>
-                        <p className="text-[10px] text-secondary-foreground/50">Call→Connect</p>
-                      </div>
-                      <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-primary">{totals.connects > 0 ? ((totals.demos / totals.connects) * 100).toFixed(0) : 0}%</p>
-                        <p className="text-[10px] text-secondary-foreground/50">Connect→Demo</p>
-                      </div>
-                      <div className="rounded-md bg-secondary-foreground/5 py-2">
-                        <p className="font-display text-lg font-bold text-secondary-foreground">{totals.demos > 0 ? ((totals.wins / totals.demos) * 100).toFixed(0) : 0}%</p>
-                        <p className="text-[10px] text-secondary-foreground/50">Demo→Win</p>
-                      </div>
+                        }
+                        return (
+                          <>
+                            <p className="font-display text-lg font-bold text-primary">{team.totalTam > 0 ? ((totals.calls / team.totalTam) * 100).toFixed(0) : 0}%</p>
+                            <p className="text-[10px] text-secondary-foreground/50">TAM→Call</p>
+                          </>
+                        );
+                      })()}
                     </div>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="cursor-help rounded-md bg-secondary-foreground/5 py-2">
+                          <p className="font-display text-lg font-bold text-secondary-foreground">{monthlyCallToConnectPct.toFixed(0)}%</p>
+                          <p className="text-[10px] text-secondary-foreground/50">Call→Connect</p>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <div className="space-y-2">
+                          <p className="text-xs leading-relaxed">
+                            % of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.
+                          </p>
+                          <div className="text-[11px] text-muted-foreground">
+                            Total: {totals.connects.toLocaleString()} ÷ {totals.calls.toLocaleString()} ({monthlyCallToConnectPct.toFixed(0)}%)
+                          </div>
+                          <div className="h-px bg-accent/20" />
+                          <div className="space-y-1 text-xs">
+                            {memberMonthRates.map((r) => {
+                              const pct = r.calls > 0 ? (r.connects / r.calls) * 100 : 0;
+                              return (
+                                <div key={r.label} className="flex items-center justify-between gap-3">
+                                  <span className="truncate text-muted-foreground">{r.label}</span>
+                                  <span className="whitespace-nowrap font-medium text-foreground">
+                                    {r.connects.toLocaleString()}/{r.calls.toLocaleString()} ({pct.toFixed(0)}%)
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <div className="flex items-center justify-between gap-3 border-t border-accent/10 pt-1">
+                              <span className="font-semibold text-foreground">Total</span>
+                              <span className="whitespace-nowrap font-semibold text-accent">
+                                {totals.connects.toLocaleString()}/{totals.calls.toLocaleString()} ({monthlyCallToConnectPct.toFixed(0)}%)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </UiTooltip>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="cursor-help rounded-md bg-secondary-foreground/5 py-2">
+                          <p className="font-display text-lg font-bold text-primary">{monthlyConnectToDemoPct.toFixed(0)}%</p>
+                          <p className="text-[10px] text-secondary-foreground/50">Connect→Demo</p>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <div className="space-y-2">
+                          <p className="text-xs leading-relaxed">
+                            % of live connections that converted to a demo. Calculated as: Demos ÷ Connects.
+                          </p>
+                          <div className="text-[11px] text-muted-foreground">
+                            Total: {totals.demos.toLocaleString()} ÷ {totals.connects.toLocaleString()} ({monthlyConnectToDemoPct.toFixed(0)}%)
+                          </div>
+                          <div className="h-px bg-accent/20" />
+                          <div className="space-y-1 text-xs">
+                            {memberMonthRates.map((r) => {
+                              const pct = r.connects > 0 ? (r.demos / r.connects) * 100 : 0;
+                              return (
+                                <div key={r.label} className="flex items-center justify-between gap-3">
+                                  <span className="truncate text-muted-foreground">{r.label}</span>
+                                  <span className="whitespace-nowrap font-medium text-foreground">
+                                    {r.demos.toLocaleString()}/{r.connects.toLocaleString()} ({pct.toFixed(0)}%)
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <div className="flex items-center justify-between gap-3 border-t border-accent/10 pt-1">
+                              <span className="font-semibold text-foreground">Total</span>
+                              <span className="whitespace-nowrap font-semibold text-accent">
+                                {totals.demos.toLocaleString()}/{totals.connects.toLocaleString()} ({monthlyConnectToDemoPct.toFixed(0)}%)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </UiTooltip>
+                    <UiTooltip>
+                      <TooltipTrigger asChild>
+                        <div className="cursor-help rounded-md bg-secondary-foreground/5 py-2">
+                          <p className="font-display text-lg font-bold text-secondary-foreground">{monthlyDemoToWinPct.toFixed(0)}%</p>
+                          <p className="text-[10px] text-secondary-foreground/50">Demo→Win</p>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[240px]">
+                        <div className="space-y-2">
+                          <p className="text-xs leading-relaxed">
+                            % of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.
+                          </p>
+                          <div className="text-[11px] text-muted-foreground">
+                            Total: {totals.wins.toLocaleString()} ÷ {totals.demos.toLocaleString()} ({monthlyDemoToWinPct.toFixed(0)}%)
+                          </div>
+                          <div className="h-px bg-accent/20" />
+                          <div className="space-y-1 text-xs">
+                            {memberMonthRates.map((r) => {
+                              const pct = r.demos > 0 ? (r.wins / r.demos) * 100 : 0;
+                              return (
+                                <div key={r.label} className="flex items-center justify-between gap-3">
+                                  <span className="truncate text-muted-foreground">{r.label}</span>
+                                  <span className="whitespace-nowrap font-medium text-foreground">
+                                    {r.wins.toLocaleString()}/{r.demos.toLocaleString()} ({pct.toFixed(0)}%)
+                                  </span>
+                                </div>
+                              );
+                            })}
+                            <div className="flex items-center justify-between gap-3 border-t border-accent/10 pt-1">
+                              <span className="font-semibold text-foreground">Total</span>
+                              <span className="whitespace-nowrap font-semibold text-accent">
+                                {totals.wins.toLocaleString()}/{totals.demos.toLocaleString()} ({monthlyDemoToWinPct.toFixed(0)}%)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </TooltipContent>
+                    </UiTooltip>
+                  </div>
                 );
               })()}
             </div>
@@ -2474,26 +2606,36 @@ const TeamTab = memo(function TeamTab({
                 icon={<Handshake className="h-5 w-5 text-accent" />}
                 label="Ops"
                 value={teamTotalOps}
+                tooltip="Total number of opportunities (ops) opened this month."
+                breakdown={monthlyOpsBreakdown}
               />
               <StatCard
                 icon={<Video className="h-5 w-5 text-primary" />}
                 label="Demos"
                 value={teamTotalDemos}
+                tooltip="Total 'Completed' Events with subject 'Demo' logged this month."
+                breakdown={monthlyDemosBreakdown}
               />
               <StatCard
                 icon={<TrendingUp className="h-5 w-5 text-accent" />}
                 label="Wins"
                 value={teamTotal}
+                tooltip="Total closed wins this month."
+                breakdown={monthlyWinsBreakdown}
               />
               <StatCard
                 icon={<MessageCircle className="h-5 w-5 text-primary" />}
                 label="Feedback"
                 value={teamTotalFeedback}
+                tooltip="Total feedback interactions logged this month."
+                breakdown={monthlyFeedbackBreakdown}
               />
               <StatCard
                 icon={<Activity className="h-5 w-5 text-accent" />}
                 label="Activity"
                 value={teamTotalActivity}
+                tooltip="Total activity count (calls, emails, texts) logged this month."
+                breakdown={monthlyActivityBreakdown}
               />
             </div>
           </div>
