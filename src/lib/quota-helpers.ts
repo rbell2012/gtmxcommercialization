@@ -33,17 +33,28 @@ export function getMemberAssignedMonths(
   memberId: string,
   teamId: string,
   history: MemberTeamHistoryEntry[],
+  teamStartDate?: string | null,
 ): Set<string> {
+  const floorMonth = teamStartDate ? teamStartDate.substring(0, 7) : null;
   const months = new Set<string>();
   for (const entry of history) {
     if (entry.memberId !== memberId || entry.teamId !== teamId) continue;
-    const start = new Date(entry.startedAt);
-    const end = entry.endedAt ? new Date(entry.endedAt) : new Date();
-    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
-    while (cursor <= endMonth) {
-      months.add(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
-      cursor.setMonth(cursor.getMonth() + 1);
+    const rawStart = entry.startedAt.substring(0, 7);
+    const startMonth = floorMonth && rawStart < floorMonth ? floorMonth : rawStart;
+    const endMonth = entry.endedAt
+      ? entry.endedAt.substring(0, 7)
+      : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    let y = Number(startMonth.slice(0, 4));
+    let m = Number(startMonth.slice(5, 7));
+    const ey = Number(endMonth.slice(0, 4));
+    const em = Number(endMonth.slice(5, 7));
+    while (y < ey || (y === ey && m <= em)) {
+      months.add(`${y}-${String(m).padStart(2, "0")}`);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
     }
   }
   return months;

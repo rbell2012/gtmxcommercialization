@@ -1,5 +1,39 @@
 # Changelog
 
+## Location — Team tab monthly goals / wins (`src/pages/Index.tsx` tooltips), Teams context (`src/contexts/TeamsContext.tsx`), Supabase `weekly_funnels` / `metrics_wins`, tooling (`scripts/sync-wins.mjs`, `package.json`)
+
+**Rationale:** Sterno monthly win totals could disagree with the NB/G sub-line (e.g. 17 vs 7+10) because persisted `weekly_funnels.wins` overrode metrics-derived counts when `f.wins > 0`. After ops ID updates, wins needed a safe CSV upsert that preserved existing `win_date` (and later account-name–matched preservation from an export). Accelerator **Wins** cells showed no hover breakdown because `metricAccountNames` and `monthlyWinTypeNames` keyed only on `account_name`, which was null on many qualifying rows while `opportunity_name` was set.
+
+**Changes:**
+- **`TeamsContext`:** Build `winsWithEffectiveDate` with `_win_name` = `account_name || opportunity_name`; aggregate wins display/copy names with `aggregateNamesBy(..., "_win_name")`; populate NB/Growth name sets using the same fallback so `UiTooltip` on wins cells (gated on `accountNames.length`) shows New Business vs Growth lists again.
+- **`weekly_funnels`:** Migration `supabase/migrations/20260324000000_zero_weekly_funnels_wins.sql` zeros `wins` where non-zero so merge logic always uses `metrics_wins` → `isWinStage`-filtered weekly counts (remote applied via Supabase when local `db push` was blocked by migration history drift).
+- **Tooling:** `scripts/sync-wins.mjs` (with devDependency `papaparse`) upserts `all_gtmx_wins_*.csv` into `metrics_wins`, dedupes duplicate IDs per batch, optionally preserves `win_date` / names from `Supabase Snippet Metrics Calls Table.csv`, and deletes stale IDs not in the new file.
+
+---
+
+## Location — Pilots page (`src/pages/Index.tsx`), Teams context (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** GA / Commercial Lead months could take a long time before Test Phase labels and Pilot Regions appeared because `team_phase_labels` and `team_phase_priorities` were fetched only from Index after the active team resolved—an extra round-trip after the heavy `loadMetrics` + `loadCore` chain. The GA “Excluded regions” chip list could also grow very tall (dozens of rows), overwhelming the card.
+
+**Changes:**
+- **`loadCore`:** Fetches all rows from `team_phase_labels` and `team_phase_priorities` in the same `Promise.all` as teams, `metrics_sales_teams`, and `project_team_assignments`; builds per-`team_id` maps and updates context state with each core load.
+- **Context API:** Exposes `phaseLabels`, `phasePriorities`, `updatePhaseLabel`, and `updatePhasePriority` from `useTeams()`; subscribes realtime on both tables via `debouncedLoadCore` so edits stay in sync.
+- **Index:** Drops local phase label/priority state and the two per-team Supabase `useEffect` fetches; reads phase data and updaters from `useTeams()` so phase labels resolve together with the rest of core data (no second network hop for labels alone).
+- **`PilotRegionsPicker` (GA excluded regions):** Adds `excludedExpanded` state, clamps the chip wrap area with `max-height` + `overflow-hidden` when collapsed, and a centered **Show more** / **Show less** control when there are more than 10 excluded regions (resets when `teamId` / `monthIndex` changes).
+
+---
+
+## Location — Lifetime Stats / Home rollups (`src/lib/quota-helpers.ts`, `src/pages/Index.tsx`, `src/pages/Home.tsx`), Supabase `member_team_history`
+
+**Rationale:** Mad Max lifetime Call→Connect and funnel denominators stayed thousands above `metrics_calls` for Dec 2025 onward because (1) `member_team_history` had Oct/Nov 2025 windows for Carly, Shane, and Zoe, and (2) `getMemberAssignedMonths` used `new Date()` on ISO timestamps, so UTC midnight `2025-12-01` became the prior local calendar month and November stayed in `allowedMonths`. Align UI rollups with official project start (12/1/2025) and calendar months without timezone skew.
+
+**Changes:**
+- Extended `getMemberAssignedMonths` with optional `teamStartDate`; **Index** (Lifetime Stats + TAM block) and **Home** (`ProjectCard`) pass `activeTeam.startDate` / `team.startDate` so allowed months never begin before the team’s configured start.
+- Rewrote `getMemberAssignedMonths` to derive `YYYY-MM` from ISO strings via `substring(0, 7)` and walk months numerically, instead of `Date` cursor math on `started_at` / `ended_at` (avoids US-timezone shifting Dec→Nov).
+- Added migration `supabase/migrations/20260323120000_fix_mad_max_member_team_history_dec2025.sql`: delete Mad Max history rows for Carly King, Shane Hughes, Zoe Lang; insert one open row each with `started_at = 2025-12-01T00:00:00+00`, `ended_at` null.
+
+---
+
 ## Location — Team tab monthly metrics (`src/pages/Index.tsx`)
 
 **Rationale:** Monthly conversion tiles and monthly stat cards had no hover breakdowns, while Lifetime Stats already used tooltips with definitions, totals, and per-member rows. Users need the same insight for the selected month’s funnel rates and volume metrics.

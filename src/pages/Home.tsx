@@ -92,7 +92,7 @@ function ProjectCard({
   const navigate = useNavigate();
   const members = team.members.filter((m) => m.isActive);
   const allowedMonthsByMember = new Map(
-    members.map((m) => [m.id, getMemberAssignedMonths(m.id, team.id, memberTeamHistory)])
+    members.map((m) => [m.id, getMemberAssignedMonths(m.id, team.id, memberTeamHistory, team.startDate)])
   );
   const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
   const progress = computeOverallProgress(team.startDate, team.endDate);

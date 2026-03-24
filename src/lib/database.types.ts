@@ -370,6 +370,7 @@ export interface DbMetricsSalesTeam {
   manager_name: string;
   manager_title: string;
   location_reference: string;
+  department_name: string | null;
   team_size: number;
   avg_monthly_wins: number;
   team_members: string;

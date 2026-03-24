@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment } from "@/lib/database.types";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment, DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
 import { dateToMonthKey, dateToWeekKey, isWinStage } from "@/lib/metrics-helpers";
 
 // ── Goal metrics system ──
@@ -281,6 +281,7 @@ export interface SalesTeam {
   managerName: string;
   managerTitle: string;
   locationReference: string;
+  departmentName: string | null;
   teamSize: number;
   avgMonthlyWins: number;
   teamMembers: string;
@@ -686,6 +687,10 @@ interface TeamsContextType {
   assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers?: string | null) => void;
   unassignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number) => void;
   updateExcludedMembers: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers: string | null) => void;
+  phaseLabels: Record<string, Record<number, string>>;
+  phasePriorities: Record<string, Record<number, string>>;
+  updatePhaseLabel: (teamId: string, monthIndex: number, label: string) => void;
+  updatePhasePriority: (teamId: string, monthIndex: number, priority: string) => void;
   reloadAll: () => Promise<void>;
   loading: boolean;
   /** Raw metrics_ops rows (includes line_items when loaded) */
@@ -747,6 +752,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const [salesTeams, setSalesTeams] = useState<SalesTeam[]>([]);
   const [projectedBookings, setProjectedBookings] = useState<ProjectedBooking[]>([]);
   const [projectTeamAssignments, setProjectTeamAssignments] = useState<ProjectTeamAssignment[]>([]);
+  const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
+  const [phasePriorities, setPhasePriorities] = useState<Record<string, Record<number, string>>>({});
   const [opsRows, setOpsRows] = useState<Record<string, unknown>[]>([]);
   const [demoRows, setDemoRows] = useState<Record<string, unknown>[]>([]);
   const [winsDetailRows, setWinsDetailRows] = useState<Record<string, unknown>[]>([]);
@@ -816,7 +823,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
 
     const winsWithEffectiveDate = qualifiedWinsRows.map((r) => {
       const wsd = winStageDateById.get(r.id as string);
-      return wsd ? { ...r, _effective_date: wsd } : { ...r, _effective_date: r.win_date as string };
+      return {
+        ...r,
+        _effective_date: wsd ?? (r.win_date as string),
+        _win_name: (r.account_name as string | null) || (r.opportunity_name as string | null) || null,
+      };
     });
 
     const byWeek: Record<string, AggCounts> = {
@@ -858,7 +869,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const namesByMonth: Record<string, AggNames> = {
       ops: aggregateNamesBy(opsRows, "op_created_date", "opportunity_name", dateToMonthKey),
       demos: aggregateNamesBy(demoRows, "demo_date", "account_name", dateToMonthKey),
-      wins: aggregateNamesBy(winsWithEffectiveDate, "_effective_date", "account_name", dateToMonthKey),
+      wins: aggregateNamesBy(winsWithEffectiveDate, "_effective_date", "_win_name", dateToMonthKey),
       activity: new Map(),
       calls: new Map(),
       connects: new Map(),
@@ -872,7 +883,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       if (!dateVal) continue;
       const repKey = (row.rep_name as string).toLowerCase().trim();
       const mk = dateToMonthKey(dateVal);
-      const acctName = row.account_name as string | null;
+      const acctName = (row.account_name as string | null) || (row.opportunity_name as string | null);
       const opType = (row.opportunity_type as string | null) ?? "";
       const isGrowth = !opType || opType === "Existing Business (Upsell)";
 
@@ -945,7 +956,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const m = metrics ?? cachedMetricsRef.current;
     if (!m) return;
 
-    const [tRes, mRes, fRes, wRes, hRes, tghRes, mghRes, stRes, pbRes, ptaRes] = await Promise.all([
+    const [tRes, mRes, fRes, wRes, hRes, tghRes, mghRes, stRes, pbRes, ptaRes, tplRes, tppRes] = await Promise.all([
       supabase.from("teams").select("*").is("archived_at", null),
       supabase.from("members").select("*").is("archived_at", null),
       supabase.from("weekly_funnels").select("*"),
@@ -956,6 +967,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       supabase.from("metrics_sales_teams").select("*"),
       supabase.from("metrics_projected_bookings").select("*"),
       supabase.from("project_team_assignments").select("*"),
+      supabase.from("team_phase_labels").select("*"),
+      supabase.from("team_phase_priorities").select("*"),
     ]);
 
     const {
@@ -1331,6 +1344,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       managerName: st.manager_name,
       managerTitle: st.manager_title,
       locationReference: st.location_reference,
+      departmentName: st.department_name,
       teamSize: st.team_size,
       avgMonthlyWins: Number(st.avg_monthly_wins),
       teamMembers: st.team_members,
@@ -1354,6 +1368,17 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       excludedMembers: a.excluded_members ?? null,
     }));
 
+    const phaseLabelsByTeam: Record<string, Record<number, string>> = {};
+    for (const row of (tplRes.data ?? []) as DbTeamPhaseLabel[]) {
+      if (!phaseLabelsByTeam[row.team_id]) phaseLabelsByTeam[row.team_id] = {};
+      phaseLabelsByTeam[row.team_id][row.month_index] = row.label;
+    }
+    const phasePrioritiesByTeam: Record<string, Record<number, string>> = {};
+    for (const row of (tppRes.data ?? []) as DbTeamPhasePriority[]) {
+      if (!phasePrioritiesByTeam[row.team_id]) phasePrioritiesByTeam[row.team_id] = {};
+      phasePrioritiesByTeam[row.team_id][row.month_index] = row.priority;
+    }
+
     setTeams(t);
     setUnassignedMembers(u);
     setAllMembersById(membersMap);
@@ -1363,6 +1388,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     setSalesTeams(salesTeamEntries);
     setProjectedBookings(projectedBookingEntries);
     setProjectTeamAssignments(assignmentEntries);
+    setPhaseLabels(phaseLabelsByTeam);
+    setPhasePriorities(phasePrioritiesByTeam);
     setLoading(false);
   }, []);
 
@@ -1406,6 +1433,8 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_sales_teams" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_projected_bookings" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "project_team_assignments" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_phase_labels" }, debouncedLoadCore)
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_phase_priorities" }, debouncedLoadCore)
       .subscribe();
 
     return () => {
@@ -2232,6 +2261,38 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const updatePhaseLabel = useCallback((teamId: string, monthIndex: number, label: string) => {
+    setPhaseLabels((prev) => ({
+      ...prev,
+      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: label },
+    }));
+    dbMutate(
+      supabase
+        .from("team_phase_labels")
+        .upsert(
+          { team_id: teamId, month_index: monthIndex, label },
+          { onConflict: "team_id,month_index" },
+        ),
+      "update phase label",
+    );
+  }, []);
+
+  const updatePhasePriority = useCallback((teamId: string, monthIndex: number, priority: string) => {
+    setPhasePriorities((prev) => ({
+      ...prev,
+      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: priority },
+    }));
+    dbMutate(
+      supabase
+        .from("team_phase_priorities")
+        .upsert(
+          { team_id: teamId, month_index: monthIndex, priority },
+          { onConflict: "team_id,month_index" },
+        ),
+      "update phase priority",
+    );
+  }, []);
+
   const contextValue = useMemo(() => ({
     teams,
     setTeams,
@@ -2267,6 +2328,10 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     assignSalesTeam,
     unassignSalesTeam,
     updateExcludedMembers,
+    phaseLabels,
+    phasePriorities,
+    updatePhaseLabel,
+    updatePhasePriority,
     reloadAll: loadAll,
     loading,
     opsRows,
@@ -2277,11 +2342,12 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   }), [
     teams, unassignedMembers, memberTeamHistory, teamGoalsHistory, memberGoalsHistory,
     allMembersById, archivedTeams, archivedMembers, loading, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows,
-    salesTeams, projectedBookings, projectTeamAssignments,
+    salesTeams, projectedBookings, projectTeamAssignments, phaseLabels, phasePriorities,
     loadArchivedTeams, unarchiveTeam, loadArchivedMembers, archiveMember, unarchiveMember,
     updateTeam, addTeam, removeTeam, reorderTeams, reorderMembers, toggleTeamActive,
     createMember, updateMember, assignMember, unassignMember, removeMember,
-    upsertTeamGoalsHistory, updateHistoricalRoster, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, loadAll,
+    upsertTeamGoalsHistory, updateHistoricalRoster, assignSalesTeam, unassignSalesTeam, updateExcludedMembers,
+    updatePhaseLabel, updatePhasePriority, loadAll,
   ]);
 
   return (

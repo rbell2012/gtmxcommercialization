@@ -885,7 +885,7 @@ export default function Help() {
             rep. Mad Max accounts from <code>google_sheet_mad_max</code> grouped
             by GTMx rep, Sterno accounts from <code>google_sheet_sterno</code>{" "}
             grouped by account owner, plus a hardcoded 2,400 for Lo Picton
-            (Guest Pro). Excludes DNQ/mid-market/enterprise statuses (Mad Max)
+            (Toast IQ Grow). Excludes DNQ/mid-market/enterprise statuses (Mad Max)
             and disqualified outcomes (Sterno).
           </li>
         </ul>
@@ -1025,7 +1025,7 @@ export default function Help() {
             <code>feedback_completed = TRUE</code> and not disqualified), and
             Mad Max feedback from <code>google_sheets_mad_max_feedback</code>.
             Blank rep names default to Ross Armstrong (Sterno), Zoe Lang (Mad
-            Max), or Lo Picton (Guest Pro).
+            Max), or Lo Picton (Toast IQ Grow).
           </li>
         </ul>
 

@@ -14,7 +14,6 @@ import { useChartColors } from "@/hooks/useChartColors";
 import { useManagerInputs } from "@/hooks/useManagerInputs";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeamPhaseLabel, DbTeamPhasePriority } from "@/lib/database.types";
 import { getMemberMetricTotal, getMemberLifetimeMetricTotal, getMemberAssignedMonths, getMemberLifetimeWins, getMemberLifetimeFunnelTotal, getScopedMetricTotal, getScopedAccountNames, getScopedTypeCounts, getScopedTypeNames, getEffectiveGoal, getPhaseWinsLabel, isMemberOnRelief, isMemberExcludedFromAccelerator, computeQuota, countTriggeredAccelerators, getTriggeredAcceleratorDetails, getAcceleratorProgress } from "@/lib/quota-helpers";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -50,6 +49,9 @@ import {
 } from "@/lib/pilot-helpers";
 
 const DEFAULT_ROLES = ["TOFU", "Closing", "No Funnel Activity"];
+
+/** Stable empty array for GA phase (skip opportunity-name flag filtering). */
+const NO_OPPORTUNITY_FLAGS: string[] = [];
 
 function pilotWinsInWeek(
   metricsByWeek: MetricsByWeekBundle,
@@ -342,6 +344,8 @@ function PilotRegionsPicker({
   teamId,
   monthIndex,
   phaseLabel,
+  isFirstGAMonth,
+  isGAPhase,
   salesTeams,
   projectTeamAssignments,
   assignSalesTeam,
@@ -351,6 +355,8 @@ function PilotRegionsPicker({
   teamId: string;
   monthIndex: number;
   phaseLabel: string;
+  isFirstGAMonth: boolean;
+  isGAPhase: boolean;
   salesTeams: SalesTeam[];
   projectTeamAssignments: ProjectTeamAssignment[];
   assignSalesTeam: (teamId: string, salesTeamId: string, monthIndex: number, excludedMembers?: string | null) => void;
@@ -360,6 +366,13 @@ function PilotRegionsPicker({
   const [open, setOpen] = useState(false);
   const [repDialogTeamId, setRepDialogTeamId] = useState<string | null>(null);
   const [pendingExcluded, setPendingExcluded] = useState<Set<string>>(new Set());
+  const [excludedExpanded, setExcludedExpanded] = useState(false);
+  const hasAutoAssigned = useRef(false);
+
+  useEffect(() => {
+    hasAutoAssigned.current = false;
+    setExcludedExpanded(false);
+  }, [teamId, monthIndex]);
 
   const assignmentsForMonth = projectTeamAssignments.filter(
     (a) => a.teamId === teamId && a.monthIndex === monthIndex
@@ -370,6 +383,22 @@ function PilotRegionsPicker({
   const unassigned = salesTeams.filter(
     (st) => !assigned.some((a) => a.id === st.id)
   );
+
+  useEffect(() => {
+    if (!isGAPhase || salesTeams.length === 0) {
+      hasAutoAssigned.current = false;
+      return;
+    }
+    if (assignmentsForMonth.length > 0 || hasAutoAssigned.current) return;
+    hasAutoAssigned.current = true;
+    const nonRetail = salesTeams.filter(
+      (st) => !st.displayName.toLowerCase().includes("retail"),
+    );
+    for (const st of nonRetail) {
+      assignSalesTeam(teamId, st.id, monthIndex);
+    }
+  }, [isGAPhase, salesTeams, assignmentsForMonth.length, teamId, monthIndex, assignSalesTeam]);
+
   const previouslyAssigned = useMemo(() => {
     const ids = new Set<string>();
     for (const a of projectTeamAssignments) {
@@ -436,7 +465,7 @@ function PilotRegionsPicker({
           <span className="text-[10px] text-muted-foreground">— {phaseLabel}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          {monthIndex > 0 && (
+          {monthIndex > 0 && (!isGAPhase || !isFirstGAMonth) && (
             <button
               onClick={addLastMonth}
               disabled={lastMonthRegions.length === 0}
@@ -449,28 +478,42 @@ function PilotRegionsPicker({
           <PopoverTrigger asChild>
             <button
               className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:bg-muted/50 transition-colors w-[220px] disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={unassigned.length === 0 && salesTeams.length === 0}
+              disabled={
+                salesTeams.length === 0 ||
+                (isGAPhase ? assigned.length === 0 : unassigned.length === 0)
+              }
             >
               {salesTeams.length === 0
                 ? "No regions available"
-                : unassigned.length === 0
-                  ? "All regions assigned"
-                  : "Search regions..."}
+                : isGAPhase
+                  ? assigned.length === 0
+                    ? "No regions to exclude"
+                    : "Exclude regions..."
+                  : unassigned.length === 0
+                    ? "All regions assigned"
+                    : "Search regions..."}
               <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-[220px] p-0" align="end">
             <Command>
-              <CommandInput placeholder="Search regions..." className="h-8 text-[10px]" />
+              <CommandInput
+                placeholder={isGAPhase ? "Search regions to exclude..." : "Search regions..."}
+                className="h-8 text-[10px]"
+              />
               <CommandList>
                 <CommandEmpty className="py-2 text-center text-[10px]">No regions found.</CommandEmpty>
                 <CommandGroup>
-                  {unassigned.map((st) => (
+                  {(isGAPhase ? assigned : unassigned).map((st) => (
                     <CommandItem
                       key={st.id}
                       value={st.displayName}
                       onSelect={() => {
-                        assignSalesTeam(teamId, st.id, monthIndex);
+                        if (isGAPhase) {
+                          unassignSalesTeam(teamId, st.id, monthIndex);
+                        } else {
+                          assignSalesTeam(teamId, st.id, monthIndex);
+                        }
                         setOpen(false);
                       }}
                       className="text-[10px] cursor-pointer"
@@ -486,19 +529,72 @@ function PilotRegionsPicker({
         </div>
       </div>
       <div className="flex items-center gap-3 mb-2">
-        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-          <span className="inline-block h-2 w-2 rounded-full border-2 border-emerald-500/50" /> New region
-        </span>
-        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-          <span className="inline-block h-2 w-2 rounded-full border-2 border-orange-500/70" /> Partial team
-        </span>
-        {assigned.length > 0 && (
+        {!isGAPhase ? (
+          <>
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="inline-block h-2 w-2 rounded-full border-2 border-emerald-500/50" /> New region
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="inline-block h-2 w-2 rounded-full border-2 border-orange-500/70" /> Partial team
+            </span>
+          </>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+            <span className="inline-block h-2 w-2 rounded-full border-2 border-destructive/50" /> Excluded — click × to include again
+          </span>
+        )}
+        {!isGAPhase && assigned.length > 0 && (
           <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
             {assigned.reduce((sum, st) => sum + st.teamSize - getExcludedSet(getAssignment(st.id)).size, 0)} reps
           </span>
         )}
+        {isGAPhase && unassigned.length > 0 && (
+          <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+            {unassigned.reduce((sum, st) => sum + st.teamSize, 0)} reps excluded
+          </span>
+        )}
       </div>
-      {assigned.length === 0 ? (
+      {isGAPhase ? (
+        unassigned.length === 0 ? (
+          <p className="text-[10px] text-muted-foreground">No excluded regions</p>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Excluded regions</span>
+              <span className="text-[10px] text-muted-foreground">({unassigned.length})</span>
+            </div>
+            <div
+              className={`flex flex-wrap gap-1.5 overflow-hidden transition-all ${excludedExpanded ? "" : "max-h-30"}`}
+            >
+              {unassigned.map((st) => (
+                <span
+                  key={st.id}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted/60 border border-destructive/40 px-2.5 py-0.5 text-xs font-medium text-foreground"
+                >
+                  <span className="text-xs font-medium text-foreground">{st.displayName}</span>
+                  <button
+                    type="button"
+                    onClick={() => assignSalesTeam(teamId, st.id, monthIndex)}
+                    className="rounded-full p-0.5 text-muted-foreground hover:bg-muted transition-colors"
+                    aria-label={`Include ${st.displayName}`}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+            {unassigned.length > 10 && (
+              <button
+                type="button"
+                onClick={() => setExcludedExpanded((v) => !v)}
+                className="mt-2 w-full text-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {excludedExpanded ? "Show less" : `Show more (${unassigned.length - 10} more)`}
+              </button>
+            )}
+          </div>
+        )
+      ) : assigned.length === 0 ? (
         <p className="text-[10px] text-muted-foreground">None</p>
       ) : (() => {
         const nbAssigned = assigned.filter((st) => !st.displayName.toLowerCase().includes("growth"));
@@ -615,7 +711,7 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows } = useTeams();
+  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, phaseLabels, phasePriorities, updatePhaseLabel, updatePhasePriority, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -649,8 +745,6 @@ const Index = () => {
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
 
-  const [phaseLabels, setPhaseLabels] = useState<Record<string, Record<number, string>>>({});
-  const [phasePriorities, setPhasePriorities] = useState<Record<string, Record<number, string>>>({});
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const [previousExpanded, setPreviousExpanded] = useState(false);
   const [nextExpanded, setNextExpanded] = useState(false);
@@ -679,74 +773,6 @@ const Index = () => {
 
   const activeTeam = teams.find((t) => t.id === activeTab);
 
-  useEffect(() => {
-    if (!activeTeam?.id) return;
-    if (phaseLabels[activeTeam.id]) return;
-    supabase
-      .from("team_phase_labels")
-      .select("*")
-      .eq("team_id", activeTeam.id)
-      .then(({ data }) => {
-        if (data) {
-          const labels: Record<number, string> = {};
-          for (const row of data as DbTeamPhaseLabel[]) {
-            labels[row.month_index] = row.label;
-          }
-          setPhaseLabels((prev) => ({ ...prev, [activeTeam.id]: labels }));
-        }
-      });
-  }, [activeTeam?.id]);
-
-  useEffect(() => {
-    if (!activeTeam?.id) return;
-    if (phasePriorities[activeTeam.id]) return;
-    supabase
-      .from("team_phase_priorities")
-      .select("*")
-      .eq("team_id", activeTeam.id)
-      .then(({ data }) => {
-        if (data) {
-          const priorities: Record<number, string> = {};
-          for (const row of data as DbTeamPhasePriority[]) {
-            priorities[row.month_index] = row.priority;
-          }
-          setPhasePriorities((prev) => ({ ...prev, [activeTeam.id]: priorities }));
-        }
-      });
-  }, [activeTeam?.id]);
-
-  const updatePhaseLabel = useCallback((teamId: string, monthIndex: number, label: string) => {
-    setPhaseLabels((prev) => ({
-      ...prev,
-      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: label },
-    }));
-    dbMutate(
-      supabase
-        .from("team_phase_labels")
-        .upsert(
-          { team_id: teamId, month_index: monthIndex, label },
-          { onConflict: "team_id,month_index" }
-        ),
-      "update phase label",
-    );
-  }, []);
-
-  const updatePhasePriority = useCallback((teamId: string, monthIndex: number, priority: string) => {
-    setPhasePriorities((prev) => ({
-      ...prev,
-      [teamId]: { ...(prev[teamId] ?? {}), [monthIndex]: priority },
-    }));
-    dbMutate(
-      supabase
-        .from("team_phase_priorities")
-        .upsert(
-          { team_id: teamId, month_index: monthIndex, priority },
-          { onConflict: "team_id,month_index" }
-        ),
-      "update phase priority",
-    );
-  }, []);
-
   const teamLabels = phaseLabels[activeTeam?.id ?? ""] ?? {};
   const teamPriorities = phasePriorities[activeTeam?.id ?? ""] ?? {};
   const computedPhases = activeTeam
@@ -763,6 +789,18 @@ const Index = () => {
       (p) => p.year === anchor.getFullYear() && p.month === anchor.getMonth()
     ) ?? computedPhases[0];
   }, [computedPhases, selectedMonth]);
+
+  const firstGAMonthIndex = useMemo(() => {
+    const gaPhases = computedPhases.filter((p) => p.label === "GA / Commercial Lead");
+    if (gaPhases.length === 0) return null;
+    return Math.min(...gaPhases.map((p) => p.monthIndex));
+  }, [computedPhases]);
+
+  const isFirstGAMonth =
+    activePhase?.label === "GA / Commercial Lead" &&
+    activePhase?.monthIndex === firstGAMonthIndex;
+
+  const isGAPhase = activePhase?.label === "GA / Commercial Lead";
 
   const extendTest = () => {
     if (!activeTeam?.endDate) return;
@@ -1415,6 +1453,8 @@ const Index = () => {
                 teamId={activeTeam.id}
                 monthIndex={activePhase.monthIndex}
                 phaseLabel={activePhase.monthLabel}
+                isFirstGAMonth={isFirstGAMonth ?? false}
+                isGAPhase={isGAPhase}
                 salesTeams={salesTeams}
                 projectTeamAssignments={projectTeamAssignments}
                 assignSalesTeam={assignSalesTeam}
@@ -1429,6 +1469,8 @@ const Index = () => {
           const members = activeTeam.members;
           const og = activeTeam.overallGoal;
           const pilotOpsFiltered = filterByOpportunityFlag(opsRows, og.opportunityFlags ?? []);
+          const pilotOpsForLifetimeAvgPrice =
+            activePhase?.label === "GA / Commercial Lead" ? opsRows : pilotOpsFiltered;
           const attributedRep = activeTeam.attributedRepMemberId
             ? activeTeam.members.find((m) => m.id === activeTeam.attributedRepMemberId) ?? null
             : null;
@@ -1448,7 +1490,7 @@ const Index = () => {
               )
             : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
           const allowedMonthsByMember = new Map(
-            members.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory)])
+            members.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory, activeTeam.startDate)])
           );
           const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
 
@@ -1518,7 +1560,7 @@ const Index = () => {
             ? resolvePilotAssignments(projectTeamAssignments, salesTeams, activeTeam.id, activePhase?.monthIndex ?? 0)
             : null;
           const lifetimeAvgPrice = pilotLifetimeCtx
-            ? getPilotAvgPriceAllTime(pilotOpsFiltered, pilotLifetimeCtx.pilotRepNames, og.lineItemTargets ?? [])
+            ? getPilotAvgPriceAllTime(pilotOpsForLifetimeAvgPrice, pilotLifetimeCtx.pilotRepNames, og.lineItemTargets ?? [])
             : null;
           const discountThresholdCurrent =
             og.totalPrice > 0 && lifetimeAvgPrice != null
@@ -1763,11 +1805,11 @@ const Index = () => {
           );
         })()}
 
-        {/* Total TAM — external metrics data if available, else manual input */}
-        {activeTeam && (() => {
+        {/* Total TAM — external metrics data if available, else manual input (hidden in GA / Commercial Lead) */}
+        {activeTeam && !isGAPhase && (() => {
           const activeMembers = getTeamMembersForMonth(activeTeam, referenceDate, memberTeamHistory, allMembersById);
           const allowedMonthsByMember = new Map(
-            activeMembers.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory)])
+            activeMembers.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory, activeTeam.startDate)])
           );
           const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
           const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
@@ -1924,6 +1966,7 @@ const Index = () => {
               ) ?? tabPhases[0];
             const isPilotView = !!phaseForMonth && isPilotRegionPhaseLabel(phaseForMonth.label);
             const pilotMonthIndex = phaseForMonth?.monthIndex ?? 0;
+            const isGAPhaseTab = phaseForMonth?.label === "GA / Commercial Lead";
             return (
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
@@ -1956,6 +1999,7 @@ const Index = () => {
                 toggleSection={toggleSection}
                 reloadAll={reloadAll}
                 isPilotView={isPilotView}
+                isGAPhase={isGAPhaseTab}
                 pilotMonthIndex={pilotMonthIndex}
                 opsRows={opsRows}
                 demoRows={demoRows}
@@ -2034,6 +2078,7 @@ const TeamTab = memo(function TeamTab({
   toggleSection,
   reloadAll,
   isPilotView,
+  isGAPhase,
   pilotMonthIndex,
   opsRows,
   demoRows,
@@ -2069,6 +2114,7 @@ const TeamTab = memo(function TeamTab({
   toggleSection: (key: string) => void;
   reloadAll: () => Promise<void>;
   isPilotView: boolean;
+  isGAPhase: boolean;
   pilotMonthIndex: number;
   opsRows: Record<string, unknown>[];
   demoRows: Record<string, unknown>[];
@@ -2106,6 +2152,14 @@ const TeamTab = memo(function TeamTab({
       setPilotTeamSortDir("asc");
     }
   };
+
+  const [gaExtraTeamIds, setGaExtraTeamIds] = useState<Set<string>>(() => new Set());
+  const [gaFunnelSelectedIds, setGaFunnelSelectedIds] = useState<Set<string>>(() => new Set());
+  const [gaGoalsSearchOpen, setGaGoalsSearchOpen] = useState(false);
+  useEffect(() => {
+    setGaExtraTeamIds(new Set());
+    setGaFunnelSelectedIds(new Set());
+  }, [team.id, pilotMonthIndex, isGAPhase]);
 
   const confirmEditSubmission = () => {
     if (!editDialogName.trim() || !editDialogTarget) return;
@@ -2215,13 +2269,14 @@ const TeamTab = memo(function TeamTab({
 
   const lineItemTargets = team.overallGoal.lineItemTargets ?? [];
   const opportunityFlags = team.overallGoal.opportunityFlags ?? [];
+  const effectiveOppFlags = isGAPhase ? NO_OPPORTUNITY_FLAGS : opportunityFlags;
   const pilotOpsForKpis = useMemo(
-    () => filterByOpportunityFlag(opsRows, opportunityFlags),
-    [opsRows, opportunityFlags],
+    () => filterByOpportunityFlag(opsRows, effectiveOppFlags),
+    [opsRows, effectiveOppFlags],
   );
   const pilotOpsWithoutForKpis = useMemo(
-    () => filterByOpportunityFlagInverse(opsRows, opportunityFlags),
-    [opsRows, opportunityFlags],
+    () => filterByOpportunityFlagInverse(opsRows, effectiveOppFlags),
+    [opsRows, effectiveOppFlags],
   );
   const pilotCtx = useMemo(() => {
     if (!isPilotView) return null;
@@ -2343,6 +2398,32 @@ const TeamTab = memo(function TeamTab({
     pilotTeamSortCol,
     pilotTeamSortDir,
   ]);
+
+  const gaVisibleIds = useMemo(() => {
+    if (!isGAPhase) return null;
+    if (pilotTeamRows.length === 0) return new Set<string>();
+    const byAttach = [...pilotTeamRows].sort((a, b) => {
+      const av = a.snap.attachRate ?? -1;
+      const bv = b.snap.attachRate ?? -1;
+      return bv - av;
+    });
+    const ids = new Set<string>();
+    byAttach.slice(0, 10).forEach((r) => ids.add(r.st.id));
+    byAttach.slice(-10).forEach((r) => ids.add(r.st.id));
+    gaExtraTeamIds.forEach((id) => ids.add(id));
+    return ids;
+  }, [isGAPhase, pilotTeamRows, gaExtraTeamIds]);
+
+  const goalsTablePilotRows =
+    isGAPhase && gaVisibleIds ? pilotTeamRows.filter((r) => gaVisibleIds.has(r.st.id)) : pilotTeamRows;
+
+  const weeklyPilotSalesTeams = useMemo(() => {
+    if (!pilotCtx) return [];
+    if (!isGAPhase) return pilotCtx.pilotSalesTeams;
+    const ids = new Set(gaVisibleIds ?? []);
+    gaFunnelSelectedIds.forEach((id) => ids.add(id));
+    return pilotCtx.pilotSalesTeams.filter((st) => ids.has(st.id));
+  }, [pilotCtx, isGAPhase, gaVisibleIds, gaFunnelSelectedIds]);
 
   return (
     <div className="space-y-8">
@@ -3339,7 +3420,9 @@ const TeamTab = memo(function TeamTab({
                               {lineItemTargets.length ? lineItemTargets.join(", ") : "no targets set"})
                             </p>
                             <p>
-                              {opportunityFlags.length > 0 ? (
+                              {isGAPhase ? (
+                                <>GA / Commercial Lead: opportunity name flags are not applied — line-item rules only.</>
+                              ) : opportunityFlags.length > 0 ? (
                                 <>
                                   Opportunity flags (name must contain any):{" "}
                                   {opportunityFlags.join(", ")}
@@ -3497,7 +3580,84 @@ const TeamTab = memo(function TeamTab({
             </div>
 
             <div className="mb-6 rounded-lg border border-border bg-card p-5 glow-card">
-              <h3 className="font-display text-lg font-semibold text-foreground mb-4">Monthly Goals (by team)</h3>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="font-display text-lg font-semibold text-foreground">Monthly Goals (by team)</h3>
+                  {isGAPhase && (
+                    <p className="text-[10px] text-muted-foreground mt-1 max-w-md">
+                      Showing top 10 and bottom 10 teams by attach rate. Use search to add teams temporarily.
+                    </p>
+                  )}
+                </div>
+                {isGAPhase && gaVisibleIds && pilotTeamRows.length > 0 && (
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    {gaExtraTeamIds.size > 0 && (
+                      <div className="flex flex-wrap gap-1.5 justify-end max-w-[320px]">
+                        {pilotTeamRows
+                          .filter((r) => gaExtraTeamIds.has(r.st.id))
+                          .map((r) => (
+                            <span
+                              key={r.st.id}
+                              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[10px] font-medium"
+                            >
+                              {pilotSalesTeamShortLabel(r.st.displayName)}
+                              <button
+                                type="button"
+                                className="rounded-full p-0.5 hover:bg-muted"
+                                onClick={() =>
+                                  setGaExtraTeamIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(r.st.id);
+                                    return next;
+                                  })
+                                }
+                                aria-label={`Remove ${r.st.displayName}`}
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                    <Popover open={gaGoalsSearchOpen} onOpenChange={setGaGoalsSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:bg-muted/50 transition-colors w-[220px]"
+                        >
+                          Search teams to add...
+                          <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[220px] p-0" align="end">
+                        <Command>
+                          <CommandInput placeholder="Search teams..." className="h-8 text-[10px]" />
+                          <CommandList>
+                            <CommandEmpty className="py-2 text-center text-[10px]">No teams found.</CommandEmpty>
+                            <CommandGroup>
+                              {pilotTeamRows
+                                .filter((r) => !gaVisibleIds.has(r.st.id))
+                                .map((r) => (
+                                  <CommandItem
+                                    key={r.st.id}
+                                    value={r.st.displayName}
+                                    onSelect={() => {
+                                      setGaExtraTeamIds((prev) => new Set(prev).add(r.st.id));
+                                      setGaGoalsSearchOpen(false);
+                                    }}
+                                    className="text-[10px] cursor-pointer"
+                                  >
+                                    {r.st.displayName}
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                )}
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -3595,7 +3755,7 @@ const TeamTab = memo(function TeamTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {pilotTeamRows.map(({ st, snap, accts, prevW, lastW }) => {
+                    {goalsTablePilotRows.map(({ st, snap, accts, prevW, lastW }) => {
                       const w0 = pilotWowWeeks.w0;
                       const w1 = pilotWowWeeks.w1;
                       return (
@@ -3669,6 +3829,13 @@ const TeamTab = memo(function TeamTab({
                         </td>
                       </tr>
                     )}
+                    {pilotCtx.pilotSalesTeams.length > 0 && isGAPhase && goalsTablePilotRows.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                          No teams match the current GA view filter.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -3695,6 +3862,9 @@ const TeamTab = memo(function TeamTab({
           {/* Week Over Week */}
           <WeekOverWeekView
             team={team}
+            isGAPhase={isGAPhase}
+            pilotSelectedIds={isGAPhase ? gaFunnelSelectedIds : undefined}
+            setPilotSelectedIds={isGAPhase ? setGaFunnelSelectedIds : undefined}
             pilotFunnel={
               isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0
                 ? {
@@ -3753,13 +3923,27 @@ const TeamTab = memo(function TeamTab({
                   const weeks = teamWeeks;
                   const weekKeyList = weeks.map((wk) => wk.key);
                   if (isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0) {
-                    const hasMetricsTamPilot = pilotCtx.pilotSalesTeams.some((st) => {
+                    if (isGAPhase && weeklyPilotSalesTeams.length === 0) {
+                      return (
+                        <tr>
+                          <td
+                            colSpan={2 + interleavedCols.length + 1}
+                            className="py-8 text-center text-sm text-muted-foreground"
+                          >
+                            No teams in view — GA weekly data follows teams shown in Monthly Goals (top/bottom) or
+                            highlighted in Funnel Overview.
+                          </td>
+                        </tr>
+                      );
+                    }
+                    const hasMetricsTamPilot = weeklyPilotSalesTeams.some((st) => {
                       const asn = projectTeamAssignments.find(
                         (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
                       );
                       return tamSumForReps(tamRows, repsForSalesTeam(st, asn)) > 0;
                     });
-                    return pilotCtx.pilotSalesTeams.map((st) => {
+                    const weeklyOppFlags = isGAPhase ? NO_OPPORTUNITY_FLAGS : team.overallGoal.opportunityFlags;
+                    return weeklyPilotSalesTeams.map((st) => {
                       const assignment = projectTeamAssignments.find(
                         (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
                       );
@@ -3771,7 +3955,7 @@ const TeamTab = memo(function TeamTab({
                             ? teamTam
                             : 0
                           : metKey === "wins"
-                            ? pilotWinsInWeek(metricsByWeek, winsDetailRows, team.overallGoal.opportunityFlags, repSet, wk)
+                            ? pilotWinsInWeek(metricsByWeek, winsDetailRows, weeklyOppFlags, repSet, wk)
                             : sumMetricForRepsInWeek(metricsByWeek, metKey, repSet, wk);
                       const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                         { label: "TAM", key: "tam" },
@@ -3808,7 +3992,7 @@ const TeamTab = memo(function TeamTab({
                                 rowSpan={metricRows.length + convRates.length}
                                 className="sticky left-0 z-30 bg-card py-2 pl-5 pr-2 font-semibold align-top border-r border-border/50 whitespace-nowrap text-foreground"
                               >
-                                {st.displayName}
+                                {pilotSalesTeamShortLabel(st.displayName)}
                               </td>
                             )}
                             <td className="sticky z-20 bg-card py-1 px-2 text-xs text-muted-foreground whitespace-nowrap" style={{ left: playerColW }}>{met.label}</td>
@@ -4499,21 +4683,31 @@ type WeekOverWeekPilotFunnel = {
   winsDetailRows: Record<string, unknown>[];
 };
 
-type PilotFunnelRow = { id: string; name: string; repKeys: Set<string>; tamTotal: number };
+type PilotFunnelRow = { id: string; name: string; chartName: string; repKeys: Set<string>; tamTotal: number };
 
 function WeekOverWeekView({
   team,
   pilotFunnel,
+  isGAPhase = false,
+  pilotSelectedIds,
+  setPilotSelectedIds,
 }: {
   team: Team;
   pilotFunnel?: WeekOverWeekPilotFunnel;
+  isGAPhase?: boolean;
+  pilotSelectedIds?: Set<string>;
+  setPilotSelectedIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
-  const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
+  const [internalPilotSelected, setInternalPilotSelected] = useState<Set<string>>(() => new Set());
+  const selectedPlayers = pilotSelectedIds ?? internalPilotSelected;
+  const setSelectedPlayers = setPilotSelectedIds ?? setInternalPilotSelected;
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(() => getDefaultMetrics(team));
   const [chartRange, setChartRange] = useState<ChartRange>(readChartRange);
   useEffect(() => { setSelectedMetrics(getDefaultMetrics(team)); }, [team.id]);
   const chartColors = useChartColors();
   const members = team.members;
+
+  const [funnelSearchOpen, setFunnelSearchOpen] = useState(false);
 
   const pilotRows: PilotFunnelRow[] | null = (() => {
     if (!pilotFunnel?.pilotSalesTeams.length) return null;
@@ -4523,14 +4717,16 @@ function WeekOverWeekView({
         (a) => a.teamId === teamId && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
       );
       const repKeys = repsForSalesTeam(st, asn);
-      return { id: st.id, name: st.displayName, repKeys, tamTotal: tamSumForReps(tamRows, repKeys) };
+      const name = st.displayName;
+      const chartName = isGAPhase ? pilotSalesTeamShortLabel(name) : name;
+      return { id: st.id, name, chartName, repKeys, tamTotal: tamSumForReps(tamRows, repKeys) };
     });
   })();
 
   const isPilotChart = pilotRows !== null && pilotRows.length > 0;
   const bundle = pilotFunnel?.metricsByWeek;
   const pilotWinsDetailRows = pilotFunnel?.winsDetailRows;
-  const pilotOppFlag = team.overallGoal.opportunityFlags;
+  const pilotOppFlag = isGAPhase ? NO_OPPORTUNITY_FLAGS : team.overallGoal.opportunityFlags;
 
   const allWeeks = getTeamWeekKeys(team.startDate, team.endDate);
   const maxWeeks = chartRange === "all" ? allWeeks.length : parseInt(chartRange);
@@ -4588,7 +4784,7 @@ function WeekOverWeekView({
       pilotRows.forEach((p, pi) => {
         if (!selectedPlayers.has(p.id)) return;
         metricKeys.forEach(({ key, label }) => {
-          row[`${p.name} ${label}`] =
+          row[`${p.chartName} ${label}`] =
             key === "tam"
               ? (hasMetricsTam ? p.tamTotal : 0)
               : key === "wins"
@@ -4734,7 +4930,7 @@ function WeekOverWeekView({
             
             {(isPilotChart && pilotRows ? pilotRows : members).map((ent, i) => {
               const id = isPilotChart ? (ent as PilotFunnelRow).id : (ent as TeamMember).id;
-              const name = isPilotChart ? (ent as PilotFunnelRow).name : (ent as TeamMember).name;
+              const name = isPilotChart ? (ent as PilotFunnelRow).chartName : (ent as TeamMember).name;
               return selectedPlayers.has(id)
                 ? metricKeys.filter(({ label }) => selectedMetrics.has(label)).map(({ label }) => (
                     <Line key={`${id}-${label}`} type="monotone" dataKey={`${name} ${label}`} stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3 }} />
@@ -4748,8 +4944,74 @@ function WeekOverWeekView({
       {(members.length > 0 || isPilotChart) && (
         <div className="mt-4 border-t border-border pt-3">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            {isPilotChart ? "Select teams" : "Select players"}
+            {isPilotChart ? (isGAPhase ? "Highlight teams (weekly chart)" : "Select teams") : "Select players"}
           </p>
+          {isPilotChart && isGAPhase && pilotRows ? (
+            <div className="space-y-2">
+              {selectedPlayers.size > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {pilotRows
+                    .filter((p) => selectedPlayers.has(p.id))
+                    .map((p, i) => (
+                      <span
+                        key={p.id}
+                        className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2 py-0.5 text-[10px] font-semibold"
+                        style={{
+                          borderColor: PLAYER_COLORS[i % PLAYER_COLORS.length],
+                          color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+                        }}
+                      >
+                        {p.chartName}
+                        <button
+                          type="button"
+                          className="rounded-full p-0.5 hover:bg-muted"
+                          onClick={() => togglePlayer(p.id)}
+                          aria-label={`Remove ${p.chartName}`}
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              )}
+              <Popover open={funnelSearchOpen} onOpenChange={setFunnelSearchOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-between gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-[10px] text-muted-foreground hover:bg-muted/50 transition-colors w-[220px]"
+                  >
+                    Search teams to highlight...
+                    <ChevronsUpDown className="h-3 w-3 shrink-0 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[260px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search teams..." className="h-8 text-[10px]" />
+                    <CommandList>
+                      <CommandEmpty className="py-2 text-center text-[10px]">No teams found.</CommandEmpty>
+                      <CommandGroup>
+                        {pilotRows
+                          .filter((p) => !selectedPlayers.has(p.id))
+                          .map((p) => (
+                            <CommandItem
+                              key={p.id}
+                              value={p.name}
+                              onSelect={() => {
+                                togglePlayer(p.id);
+                                setFunnelSearchOpen(false);
+                              }}
+                              className="text-[10px] cursor-pointer"
+                            >
+                              {p.chartName}
+                            </CommandItem>
+                          ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : (
           <div className="flex flex-wrap gap-2">
             {isPilotChart && pilotRows
               ? pilotRows.map((p, i) => {
@@ -4764,7 +5026,7 @@ function WeekOverWeekView({
                       }`}
                       style={isActive ? { backgroundColor: PLAYER_COLORS[i % PLAYER_COLORS.length], color: "white" } : {}}
                     >
-                      <span>{p.name}</span>
+                      <span>{p.chartName}</span>
                       <span className="text-[10px] opacity-70 font-normal">Pilot region</span>
                     </button>
                   );
@@ -4791,6 +5053,7 @@ function WeekOverWeekView({
                   );
                 })}
           </div>
+          )}
 
           {!isPilotChart && selectedMembers.length > 0 && (
             <div className="mt-3 space-y-2">
@@ -4863,7 +5126,7 @@ function WeekOverWeekView({
                 const demoToWin = totals.demos > 0 ? (totals.wins / totals.demos) * 100 : 0;
                 return (
                   <div key={p.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="font-semibold" style={{ color: PLAYER_COLORS[idx % PLAYER_COLORS.length] }}>{p.name}:</span>
+                    <span className="font-semibold" style={{ color: PLAYER_COLORS[idx % PLAYER_COLORS.length] }}>{p.chartName}:</span>
                     <span>{hasMetricsTam ? "% TAM" : "TAM→Call"}: <strong className="text-foreground">{firstConvRate.toFixed(0)}%</strong></span>
                     <span>Call→Connect: <strong className="text-foreground">{callToConnect.toFixed(0)}%</strong></span>
                     <span>Connect→Demo: <strong className="text-foreground">{connectToDemo.toFixed(0)}%</strong></span>
