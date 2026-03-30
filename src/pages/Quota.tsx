@@ -58,7 +58,7 @@ function mergePhases(teams: Team[]): ComputedPhase[] {
 }
 
 const Quota = () => {
-  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, salesTeams, projectedBookings, projectTeamAssignments, opsRows } = useTeams();
+  const { teams, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, salesTeams, projectedBookings, projectTeamAssignments, opsRows, phaseCalcConfigs } = useTeams();
   const activeTeams = teams.filter((t) => t.isActive);
   const [selectedMonth, setSelectedMonth] = useState<Date | null>(null);
   const [previousExpanded, setPreviousExpanded] = useState(false);
@@ -217,6 +217,7 @@ const Quota = () => {
                         opsRows,
                         projectTeamAssignments,
                         salesTeams,
+                        phaseCalcByTeam: phaseCalcConfigs,
                         resolveTeamPhase: (team) => {
                           const labels = phaseLabelsByTeamId[team.id] ?? {};
                           const teamPhases = generateTestPhases(team.startDate, team.endDate, labels);
@@ -955,7 +956,7 @@ const MemberQuotaRow = memo(function MemberQuotaRow({
         const enabledAsGoal = metric === "wins" ? team.enabledGoals.wins : team.enabledGoals[metric];
         const hasGoal = !!enabledAsGoal && goal > 0;
         const pct = onRelief ? 100 : (hasGoal ? Math.min((current / goal) * 100, 100) : 0);
-        const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+        const hasAccountNames = metric === 'ops' || metric === 'demos' || metric === 'wins' || metric === 'feedback';
         const accountNames = hasAccountNames ? getScopedAccountNames(team, member, metric, referenceDate) : [];
 
         const cellContent = hasGoal ? (

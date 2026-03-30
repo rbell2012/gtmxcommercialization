@@ -174,7 +174,7 @@ function normalizeRow(row: any, type: DataTypeKey): NormalizedRow {
       detail = [row.connect_type, row.subject, row.connect_outcome].filter(Boolean).join(" · ");
       break;
     case "demos":
-      detail = [row.demo_source, row.subject].filter(Boolean).join(" · ");
+      detail = [row.event_status, row.demo_source, row.subject].filter(Boolean).join(" · ");
       break;
     case "wins":
       detail = [row.opportunity_name, row.opportunity_stage].filter(Boolean).join(" · ");

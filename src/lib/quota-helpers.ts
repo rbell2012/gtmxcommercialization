@@ -1,5 +1,6 @@
 import { GOAL_METRICS, type Team, type TeamMember, type GoalMetric, type AcceleratorRule, type BasicAcceleratorMetricConfig, type WinTypeCounts, type WinTypeNames, type ProjectTeamAssignment, type SalesTeam, type MemberTeamHistoryEntry } from "@/contexts/TeamsContext";
 import { getPilotPhaseWinsCount } from "@/lib/pilot-helpers";
+import type { PhaseCalcConfig } from "@/lib/phase-calc-config";
 
 /** Optional context so Test Phases wins match Pilot Regions KPI for pilot-labeled months. */
 export type PhaseWinsContext = {
@@ -7,6 +8,8 @@ export type PhaseWinsContext = {
   projectTeamAssignments: ProjectTeamAssignment[];
   salesTeams: SalesTeam[];
   resolveTeamPhase: (team: Team) => { monthIndex: number; label: string } | null;
+  /** Per-phase opportunity flags / line item targets (falls back to team.overallGoal when missing). */
+  phaseCalcByTeam?: Record<string, Record<number, PhaseCalcConfig>>;
 };
 
 /**
@@ -121,7 +124,7 @@ function getMemberTypeNames(m: TeamMember, metric: TypedMetric, referenceDate?: 
   const now = referenceDate ?? new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const source = metric === 'wins' ? m.monthlyWinTypeNames : m.monthlyOpsTypeNames;
-  return source?.[monthKey] ?? { nb: [], growth: [] };
+  return source?.[monthKey] ?? { nb: [], growth: [], noAccountRecord: [] };
 }
 
 export function getScopedTypeNames(team: Team, member: TeamMember, metric: TypedMetric, referenceDate?: Date): WinTypeNames {
@@ -129,13 +132,19 @@ export function getScopedTypeNames(team: Team, member: TeamMember, metric: Typed
   if (scope !== 'team') return getMemberTypeNames(member, metric, referenceDate);
   const nbSet = new Set<string>();
   const growthSet = new Set<string>();
+  const noAccountRecordSet = new Set<string>();
   for (const m of (team.members ?? []).filter((mm) => mm.isActive)) {
     const n = getMemberTypeNames(m, metric, referenceDate);
     for (const name of n.nb) nbSet.add(name);
     for (const name of n.growth) growthSet.add(name);
+    for (const name of n.noAccountRecord) noAccountRecordSet.add(name);
   }
   const sortFn = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
-  return { nb: Array.from(nbSet).sort(sortFn), growth: Array.from(growthSet).sort(sortFn) };
+  return {
+    nb: Array.from(nbSet).sort(sortFn),
+    growth: Array.from(growthSet).sort(sortFn),
+    noAccountRecord: Array.from(noAccountRecordSet).sort(sortFn),
+  };
 }
 
 /** @deprecated Use getScopedTypeCounts */
@@ -172,6 +181,7 @@ export function getPhaseWinsLabel(teams: Team[], year: number, month: number, op
         opts.opsRows,
         opts.projectTeamAssignments,
         opts.salesTeams,
+        opts.phaseCalcByTeam,
       );
       winsForTeam = pilot !== null ? pilot : memberWinsSumForMonth(team, phaseDate);
     } else {
@@ -565,6 +575,7 @@ export interface AcceleratorProgress {
 export function getAcceleratorProgress(
   team: Team, member: TeamMember, metric: GoalMetric, referenceDate?: Date,
 ): AcceleratorProgress | null {
+  if ((team.acceleratorMode ?? 'basic') === 'basic') return null;
   if (isMemberExcludedFromAccelerator(team, member.id, metric)) return null;
   const rules = (team.acceleratorConfig ?? {})[metric];
   if (!rules || !Array.isArray(rules) || rules.length === 0) return null;

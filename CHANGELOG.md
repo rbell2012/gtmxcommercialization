@@ -1,5 +1,190 @@
 # Changelog
 
+## Location — Metrics load: direct tables vs RPC pagination (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** `loadMetrics` used PostgREST RPCs with a large `rep_names` array plus `.range()` pagination. Subsequent pages returned HTTP 500 (timeouts), and `fetchAllRpcRows` stopped early—truncating ops/demos/wins/superhex so many members showed 0. Direct `fetchAllRows` table pagination avoids the expensive RPC+OFFSET path; the rep filter added little value (~1.2k names vs ~1k distinct reps in data).
+
+**Changes:**
+- **`loadMetrics`:** Activity, calls, connects, demos, ops, wins, superhex load via `fetchAllRows` on the underlying tables (full column sets as before migrations). Ops/wins always fetched (not session-cached). Session cache key bumped to `teamsContext.metricsCache.v3`.
+- **`fetchAllRows`:** Logs `console.warn` on per-page errors instead of failing silently.
+- **`fetchAllRpcRows`:** Kept for possible future use; main path no longer calls it.
+
+---
+
+## Location — Lifetime & monthly ops/demos vs phase settings (`src/lib/pilot-helpers.ts`, `src/pages/Index.tsx`)
+
+**Rationale:** Lifetime and pilot-month stats should reflect the same per-month opportunity flags and roster rules as wins: pilot-labeled months count **members + assigned pilot reps**; other months **members only**. Non-pilot monthly stat cards now use flag-filtered raw `metrics_ops` when the current phase has opportunity flags (aligned with settings).
+
+**Changes:**
+- **`countLifetimeOpsAdjustedSplit` / `countLifetimeDemosAdjustedSplit`:** Raw-row lifetime totals with `resolvePhaseCalcConfig` filters (ops: flags, prospecting notes, line items) and pilot vs non-pilot rep membership.
+- **`Index.tsx` — Lifetime:** `hasAnyOppFlags` (any phase or overall goal has flags) switches ops/demos to the new helpers; tooltips split pilot-labeled vs other months.
+- **`Index.tsx` — Monthly pilot:** Combined rep set for ops, demos, wins, losses breakdowns; KPI snapshot still uses pilot roster only.
+- **`Index.tsx` — Monthly non-pilot:** When `opportunityFlags.length > 0`, ops/demos totals and per-member breakdowns use filtered raw rows for the calendar month.
+
+---
+
+## Location — Settings Manual Edits; goal funnel aggregation (`src/pages/Settings.tsx`, `src/lib/metric-exclusions.ts`, `src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`, `src/lib/pilot-helpers.ts`, `src/lib/database.types.ts`, `docs/win-calculation.md`, `supabase/migrations/20260330130000_add_kind_to_team_metric_exclusions.sql`, `supabase/migrations/20260330140000_add_member_id_to_team_metric_exclusions.sql`)
+
+**Rationale:** Allow per-team manual corrections to funnel metrics and hover name lists without editing Hex or warehouse rows: exclude stream matches from counts, add +1 inclusions when no matching row exists (no double count), attribute rules to a single rep so one person’s edits do not affect teammates’ totals, and reduce clicks by entering several account or opportunity fragments in one save. Pilot chart rollups intentionally apply only team-wide rules (`member_id` null) so weekly aggregates stay unambiguous.
+
+**Changes:**
+- **`team_metric_exclusions`:** `kind` (`exclusion` | `inclusion`) with uniqueness including `kind`; optional `member_id` FK to `members` with partial unique indexes for team-wide vs per-member rows.
+- **`metric-exclusions.ts`:** Member-aware exclusion and inclusion matching; `teamWideMetricRulesOnly` for pilot paths; name and type builders and indexed counts pass the current member id where needed.
+- **Settings — Manual Edits:** Type (inclusion or exclusion), member (All reps or roster), field, and value; green and red chip borders; chip text shows `field: value (month)` plus `· RepName` when scoped; comma-separated values create multiple rows and chips in one Add.
+- **`Index.tsx` and `pilot-helpers.ts`:** Pilot funnels use team-wide manual rules only.
+- **Docs:** `docs/win-calculation.md` updated for manual edits semantics.
+- **Deploy:** Supabase migrations for `kind` and `member_id` were applied on the primary project when local migration history did not match remote (for example via MCP or SQL).
+
+---
+
+## Location — Manual edits member attribution (`team_metric_exclusions.member_id`, `metric-exclusions.ts`, `TeamsContext.tsx`, `Settings.tsx`, `Index.tsx`, `pilot-helpers.ts`, `supabase/migrations/20260330140000_add_member_id_to_team_metric_exclusions.sql`)
+
+**Changes:**
+- **`member_id`:** optional UUID → `public.members`; `null` = entire team (previous behavior). Partial unique indexes: team-wide vs per-member combos.
+- **Aggregation:** `rowExcludedForTeamMetric` / inclusion helpers take the current member id; pilot weekly paths use **team-wide rules only** via `teamWideMetricRulesOnly`.
+- **Settings:** Manual Edits adds a **Member** dropdown (All reps + roster); chips show `· RepName` when attributed.
+
+---
+
+## Location — Manual metric inclusions (`Settings`, `metric-exclusions.ts`, `TeamsContext.tsx`, `database.types.ts`, `supabase/migrations/20260330130000_add_kind_to_team_metric_exclusions.sql`)
+
+**Changes:**
+- **`team_metric_exclusions.kind`:** `exclusion` (default) or `inclusion`. Unique key is now `(team_id, metric, field, value, month_key, kind)`.
+- **Inclusions:** +1 to monthly funnel totals for a rep when no stream row matches in that month (same substring rules); matched rows max out at one count. Names appear in hover lists; wins/ops inclusions roll into **New Business** type buckets for NB/Growth tooltips when they add count.
+- **Settings:** "Manual Edits" section with Type dropdown (Exclusion / Inclusion), green vs red chip borders.
+
+---
+
+## Location — Win month attribution (`src/contexts/TeamsContext.tsx`, `supabase/migrations/20260327120000_get_metric_details_win_date_only.sql`)
+
+**Rationale:** Monthly win totals used `metrics_ops.win_stage_date` when present, which can move in bulk (e.g. Salesforce stage sync) while `metrics_wins.win_date` stays the true close month. That inflated counts for the current month vs. raw `metrics_wins` filtered by `win_date`.
+
+**Changes:**
+- **`TeamsContext.tsx`:** `_effective_date` for wins is now `metrics_wins.win_date` only; removed the `winStageDateById` map from ops.
+- **`get_metric_details`:** Replaced `coalesce(o.win_stage_date, w.win_date)` with `w.win_date` as `effective_date`; dropped the unnecessary join to `metrics_ops` in the wins CTE. New migration `20260327120000_get_metric_details_win_date_only.sql`; deploy with your usual Supabase workflow (function was applied to the primary project database for verification).
+
+---
+
+## Location — Hex → Supabase sync cleanup strategy (`docs/hex-supabase-sync.py`)
+
+**Rationale:** The `cleanup_stale_rows` RPC was hitting Supabase's infrastructure-level HTTP gateway timeout when called for large tables (`metrics_wins`, `metrics_ops`, ~64k rows each), because the RPC requires sending ~64k UUIDs as a JSON payload, populating a temp table, and running a NOT EXISTS anti-join — all within one HTTP request. Even after removing the Postgres `statement_timeout` cap, the gateway-level timeout cannot be overridden by `SET LOCAL`. The fix replaces the large-payload RPC with a simple timestamp-based DELETE for all tables except `metrics_sales_teams`.
+
+**Changes:**
+- **`cleanup_by_timestamp()`** (new): Replaces RPC cleanup for 10 of 11 tables. Uses `DELETE /rest/v1/{table}?updated_at=lt.{sync_cutoff}` — a single HTTP call with a timestamp filter, no payload, no temp table, no join. Completes in under a second regardless of table size. All upserted rows get `updated_at = now()` via the existing `set_updated_at` trigger, so any row with an older `updated_at` is stale and is deleted.
+- **`sync_cutoff = sync_start - 60s`**: 60-second clock-skew buffer prevents freshly upserted rows from being accidentally deleted if the Supabase server clock lags behind Hex compute.
+- **`cleanup_by_rpc()`** (renamed from `cleanup_stale`): Retained only for `metrics_sales_teams`, which requires a FK guard (`AND id NOT IN (SELECT sales_team_id FROM project_team_assignments)`). Reduced to 1 retry and 60s timeout since this table is only 205 rows.
+- **Cleanup gated on clean upsert**: Cleanup only runs if the upsert completed with no errors, preventing accidental deletion of rows that failed to upsert in a partial-batch failure.
+- **`sync_start` recorded once at top of `run_hex_supabase_sync()`**: Ensures the cutoff is consistent across all 11 tables in a single run.
+
+---
+
+## Location — Hex → Supabase sync pipeline (`docs/hex-supabase-sync.py`, `supabase/migrations/20260327110000_cleanup_stale_rows_no_timeout.sql`)
+
+**Rationale:** The Google Sheets → Apps Script → Supabase REST pipeline was producing recurring sync failures: statement timeouts (`57014`) on cleanup and large upsert batches, a numeric type mismatch (`22P02`) where text values landed in numeric columns, and no retry resilience. The fix replaces the entire pipeline with a single Python cell in Hex that writes directly to Supabase via HTTPS, eliminating the Google Sheets intermediary and the 30-minute Apps Script execution limit.
+
+**Changes:**
+- **`docs/hex-supabase-sync.py`** (new): Maps 11 Hex dataframes (`main`, `all_wins`, `all_gtmx_and_pilot_ops`, etc.) to their Supabase tables (`superhex`, `metrics_wins`, `metrics_ops`, etc.). Uses `requests` over HTTPS (port 443) so Hex's network restrictions don't block the connection. Upserts via `POST /rest/v1/{table}?on_conflict=id` in batches (500 rows for trigger-heavy tables, 2000 for others). Cleanup via the existing `cleanup_stale_rows` RPC. Per-table error isolation — one table failing doesn't stop others. HTTP 500/503 retried up to 3× with exponential backoff. All NaN/NaT/NA values coerced to `null`; whole-number floats (e.g. `63.0`) coerced to `int` to satisfy Postgres `integer` columns. Python `datetime.date` objects serialised to ISO strings. Anon key embedded as fallback (it is the public key, already in the frontend bundle).
+- **`supabase/migrations/20260327110000_cleanup_stale_rows_no_timeout.sql`** (new, applied): Updates `cleanup_stale_rows` RPC to use `SET LOCAL statement_timeout = 0` (no cap, scoped to the single transaction) instead of the previous 300s limit which was too short for `metrics_ops` and `metrics_wins` (~64k rows each). Also adds `PRIMARY KEY` to the temp table so Postgres uses a hash join (O(n)) rather than a sequential scan for the NOT EXISTS anti-join.
+- **`docs/google-apps-script-supabase-sync.gs`**: Added note pointing to `hex-supabase-sync.py` as the preferred sync method.
+
+---
+
+## Location — Hex direct Supabase sync (`docs/hex-supabase-sync.py`)
+
+**Rationale:** Replace the Google Sheets → Apps Script → PostgREST pipeline with a Hex Python cell that connects to Postgres directly (upsert + stale-row cleanup), avoiding REST timeouts, batch numeric coercion bugs, and Apps Script execution limits.
+
+**Changes:**
+- Added `docs/hex-supabase-sync.py`: maps Hex dataframes (`main`, `all_wins`, etc.) to `superhex` / `metrics_*` tables; `execute_values` upserts; temp table + `NOT EXISTS` cleanup; `metrics_sales_teams` FK guard matching `cleanup_stale_rows`; per-table transactions; `SUPABASE_DB_PASSWORD` via Hex secrets or env.
+
+---
+
+## Location — Quota page + team Monthly Goals (`src/pages/Quota.tsx`, `src/pages/Index.tsx`), member account names (`src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Users needed to see which accounts contribute to the feedback count, the same way ops, demos, and wins already show account lists on hover (and copy-on-click).
+
+**Changes:**
+- **`TeamsContext.tsx`:** Per-member `metricAccountNames` now includes feedback by month via `buildMetricNamesByMonthForRep` on `metrics_feedback` (`feedback_date`, `account_name`), respecting manual metric exclusions like other funnel metrics.
+- **`Quota.tsx`:** The feedback goal column uses the same tooltip wrapper as wins/ops/demos when account names exist (`hasAccountNames` includes `feedback`).
+- **`Index.tsx`:** Monthly Goals for active and former members includes `feedback` in `hasAcctNames` so the project page matches Quota (flat account list in the tooltip, same as demos).
+
+---
+
+## Location — Lifetime Demo counts (`src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`)
+
+**Rationale:** The app was only counting `metrics_demos` rows where `event_status = 'completed'`, dropping ~74 of 179 rows for Mad Max reps since Dec 2025. The decision was made to count all demo records regardless of event status, so the UI matches the raw Supabase data.
+
+**Changes:**
+- Removed the `demoRowsForMetrics` filter block in `TeamsContext.tsx` that restricted demo aggregation to `event_status === 'completed'` (case-insensitive).
+- Replaced all 4 downstream usages of `demoRowsForMetrics` with `demoRows` directly: weekly aggregation, monthly aggregation, account-name aggregation, and the `demoRows` context value passed to consumers.
+- Updated the Demos lifetime stat tooltip in `Index.tsx` from `"Total 'Completed' Events with subject 'Demo' logged across all weeks of the test."` to `"Total demo records logged across all weeks of the test."` to reflect the new counting rule.
+
+---
+## Location - Front end Monthly Goals dashboard (`src/pages/Index.tsx`) + accelerator helpers (`src/lib/quota-helpers.ts`)
+**Rationale:** Wins on the Monthly Goals dashboard could show a team-scoped accelerator headline (e.g. 18) while tooltip type counts stayed individual (e.g. Shane's 4), producing a misleading `+ 14 without account records` even when Basic mode was configured as SELF with excluded members.
+**Changes:** - Added an early return in `getAcceleratorProgress` for Basic mode (`if ((team.acceleratorMode ?? 'basic') === 'basic') return null;`) so legacy advanced `accelerator_config` rules are ignored when the team is using Basic accelerators.
+- This makes the dashboard wins cell fall back to the member's actual total in Basic mode, aligning Shane's wins display with his individual count and eliminating the false untracked-account delta.
+---
+
+## Location — Sheets sync / `metrics_ops` statement timeouts (`docs/google-apps-script-supabase-sync.gs`, Supabase `cleanup_stale_rows`)
+
+**Rationale:** Full-sheet sync was hitting Postgres `57014` (statement timeout) on `metrics_ops` upserts and on `cleanup_stale_rows` for that table (~44k rows).
+
+**Changes:**
+- **Apps Script:** `ops` tab uses `batchSize: 500` (same idea as `wins`) so each PostgREST upsert stays under anon statement limits.
+- **Supabase:** Migration `supabase/migrations/20260326180000_optimize_cleanup_stale_rows_temp_table.sql` — `cleanup_stale_rows` loads `p_valid_ids` into a temp table and deletes with `NOT EXISTS` (hash-friendly vs `id != ALL(array)`), `SET LOCAL statement_timeout = '300s'`. Applied to project `fgshslmhxkdmowisrhon` via Supabase MCP `execute_sql` (`apply_migration` MCP was unavailable).
+
+---
+
+## Location — Lifetime Demo counts investigation (`src/contexts/TeamsContext.tsx`, Supabase `metrics_demos`)
+
+**Rationale:** After the activity pagination fix, Carly King (Mad Max) showed 0 lifetime demos, which the user flagged as incorrect. Investigation was needed to determine whether the same pagination regression also affected demos and other metrics, or whether a different issue was at play.
+
+**Changes:**
+- **No code changes required.** The pagination fix from the previous session (`fetchAllRpcRows` replacing unpaginated `.rpc()` calls) already covers `get_demo_rows` as well as all other metric RPCs (`get_call_rows`, `get_connect_rows`, `get_activity_rows`, `get_superhex_rows`). `metrics_demos` has 19,873 rows — well above the 1,000-row PostgREST cap — so the existing fix is material for demos too.
+- **Carly King 0 demos is a data gap, not a bug.** Her only 2 demo records in `metrics_demos` are from October 2025 (before the Mad Max team start date of December 2025). `getMemberAssignedMonths` correctly produces `allowedMonths = {2025-12, 2026-01, 2026-02, 2026-03}`, which excludes October. Her December 2025 onward demo data has not yet been synced from Salesforce via the Google Apps Script.
+- **Pre-fix screenshot context.** The Connect→Demo tooltip showing Shane Hughes at 31 demos was captured before the pagination fix. Post-fix, with all demo rows fetched and `allowedMonths` applied, Shane's lifetime demo count correctly resolves to ~9 (December 2025 + February 2026 + March 2026 only).
+
+---
+
+## Location — Demo counts, pilot attach rate, manual exclusions
+
+**Rationale:** Demos should only count completed events; pilot attach rate sometimes needs a denominator of all wins vs flag-filtered wins; teams need to exclude specific opportunities or accounts from funnel metrics without hiding them in Data.
+
+**Changes:**
+- **Demos:** Only `metrics_demos` rows with `event_status` matching **Completed** (case-insensitive) are aggregated into funnel / pilot demo counts (`TeamsContext.loadMetrics`).
+- **Attach rate:** `team_phase_configs.attach_rate_denom` (`flagged_wins` | `all_wins`); per-phase control in Settings → Test Phases; `getPilotAttachRate` / KPI snapshots use unfiltered (exclusions-only) ops for the denominator when `all_wins`.
+- **Manual exclusions:** New `team_metric_exclusions` (team, metric, field, value); Settings → Manual exclusions with Add per Ops / Wins / Demos / Feedback; rows filtered before aggregation and pilot raw pipelines; realtime subscription on the table.
+- **Migrations:** `20260324210000_add_attach_rate_denom_to_phase_configs.sql`, `20260324220000_create_team_metric_exclusions.sql` (apply via Supabase when local migration history matches remote).
+
+---
+## Location - Front end Settings + metric aggregation paths (`src/pages/Settings.tsx`, `src/lib/metric-exclusions.ts`, `src/lib/database.types.ts`, `supabase/migrations/20260326103000_add_month_key_to_team_metric_exclusions.sql`)
+**Rationale:** Manual exclusions were persisting across all months, so exclusions now need to be explicitly month-scoped and only affect rows in the selected month.
+**Changes:** - Added `month_key` to `team_metric_exclusions` with updated uniqueness `(team_id, metric, field, value, month_key)` via migration and applied the same DDL to live Supabase.
+- Updated exclusion parsing/types (`DbTeamMetricExclusion`, `MetricExclusionRow`) to include month metadata and enforced month match in `rowExcludedForTeamMetric` before applying a value exclusion.
+- Updated Settings manual exclusions UI to select month on create (`type="month"`), persist `month_key` on insert, and display the exclusion month on badges so scope is visible.
+---
+
+## Location — Monthly Goals tooltips (`src/pages/Index.tsx`)
+
+**Rationale:** Totals can include manual `weekly_funnels` counts or other funnel-derived values while hover names come only from pipeline tables (`metrics_demos`, `metrics_wins` / ops). That made cells like “23 / 24” demos with a single account name look broken.
+
+**Changes:**
+- Demos tooltip: when the **displayed** total exceeds the number of listed account names, append `+ N without account records`.
+- Wins/ops tooltip: when the **displayed** total exceeds NB + Growth pipeline counts from `typeCounts`, append the same style note. Displayed total matches the cell: `getScopedMetricTotal` when a numeric goal row is shown, or accelerator `currentValue` when the wins accelerator UI is used (`need N` / zap), so wins on the accelerator path still get the footnote when the big number and pipeline disagree.
+
+---
+
+## Location — Data explorer (`src/pages/Data.tsx`), Teams context (`src/contexts/TeamsContext.tsx`), types (`src/lib/database.types.ts`), Supabase `metrics_demos`
+
+**Rationale:** The metrics pipeline can distinguish demo lifecycle (e.g. scheduled vs completed) per row; the app and database needed a nullable column so ETL and the UI can store and surface that value without changing aggregate demo counts until product rules say otherwise.
+
+**Changes:**
+- Added migration `supabase/migrations/20260324130000_add_event_status_to_metrics_demos.sql`: nullable `event_status text` on `public.metrics_demos` with a column comment; migration applied to the linked Supabase project via MCP.
+- Extended `DbMetricsDemos` with `event_status`; `fetchAllRows("metrics_demos", …)` now selects `event_status` so `demoRows` includes it for pilot and other consumers.
+- **Data** page demo rows show `event_status` first in the normalized detail string (with `demo_source` and `subject`).
+
+---
+
 ## Location — Team tab monthly goals / wins (`src/pages/Index.tsx` tooltips), Teams context (`src/contexts/TeamsContext.tsx`), Supabase `weekly_funnels` / `metrics_wins`, tooling (`scripts/sync-wins.mjs`, `package.json`)
 
 **Rationale:** Sterno monthly win totals could disagree with the NB/G sub-line (e.g. 17 vs 7+10) because persisted `weekly_funnels.wins` overrode metrics-derived counts when `f.wins > 0`. After ops ID updates, wins needed a safe CSV upsert that preserved existing `win_date` (and later account-name–matched preservation from an export). Accelerator **Wins** cells showed no hover breakdown because `metricAccountNames` and `monthlyWinTypeNames` keyed only on `account_name`, which was null on many qualifying rows while `opportunity_name` was set.
@@ -2900,4 +3085,32 @@
 **Rationale:** Surface the exact accelerator configuration (as authored in Settings) consistently across Quota and Project pages, so managers can quickly understand how each accelerator column is calculated.
 **Changes:** - Extracted the accelerator configuration tooltip into a shared component (`src/components/AcceleratorConfigTooltip.tsx`), and refactored `Quota.tsx` to use it.
 - Added `Zap` + hover tooltips to the Monthly Goals metric column headers on the project page (`Index.tsx`), including both the normal and relief-only table header variants.
+---
+## Location - Google Apps Script sync + Supabase RPC (`docs/google-apps-script-supabase-sync.gs`, `supabase/migrations/`)
+**Rationale:** Fix two runtime errors surfaced in the Apps Script execution log: (1) `cleanup_stale_rows` RPC hitting Supabase's default 8-second anon statement timeout when deleting ~15,960 stale rows from `metrics_wins` in a single DELETE; (2) `SpreadsheetApp.getUi()` crashing when the script runs from a time-driven trigger (no UI session), preventing end-of-run alerts from completing.
+**Changes:**
+- Created and applied migration `supabase/migrations/20260324170000_cleanup_stale_rows_set_timeout.sql`: `CREATE OR REPLACE` of `cleanup_stale_rows` with `SET LOCAL statement_timeout = '60s'` added at the start of the function body, giving large-table DELETEs 60 seconds regardless of the session-level anon cap.
+- Added `tryAlert_(title, body)` helper to `docs/google-apps-script-supabase-sync.gs`: attempts `SpreadsheetApp.getUi().alert(...)` in a try/catch, falling back to `Logger.log` + `getActiveSpreadsheet().toast()` when no UI session is available (time-driven triggers).
+- Replaced all `const ui = SpreadsheetApp.getUi()` / `ui.alert(...)` call sites in `syncData` and `syncSkippedOnly` (including the "No skipped tabs" early-return branch) with `tryAlert_(title, body)`.
+- Updated the script header comment to reference the new migration.
+---
+## Location - Front end Team tab / Monthly Goals (`src/pages/Index.tsx`)
+
+**Rationale:** Monthly Goals totals can reflect funnel data (including manual `weekly_funnels` entries) and accelerator headline values, while tooltips only list pipeline-backed names and typed win counts from `metrics_*`, which looked like a bug (e.g. 23 demos with one account, 2 wins with one Growth name). Wins using the accelerator UI showed `currentValue` in the cell but the first tooltip footnote used `getScopedMetricTotal`, so the “without account records” line never appeared when those differed.
+
+**Changes:**
+- Demos tooltip: append `+ N without account records` when the **displayed** total exceeds the number of listed account names.
+- Wins/ops tooltip: append the same footnote when the **displayed** total exceeds NB + Growth counts from `typeCounts`.
+- Compute `headlineMetricValue` to match the cell (goal row uses `getScopedMetricTotal`; accelerator path uses `getAcceleratorProgress().currentValue`) and use it for both footnotes so accelerator wins stay consistent with what the user sees.
+
+---
+## Location - Front end Settings page + Teams context (`src/pages/Settings.tsx`, `src/contexts/TeamsContext.tsx`)
+**Rationale:** Manual exclusion add/remove interactions were taking ~30+ seconds because they triggered a full `reloadAll()` pipeline (including heavy metrics table fetches) when only core settings data needed to refresh.
+**Changes:** - Exposed a lightweight `reloadCore` method from `TeamsContext` (`reloadCore: loadCore`) and added it to the exported context type and memo dependencies.
+- Updated manual exclusion add/remove handlers in `Settings.tsx` to call `await reloadCore()` instead of `await reloadAll()`, eliminating unnecessary full metrics reloads after exclusion writes.
+---
+## Location - Front end project + settings data loading (`src/contexts/TeamsContext.tsx`, impacts `src/pages/Index.tsx` and `src/pages/Settings.tsx`)
+**Rationale:** Teams and members could render as empty due to a React StrictMode race in the initial load path, where `loadCore` was skipped after metrics resolved, leaving project and settings views with no core data.
+**Changes:** - Removed the stale `mountedRef` guard path in `loadAll` that could bail before `loadCore`, and removed the associated mount/unmount ref lifecycle block.
+- Added resilient `loadAll` error handling: logs primary load failures and attempts a fallback `loadCore()` call so teams/members can still hydrate if metrics loading errors.
 ---

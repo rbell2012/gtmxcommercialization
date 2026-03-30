@@ -143,6 +143,16 @@ erDiagram
         timestamptz updated_at
     }
 
+    team_phase_configs {
+        uuid id PK
+        uuid team_id FK
+        int month_index
+        jsonb opportunity_flags
+        jsonb line_item_targets
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     findings {
         uuid id PK
         text content
@@ -396,6 +406,7 @@ erDiagram
     %% Team-scoped config
     teams ||--o{ team_phase_labels : "labels phases"
     teams ||--o{ team_phase_priorities : "prioritizes phases"
+    teams ||--o{ team_phase_configs : "phase calc flags/targets"
     teams ||--o| revx_impact_values : "has impact value"
 
     %% History tracking

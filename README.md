@@ -108,6 +108,12 @@ To show your Hex project in the app:
 
 ---
 
+## Documentation
+
+- [How wins are calculated](docs/win-calculation.md) — CRM win rules, pilot/line-item paths, storage, and display differences (Mermaid diagram).
+
+---
+
 ## Quick reference
 
 | Step              | Action |

@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Trophy, Plus, Users, TrendingUp, TrendingDown, MessageCircle, Calendar, Handshake, Video, Activity, ChevronDown, ChevronRight, Scale, LockOpen, Lock, Zap, X, ChevronsUpDown, Check, ArrowUp, ArrowDown, Minus } from "lucide-react";
-import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment, type MetricsByWeekBundle } from "@/contexts/TeamsContext";
+import { useTeams, getTeamMembersForMonth, getHistoricalTeam, getHistoricalMember, type Team, type TeamMember, type MemberTeamHistoryEntry, type TeamGoalsHistoryEntry, type MemberGoalsHistoryEntry, type WinEntry, type FunnelData, type WeeklyFunnel, type WeeklyRole, type GoalMetric, type MemberGoals, GOAL_METRICS, GOAL_METRIC_LABELS, DEFAULT_GOALS, pilotNameToSlug, type SalesTeam, type ProjectTeamAssignment, type MetricsByWeekBundle, type PhaseCalcConfig } from "@/contexts/TeamsContext";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -19,6 +19,15 @@ import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/componen
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, PHASE_LABEL_OPTIONS, isAllowedPhaseLabel, type ComputedPhase } from "@/lib/test-phases";
+import { resolvePhaseCalcConfig, monthIndexForCalendarMonthKey, teamQualifiesForAttributedOpsWinsPath } from "@/lib/phase-calc-config";
+import type { IndexedRowsByRepAndWeek, MetricExclusionMetric, MetricExclusionRow } from "@/lib/metric-exclusions";
+import {
+  filterRowsForTeamMetric,
+  indexRowsByRepAndWeek,
+  sumMetricForRepsInWeekWithExclusionsIndexed,
+  sumMetricForRepsInWeekWithExclusions,
+  teamWideMetricRulesOnly,
+} from "@/lib/metric-exclusions";
 import RichTextEditor, { RichTextDisplay } from "@/components/RichTextEditor";
 import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
 import {
@@ -41,9 +50,13 @@ import {
   pilotSalesTeamShortLabel,
   filterByOpportunityFlag,
   filterByOpportunityFlagInverse,
+  buildProspectingNotesAccountSets,
   sumWinsInWeekForReps,
   getPilotAvgPriceAllTime,
   countOpsWinsSplitForLifetimeStats,
+  filterOpsRowsForLifetimeAttributedPath,
+  countLifetimeOpsAdjustedSplit,
+  countLifetimeDemosAdjustedSplit,
   type PilotKpiSnapshot,
   type WowTrend,
 } from "@/lib/pilot-helpers";
@@ -56,15 +69,82 @@ const NO_OPPORTUNITY_FLAGS: string[] = [];
 function pilotWinsInWeek(
   metricsByWeek: MetricsByWeekBundle,
   winsDetailRows: Record<string, unknown>[] | undefined,
-  opportunityFlags: string[] | undefined,
+  team: Team,
+  phaseLabels: Record<number, string>,
+  phaseCalcByTeam: Record<string, Record<number, PhaseCalcConfig>>,
+  isGAPhase: boolean,
   repKeys: Set<string>,
   weekKey: string,
+  metricExclusions: MetricExclusionRow[],
 ): number {
-  const flags = opportunityFlags ?? [];
-  if (flags.length > 0 && winsDetailRows && winsDetailRows.length > 0) {
-    return sumWinsInWeekForReps(winsDetailRows, repKeys, weekKey, flags);
+  const weekMonthKey = weekKey.slice(0, 7);
+  const monthIdx = monthIndexForCalendarMonthKey(team, phaseLabels, weekMonthKey);
+  const base = resolvePhaseCalcConfig(team, monthIdx ?? undefined, phaseCalcByTeam);
+  const flags = isGAPhase ? NO_OPPORTUNITY_FLAGS : base.opportunityFlags;
+  const notes = base.prospectingNotes;
+  if ((flags.length > 0 || notes.length > 0) && winsDetailRows && winsDetailRows.length > 0) {
+    return sumWinsInWeekForReps(winsDetailRows, repKeys, weekKey, flags, notes, metricExclusions);
+  }
+  if (winsDetailRows && winsDetailRows.length > 0) {
+    return sumMetricForRepsInWeekWithExclusions("wins", repKeys, weekKey, winsDetailRows, metricExclusions);
   }
   return sumMetricForRepsInWeek(metricsByWeek, "wins", repKeys, weekKey);
+}
+
+function sumFunnelMetricWithExclusions(
+  metKey: keyof FunnelData,
+  repKeys: Set<string>,
+  weekKey: string,
+  metricsByWeek: MetricsByWeekBundle,
+  rawByMetric: Record<MetricExclusionMetric, Record<string, unknown>[] | undefined>,
+  indexedByMetric: Record<MetricExclusionMetric, IndexedRowsByRepAndWeek | undefined>,
+  metricExclusions: MetricExclusionRow[],
+  options?: {
+    team: Team;
+    phaseLabels: Record<number, string>;
+    phaseCalcByTeam: Record<string, Record<number, PhaseCalcConfig>>;
+    prospectingLookupByKey?: Map<string, { accountIds: Set<string>; accountNames: Set<string> }>;
+  },
+): number {
+  if (metKey === "tam") return 0;
+  let rows = rawByMetric[metKey as MetricExclusionMetric];
+  if (!rows) return sumMetricForRepsInWeek(metricsByWeek, metKey, repKeys, weekKey);
+  let indexedRows = indexedByMetric[metKey as MetricExclusionMetric];
+  if (options) {
+    const monthKey = weekKey.slice(0, 7);
+    const monthIdx = monthIndexForCalendarMonthKey(options.team, options.phaseLabels, monthKey);
+    const phaseCfg = resolvePhaseCalcConfig(options.team, monthIdx ?? undefined, options.phaseCalcByTeam);
+    const notes = phaseCfg.prospectingNotes;
+    if (notes.length > 0 && options.prospectingLookupByKey) {
+      const notesKey = notes.map((n) => n.toLowerCase().trim()).sort().join("||");
+      const lookup = options.prospectingLookupByKey.get(notesKey);
+      if (!lookup) {
+        return sumMetricForRepsInWeekWithExclusions(metKey as MetricExclusionMetric, repKeys, weekKey, rows, metricExclusions);
+      }
+      if (metKey === "activity" || metKey === "calls" || metKey === "connects") {
+        rows = rows.filter((r) => {
+          const accountId = r.salesforce_accountid;
+          return typeof accountId === "string" && lookup.accountIds.has(accountId);
+        });
+      } else if (metKey === "demos" || metKey === "feedback") {
+        rows = rows.filter((r) => {
+          const accountName = r.account_name;
+          return typeof accountName === "string" && lookup.accountNames.has(accountName.toLowerCase());
+        });
+      }
+      indexedRows = indexRowsByRepAndWeek(rows, metKey as MetricExclusionMetric);
+    }
+  }
+  if (indexedRows) {
+    return sumMetricForRepsInWeekWithExclusionsIndexed(
+      metKey as MetricExclusionMetric,
+      repKeys,
+      weekKey,
+      indexedRows,
+      metricExclusions,
+    );
+  }
+  return sumMetricForRepsInWeekWithExclusions(metKey as MetricExclusionMetric, repKeys, weekKey, rows, metricExclusions);
 }
 
 function addMonths(dateStr: string, months: number): string {
@@ -166,6 +246,57 @@ const CHART_RANGE_OPTIONS = [
 type ChartRange = (typeof CHART_RANGE_OPTIONS)[number]["value"];
 
 const CHART_RANGE_STORAGE_KEY = "funnel-chart-range";
+const METRIC_COLORS: Record<string, string> = {
+  TAM: "hsl(340, 55%, 55%)",
+  Call: "hsl(215, 55%, 55%)",
+  Connect: "hsl(140, 50%, 45%)",
+  Ops: "hsl(30, 65%, 50%)",
+  Demo: "hsl(280, 50%, 58%)",
+  Win: "hsl(24, 85%, 55%)",
+  Feedback: "hsl(190, 55%, 50%)",
+  Activity: "hsl(60, 60%, 45%)",
+};
+const METRIC_KEYS: { key: keyof FunnelData; label: string }[] = [
+  { key: "tam", label: "TAM" },
+  { key: "activity", label: "Activity" },
+  { key: "calls", label: "Call" },
+  { key: "connects", label: "Connect" },
+  { key: "ops", label: "Ops" },
+  { key: "demos", label: "Demo" },
+  { key: "wins", label: "Win" },
+  { key: "feedback", label: "Feedback" },
+];
+const PLAYER_COLORS = [
+  "hsl(350, 60%, 58%)",
+  "hsl(180, 45%, 48%)",
+  "hsl(45, 70%, 55%)",
+  "hsl(300, 45%, 55%)",
+  "hsl(160, 50%, 42%)",
+];
+
+function FunnelTooltipContent({ active, payload, label, chartColors }: any) {
+  if (!active || !payload?.length) return null;
+  const roles: Record<string, string> = payload[0]?.payload?._roles || {};
+  return (
+    <div style={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, borderRadius: "8px", color: chartColors.tooltipText, padding: "10px 14px", fontSize: 12 }}>
+      <p style={{ fontWeight: 600, marginBottom: 6 }}>{label}</p>
+      {payload.filter((e: any) => !e.dataKey?.startsWith("_")).map((entry: any, i: number) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: entry.color, display: "inline-block", flexShrink: 0 }} />
+          <span>{entry.name}: <strong>{entry.value}</strong></span>
+        </div>
+      ))}
+      {Object.keys(roles).length > 0 && (
+        <div style={{ borderTop: `1px solid ${chartColors.tooltipBorder}`, marginTop: 6, paddingTop: 6 }}>
+          <p style={{ fontSize: 10, opacity: 0.6, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em" }}>Roles this week</p>
+          {Object.entries(roles).map(([name, role]) => (
+            <p key={name} style={{ margin: "2px 0" }}>{name}: <strong>{role as string}</strong></p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function readChartRange(): ChartRange {
   try {
@@ -711,7 +842,37 @@ const Index = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { teams: allTeams, updateTeam, memberTeamHistory, teamGoalsHistory, memberGoalsHistory, allMembersById, reloadAll, loading: teamsLoading, salesTeams, projectTeamAssignments, assignSalesTeam, unassignSalesTeam, updateExcludedMembers, phaseLabels, phasePriorities, updatePhaseLabel, updatePhasePriority, opsRows, demoRows, tamRows, metricsByWeek, winsDetailRows } = useTeams();
+  const {
+    teams: allTeams,
+    updateTeam,
+    memberTeamHistory,
+    teamGoalsHistory,
+    memberGoalsHistory,
+    allMembersById,
+    reloadAll,
+    loading: teamsLoading,
+    salesTeams,
+    projectTeamAssignments,
+    assignSalesTeam,
+    unassignSalesTeam,
+    updateExcludedMembers,
+    phaseLabels,
+    phasePriorities,
+    phaseCalcConfigs,
+    updatePhaseLabel,
+    updatePhasePriority,
+    opsRows,
+    demoRows,
+    activityRows,
+    callRows,
+    connectRows,
+    feedbackRows,
+    superhexRows,
+    tamRows,
+    metricsByWeek,
+    winsDetailRows,
+    metricExclusionsByTeam,
+  } = useTeams();
   const teams = allTeams.filter((t) => t.isActive);
   const {
     customRoles,
@@ -1189,6 +1350,7 @@ const Index = () => {
                           projectTeamAssignments,
                           salesTeams,
                           resolveTeamPhase: () => ({ monthIndex: phase.monthIndex, label: phase.label }),
+                          phaseCalcByTeam: phaseCalcConfigs,
                         })}
                       </p>
                     </div>
@@ -1468,25 +1630,44 @@ const Index = () => {
         {activeTeam && (() => {
           const members = activeTeam.members;
           const og = activeTeam.overallGoal;
-          const pilotOpsFiltered = filterByOpportunityFlag(opsRows, og.opportunityFlags ?? []);
+          const lifetimePhaseSlices = computedPhases.map((p) => ({
+            monthIndex: p.monthIndex,
+            label: p.label,
+            year: p.year,
+            month: p.month,
+          }));
+          const pilotOpsFiltered = filterOpsRowsForLifetimeAttributedPath(
+            opsRows,
+            activeTeam,
+            lifetimePhaseSlices,
+            projectTeamAssignments,
+            salesTeams,
+            activeTeam.id,
+            phaseCalcConfigs,
+          );
           const pilotOpsForLifetimeAvgPrice =
             activePhase?.label === "GA / Commercial Lead" ? opsRows : pilotOpsFiltered;
           const attributedRep = activeTeam.attributedRepMemberId
             ? activeTeam.members.find((m) => m.id === activeTeam.attributedRepMemberId) ?? null
             : null;
+          const monthIndicesForPath = computedPhases.map((p) => p.monthIndex);
           const hasOppWinsPath =
-            (og.opportunityFlags ?? []).length > 0 &&
-            (og.lineItemTargets ?? []).length > 0 &&
+            teamQualifiesForAttributedOpsWinsPath(activeTeam, monthIndicesForPath, phaseCalcConfigs) &&
             attributedRep != null;
+          const hasAnyOppFlags =
+            monthIndicesForPath.some(
+              (mi) => resolvePhaseCalcConfig(activeTeam, mi, phaseCalcConfigs).opportunityFlags.length > 0,
+            ) || (activeTeam.overallGoal?.opportunityFlags?.length ?? 0) > 0;
 
           const winsSplit = hasOppWinsPath
             ? countOpsWinsSplitForLifetimeStats(
-                pilotOpsFiltered,
-                og.lineItemTargets ?? [],
-                computedPhases,
+                opsRows,
+                activeTeam,
+                lifetimePhaseSlices,
                 projectTeamAssignments,
                 salesTeams,
                 activeTeam.id,
+                phaseCalcConfigs,
               )
             : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
           const allowedMonthsByMember = new Map(
@@ -1498,8 +1679,36 @@ const Index = () => {
             ? winsSplit.total
             : members.reduce((s, m) => s + getMemberLifetimeWins(m, allowedMonthsFor(m)), 0);
 
-          const lifetimeOps = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops', allowedMonthsFor(m)), 0);
-          const lifetimeDemos = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos', allowedMonthsFor(m)), 0);
+          const memberRepKeysLifetime = new Set(members.map((m) => m.name.toLowerCase().trim()));
+          const lifetimeOpsSplit = hasAnyOppFlags
+            ? countLifetimeOpsAdjustedSplit(
+                opsRows,
+                activeTeam,
+                lifetimePhaseSlices,
+                projectTeamAssignments,
+                salesTeams,
+                activeTeam.id,
+                phaseCalcConfigs,
+                memberRepKeysLifetime,
+              )
+            : null;
+          const lifetimeDemosSplit = hasAnyOppFlags
+            ? countLifetimeDemosAdjustedSplit(
+                demoRows,
+                lifetimePhaseSlices,
+                projectTeamAssignments,
+                salesTeams,
+                activeTeam.id,
+                memberRepKeysLifetime,
+              )
+            : null;
+
+          const lifetimeOps = lifetimeOpsSplit
+            ? lifetimeOpsSplit.total
+            : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops', allowedMonthsFor(m)), 0);
+          const lifetimeDemos = lifetimeDemosSplit
+            ? lifetimeDemosSplit.total
+            : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos', allowedMonthsFor(m)), 0);
           const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback', allowedMonthsFor(m)), 0);
           const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
           const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls', allowedMonthsFor(m)), 0);
@@ -1507,8 +1716,18 @@ const Index = () => {
           const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos', allowedMonthsFor(m)), 0);
 
           // Per-metric breakdowns for the hover tooltips
-          const opsBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)) }));
-          const demosBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)) }));
+          const opsBreakdown = lifetimeOpsSplit
+            ? [
+                { label: "Pilot phases (members + assigned reps)", value: lifetimeOpsSplit.pilotLabeledMonths },
+                { label: "Other phases (members only)", value: lifetimeOpsSplit.otherMonths },
+              ]
+            : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)) }));
+          const demosBreakdown = lifetimeDemosSplit
+            ? [
+                { label: "Pilot phases (members + assigned reps)", value: lifetimeDemosSplit.pilotLabeledMonths },
+                { label: "Other phases (members only)", value: lifetimeDemosSplit.otherMonths },
+              ]
+            : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)) }));
           const winsBreakdown = hasOppWinsPath && attributedRep
             ? [
                 { label: "Pilot phases (assigned reps)", value: winsSplit.pilotPhaseWins },
@@ -1559,8 +1778,13 @@ const Index = () => {
           const pilotLifetimeCtx = isPilotRegionPhaseLabel(activePhase?.label ?? null)
             ? resolvePilotAssignments(projectTeamAssignments, salesTeams, activeTeam.id, activePhase?.monthIndex ?? 0)
             : null;
+          const lifetimeLineTargets = resolvePhaseCalcConfig(
+            activeTeam,
+            activePhase?.monthIndex ?? undefined,
+            phaseCalcConfigs,
+          ).lineItemTargets;
           const lifetimeAvgPrice = pilotLifetimeCtx
-            ? getPilotAvgPriceAllTime(pilotOpsForLifetimeAvgPrice, pilotLifetimeCtx.pilotRepNames, og.lineItemTargets ?? [])
+            ? getPilotAvgPriceAllTime(pilotOpsForLifetimeAvgPrice, pilotLifetimeCtx.pilotRepNames, lifetimeLineTargets)
             : null;
           const discountThresholdCurrent =
             og.totalPrice > 0 && lifetimeAvgPrice != null
@@ -1714,7 +1938,7 @@ const Index = () => {
                   icon={<Video className="h-5 w-5 text-primary" />}
                   label="Demos"
                   value={lifetimeDemos}
-                  tooltip="Total 'Completed' Events with subject 'Demo' logged across all weeks of the test."
+                  tooltip="Total demo records logged across all weeks of the test."
                   breakdown={demosBreakdown}
                 />
                 <StatCard
@@ -2003,11 +2227,19 @@ const Index = () => {
                 pilotMonthIndex={pilotMonthIndex}
                 opsRows={opsRows}
                 demoRows={demoRows}
+                activityRows={activityRows}
+                callRows={callRows}
+                connectRows={connectRows}
+                feedbackRows={feedbackRows}
+                superhexRows={superhexRows}
                 tamRows={tamRows}
                 metricsByWeek={metricsByWeek}
                 winsDetailRows={winsDetailRows}
+                metricExclusionsByTeam={metricExclusionsByTeam}
                 salesTeams={salesTeams}
                 projectTeamAssignments={projectTeamAssignments}
+                phaseLabels={teamLabels}
+                phaseCalcConfigs={phaseCalcConfigs}
               />
             </TabsContent>
             );
@@ -2085,8 +2317,16 @@ const TeamTab = memo(function TeamTab({
   tamRows,
   metricsByWeek,
   winsDetailRows,
+  activityRows,
+  callRows,
+  connectRows,
+  feedbackRows,
+  superhexRows,
+  metricExclusionsByTeam,
   salesTeams,
   projectTeamAssignments,
+  phaseLabels,
+  phaseCalcConfigs,
 }: {
   team: Team;
   onAddMemberClick: () => void;
@@ -2121,17 +2361,31 @@ const TeamTab = memo(function TeamTab({
   tamRows: Record<string, unknown>[];
   metricsByWeek: MetricsByWeekBundle;
   winsDetailRows: Record<string, unknown>[];
+  activityRows: Record<string, unknown>[];
+  callRows: Record<string, unknown>[];
+  connectRows: Record<string, unknown>[];
+  feedbackRows: Record<string, unknown>[];
+  superhexRows: Record<string, unknown>[];
+  metricExclusionsByTeam: Record<string, MetricExclusionRow[]>;
   salesTeams: SalesTeam[];
   projectTeamAssignments: ProjectTeamAssignment[];
+  phaseLabels: Record<number, string>;
+  phaseCalcConfigs: Record<string, Record<number, PhaseCalcConfig>>;
 }) {
 
   const funnelDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const currentWeek = getCurrentWeekKey();
   const members = team.members;
-  const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
-  const teamTotal = members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0);
-  const teamWeeks = getTeamWeekKeys(team.startDate, team.endDate);
-  const interleavedCols = buildInterleavedColumns(teamWeeks);
+  const activeMembers = useMemo(
+    () => getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById),
+    [team, referenceDate, memberTeamHistory, allMembersById],
+  );
+  const teamTotal = useMemo(
+    () => members.reduce((s, m) => s + getMemberTotalWins(m, referenceDate), 0),
+    [members, referenceDate],
+  );
+  const teamWeeks = useMemo(() => getTeamWeekKeys(team.startDate, team.endDate), [team.startDate, team.endDate]);
+  const interleavedCols = useMemo(() => buildInterleavedColumns(teamWeeks), [teamWeeks]);
   const [repOverrideWeek, setRepOverrideWeek] = useState(currentWeek);
   const isPastWeek = repOverrideWeek < currentWeek;
   const [unlockedPastEdits, setUnlockedPastEdits] = useState<Set<string>>(new Set());
@@ -2240,81 +2494,230 @@ const TeamTab = memo(function TeamTab({
     }
   }, [team.startDate, team.endDate]);
 
-  const recentWeeks = getWeekKeys(2);
+  const recentWeeks = useMemo(() => getWeekKeys(2), []);
   const prevWeekKey = recentWeeks[0].key;
   const currWeekKey = recentWeeks[1].key;
   const currWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, currWeekKey).wins, 0);
   const prevWeekWins = members.reduce((s, m) => s + getMemberFunnel(m, prevWeekKey).wins, 0);
   const teamDucks = members.reduce((s, m) => s + m.ducksEarned, 0);
-  const teamTotalOps = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'ops', referenceDate), 0);
-  const teamTotalDemos = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'demos', referenceDate), 0);
   const teamTotalFeedback = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'feedback', referenceDate), 0);
   const teamTotalActivity = activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, 'activity', referenceDate), 0);
-  const monthlyOpsBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "ops", referenceDate) }));
-  const monthlyDemosBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "demos", referenceDate) }));
-  const monthlyWinsBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberTotalWins(m, referenceDate) }));
-  const monthlyFeedbackBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "feedback", referenceDate) }));
-  const monthlyActivityBreakdown = activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "activity", referenceDate) }));
+  const monthlyWinsBreakdown = useMemo(() => activeMembers.map((m) => ({ label: m.name, value: getMemberTotalWins(m, referenceDate) })), [activeMembers, referenceDate]);
+  const monthlyFeedbackBreakdown = useMemo(() => activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "feedback", referenceDate) })), [activeMembers, referenceDate]);
+  const monthlyActivityBreakdown = useMemo(() => activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "activity", referenceDate) })), [activeMembers, referenceDate]);
 
-  const chartData = members.map((m) => ({
+  const chartData = useMemo(() => members.map((m) => ({
     name: m.name,
     wins: getMemberTotalWins(m, referenceDate),
-  }));
+  })), [members, referenceDate]);
 
-  const allStories = members
-    .flatMap((m) =>
-      m.wins.filter((w) => w.story).map((w) => ({ ...w, memberName: m.name }))
-    )
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const allStories = useMemo(
+    () =>
+      members
+        .flatMap((m) => m.wins.filter((w) => w.story).map((w) => ({ ...w, memberName: m.name })))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [members],
+  );
 
-  const lineItemTargets = team.overallGoal.lineItemTargets ?? [];
-  const opportunityFlags = team.overallGoal.opportunityFlags ?? [];
+  const phaseCalcForPilot = resolvePhaseCalcConfig(team, pilotMonthIndex, phaseCalcConfigs);
+  const lineItemTargets = phaseCalcForPilot.lineItemTargets;
+  const opportunityFlags = phaseCalcForPilot.opportunityFlags;
   const effectiveOppFlags = isGAPhase ? NO_OPPORTUNITY_FLAGS : opportunityFlags;
+  const funnelMetricEx = useMemo(
+    () => teamWideMetricRulesOnly(metricExclusionsByTeam[team.id] ?? []),
+    [metricExclusionsByTeam, team.id],
+  );
+  const opsRowsForExclusions = useMemo(
+    () => filterRowsForTeamMetric(opsRows, funnelMetricEx, "ops"),
+    [opsRows, funnelMetricEx],
+  );
+  const demoRowsForPilot = useMemo(
+    () => filterRowsForTeamMetric(demoRows, funnelMetricEx, "demos"),
+    [demoRows, funnelMetricEx],
+  );
+  const monthKeyPilot = pilotToMonthKey(referenceDate ?? new Date());
+  const memberRepKeysMonthly = useMemo(
+    () => new Set(activeMembers.map((m) => m.name.toLowerCase().trim())),
+    [activeMembers],
+  );
+  const teamTotalOps = useMemo(() => {
+    if (!isPilotView && opportunityFlags.length > 0) {
+      const filtered = filterByOpportunityFlag(opsRowsForExclusions, opportunityFlags);
+      return countPilotOpsInMonth(filtered, memberRepKeysMonthly, monthKeyPilot);
+    }
+    return activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, "ops", referenceDate), 0);
+  }, [
+    isPilotView,
+    opportunityFlags,
+    opsRowsForExclusions,
+    memberRepKeysMonthly,
+    monthKeyPilot,
+    activeMembers,
+    referenceDate,
+  ]);
+  const teamTotalDemos = useMemo(() => {
+    if (!isPilotView && opportunityFlags.length > 0) {
+      return countPilotDemosInMonth(demoRowsForPilot, memberRepKeysMonthly, monthKeyPilot);
+    }
+    return activeMembers.reduce((s, m) => s + getMemberMetricTotal(m, "demos", referenceDate), 0);
+  }, [
+    isPilotView,
+    opportunityFlags,
+    demoRowsForPilot,
+    memberRepKeysMonthly,
+    monthKeyPilot,
+    activeMembers,
+    referenceDate,
+  ]);
+  const monthlyOpsBreakdown = useMemo(() => {
+    if (!isPilotView && opportunityFlags.length > 0) {
+      const filtered = filterByOpportunityFlag(opsRowsForExclusions, opportunityFlags);
+      return activeMembers.map((m) => {
+        const rk = m.name.toLowerCase().trim();
+        return {
+          label: m.name,
+          value: countPilotOpsInMonth(filtered, new Set([rk]), monthKeyPilot),
+        };
+      });
+    }
+    return activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "ops", referenceDate) }));
+  }, [
+    isPilotView,
+    opportunityFlags,
+    opsRowsForExclusions,
+    activeMembers,
+    monthKeyPilot,
+    referenceDate,
+  ]);
+  const monthlyDemosBreakdown = useMemo(() => {
+    if (!isPilotView && opportunityFlags.length > 0) {
+      return activeMembers.map((m) => {
+        const rk = m.name.toLowerCase().trim();
+        return {
+          label: m.name,
+          value: countPilotDemosInMonth(demoRowsForPilot, new Set([rk]), monthKeyPilot),
+        };
+      });
+    }
+    return activeMembers.map((m) => ({ label: m.name, value: getMemberMetricTotal(m, "demos", referenceDate) }));
+  }, [isPilotView, opportunityFlags, demoRowsForPilot, activeMembers, monthKeyPilot, referenceDate]);
   const pilotOpsForKpis = useMemo(
-    () => filterByOpportunityFlag(opsRows, effectiveOppFlags),
-    [opsRows, effectiveOppFlags],
+    () => filterByOpportunityFlag(opsRowsForExclusions, effectiveOppFlags),
+    [opsRowsForExclusions, effectiveOppFlags],
   );
   const pilotOpsWithoutForKpis = useMemo(
-    () => filterByOpportunityFlagInverse(opsRows, effectiveOppFlags),
-    [opsRows, effectiveOppFlags],
+    () => filterByOpportunityFlagInverse(opsRowsForExclusions, effectiveOppFlags),
+    [opsRowsForExclusions, effectiveOppFlags],
+  );
+  const pilotAttachOpts = useMemo(
+    () => ({
+      denomOpsRows: phaseCalcForPilot.attachRateDenom === "all_wins" ? opsRowsForExclusions : undefined,
+      attachDenomMode: phaseCalcForPilot.attachRateDenom,
+    }),
+    [opsRowsForExclusions, phaseCalcForPilot.attachRateDenom],
+  );
+  const rawRowsByFunnelMetric = useMemo(
+    (): Record<MetricExclusionMetric, Record<string, unknown>[] | undefined> => ({
+      activity: activityRows,
+      calls: callRows,
+      connects: connectRows,
+      demos: demoRows,
+      ops: opsRows,
+      wins: winsDetailRows,
+      feedback: feedbackRows,
+    }),
+    [activityRows, callRows, connectRows, demoRows, opsRows, winsDetailRows, feedbackRows],
+  );
+  const indexedRawRowsByFunnelMetric = useMemo(
+    (): Record<MetricExclusionMetric, IndexedRowsByRepAndWeek | undefined> => ({
+      activity: indexRowsByRepAndWeek(activityRows, "activity"),
+      calls: indexRowsByRepAndWeek(callRows, "calls"),
+      connects: indexRowsByRepAndWeek(connectRows, "connects"),
+      demos: indexRowsByRepAndWeek(demoRows, "demos"),
+      ops: indexRowsByRepAndWeek(opsRows, "ops"),
+      wins: indexRowsByRepAndWeek(winsDetailRows, "wins"),
+      feedback: indexRowsByRepAndWeek(feedbackRows, "feedback"),
+    }),
+    [activityRows, callRows, connectRows, demoRows, opsRows, winsDetailRows, feedbackRows],
+  );
+  const prospectingFilterOptions = useMemo(
+    () => {
+      const lookups = new Map<string, { accountIds: Set<string>; accountNames: Set<string> }>();
+      const notesSets = new Set<string>();
+      const addNotes = (notes: string[] | undefined) => {
+        if (!notes || notes.length === 0) return;
+        const key = notes.map((n) => n.toLowerCase().trim()).sort().join("||");
+        if (!key) return;
+        notesSets.add(key);
+      };
+      addNotes(resolvePhaseCalcConfig(team, undefined, phaseCalcConfigs).prospectingNotes);
+      for (const cfg of Object.values(phaseCalcConfigs[team.id] ?? {})) addNotes(cfg.prospectingNotes);
+      for (const key of notesSets) {
+        const notes = key.split("||").filter(Boolean);
+        lookups.set(key, buildProspectingNotesAccountSets(superhexRows, notes));
+      }
+      return {
+        team,
+        phaseLabels,
+        phaseCalcByTeam: phaseCalcConfigs,
+        prospectingLookupByKey: lookups,
+      };
+    },
+    [team, phaseLabels, phaseCalcConfigs, superhexRows],
   );
   const pilotCtx = useMemo(() => {
     if (!isPilotView) return null;
     return resolvePilotAssignments(projectTeamAssignments, salesTeams, team.id, pilotMonthIndex);
   }, [isPilotView, projectTeamAssignments, salesTeams, team.id, pilotMonthIndex]);
 
-  const monthKeyPilot = pilotToMonthKey(referenceDate ?? new Date());
-
   const pilotKpis = useMemo(() => {
     if (!isPilotView || !pilotCtx) return null;
     const { pilotRepNames } = pilotCtx;
-    if (pilotRepNames.size === 0) {
-      return {
-        winsBreak: { total: 0, growth: 0, nb: 0 },
-        ops: 0,
-        demos: 0,
-        losses: 0,
-        kpi: {
-          avgMrrWithout: null,
-          avgMrrWith: null,
-          avgPrice: null,
-          attachRate: null,
-        } as PilotKpiSnapshot,
-        repWinRows: [] as ReturnType<typeof pilotRepBreakdownWinsWithTarget>,
-        repLossRows: [] as ReturnType<typeof pilotRepBreakdownLossesInMonth>,
-      };
-    }
-    const winsBreak = getPilotWinsWithTargetBreakdown(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot);
+    const memberRepKeysPilot = new Set(members.map((m) => m.name.toLowerCase().trim()));
+    const allRepsForStats = new Set([...pilotRepNames, ...memberRepKeysPilot]);
+    const winsBreak = getPilotWinsWithTargetBreakdown(
+      pilotOpsForKpis,
+      allRepsForStats,
+      lineItemTargets,
+      monthKeyPilot,
+    );
     return {
       winsBreak,
-      ops: countPilotOpsInMonth(pilotOpsForKpis, pilotRepNames, monthKeyPilot),
-      demos: countPilotDemosInMonth(demoRows, pilotRepNames, monthKeyPilot),
-      losses: countPilotLossesInMonth(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
-      kpi: getPilotKpiSnapshot(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis),
-      repWinRows: pilotRepBreakdownWinsWithTarget(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
-      repLossRows: pilotRepBreakdownLossesInMonth(pilotOpsForKpis, pilotRepNames, lineItemTargets, monthKeyPilot),
+      ops: countPilotOpsInMonth(pilotOpsForKpis, allRepsForStats, monthKeyPilot),
+      demos: countPilotDemosInMonth(demoRowsForPilot, allRepsForStats, monthKeyPilot),
+      losses: countPilotLossesInMonth(pilotOpsForKpis, allRepsForStats, lineItemTargets, monthKeyPilot),
+      kpi: getPilotKpiSnapshot(
+        pilotOpsForKpis,
+        pilotRepNames,
+        lineItemTargets,
+        monthKeyPilot,
+        pilotOpsWithoutForKpis,
+        pilotAttachOpts,
+      ),
+      repWinRows: pilotRepBreakdownWinsWithTarget(
+        pilotOpsForKpis,
+        allRepsForStats,
+        lineItemTargets,
+        monthKeyPilot,
+      ),
+      repLossRows: pilotRepBreakdownLossesInMonth(
+        pilotOpsForKpis,
+        allRepsForStats,
+        lineItemTargets,
+        monthKeyPilot,
+      ),
     };
-  }, [isPilotView, pilotCtx, pilotOpsForKpis, pilotOpsWithoutForKpis, demoRows, lineItemTargets, monthKeyPilot]);
+  }, [
+    isPilotView,
+    pilotCtx,
+    members,
+    pilotOpsForKpis,
+    pilotOpsWithoutForKpis,
+    demoRowsForPilot,
+    lineItemTargets,
+    monthKeyPilot,
+    pilotAttachOpts,
+  ]);
 
   const pilotWowWeeks = useMemo(() => {
     const allW = getTeamWeekKeys(team.startDate, team.endDate);
@@ -2327,26 +2730,34 @@ const TeamTab = memo(function TeamTab({
 
   const pilotRepOpsDemosMap = useMemo(() => {
     if (!isPilotView || !pilotCtx) return new Map<string, { ops: number; demos: number }>();
+    const memberRepKeysPilot = new Set(members.map((m) => m.name.toLowerCase().trim()));
+    const allReps = new Set([...pilotCtx.pilotRepNames, ...memberRepKeysPilot]);
     const m = new Map<string, { ops: number; demos: number }>();
-    for (const rk of pilotCtx.pilotRepNames) m.set(rk, { ops: 0, demos: 0 });
+    for (const rk of allReps) m.set(rk, { ops: 0, demos: 0 });
     for (const row of pilotOpsForKpis) {
       const rk = (row.rep_name as string)?.toLowerCase().trim();
-      if (!pilotCtx.pilotRepNames.has(rk)) continue;
+      if (!allReps.has(rk)) continue;
       const d = row.op_created_date as string | null;
       if (!d || d.slice(0, 7) !== monthKeyPilot) continue;
       const cur = m.get(rk);
       if (cur) cur.ops += 1;
     }
-    for (const row of demoRows) {
+    for (const row of demoRowsForPilot) {
       const rk = (row.rep_name as string)?.toLowerCase().trim();
-      if (!pilotCtx.pilotRepNames.has(rk)) continue;
+      if (!allReps.has(rk)) continue;
       const d = row.demo_date as string | null;
       if (!d || d.slice(0, 7) !== monthKeyPilot) continue;
       const cur = m.get(rk);
       if (cur) cur.demos += 1;
     }
     return m;
-  }, [isPilotView, pilotCtx, pilotOpsForKpis, demoRows, monthKeyPilot]);
+  }, [isPilotView, pilotCtx, members, pilotOpsForKpis, demoRowsForPilot, monthKeyPilot]);
+
+  const allRepsForPilotMonthlyStats = useMemo(() => {
+    if (!pilotCtx) return new Set<string>();
+    const memberRepKeysPilot = new Set(members.map((m) => m.name.toLowerCase().trim()));
+    return new Set([...pilotCtx.pilotRepNames, ...memberRepKeysPilot]);
+  }, [pilotCtx, members]);
 
   const pilotTeamRows = useMemo(() => {
     if (!pilotCtx) return [];
@@ -2357,10 +2768,29 @@ const TeamTab = memo(function TeamTab({
         (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
       );
       const repSet = repsForSalesTeam(st, asn);
-      const snap = getPilotKpiSnapshot(pilotOpsForKpis, repSet, lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis);
-      const accts = getPilotAccountNamesForTeam(pilotOpsForKpis, repSet, lineItemTargets, monthKeyPilot);
-      const prevW = w0 && w1 ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w0, pilotOpsWithoutForKpis) : null;
-      const lastW = w0 && w1 ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w1, pilotOpsWithoutForKpis) : null;
+      const snap = getPilotKpiSnapshot(
+        pilotOpsForKpis,
+        repSet,
+        lineItemTargets,
+        monthKeyPilot,
+        pilotOpsWithoutForKpis,
+        pilotAttachOpts,
+      );
+      const accts = getPilotAccountNamesForTeam(
+        pilotOpsForKpis,
+        repSet,
+        lineItemTargets,
+        monthKeyPilot,
+        pilotAttachOpts,
+      );
+      const prevW =
+        w0 && w1
+          ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w0, pilotOpsWithoutForKpis, pilotAttachOpts)
+          : null;
+      const lastW =
+        w0 && w1
+          ? getPilotKpiSnapshotForWeek(pilotOpsForKpis, repSet, lineItemTargets, w1, pilotOpsWithoutForKpis, pilotAttachOpts)
+          : null;
       return { st, snap, accts, prevW, lastW };
     });
     const dir = pilotTeamSortDir === "asc" ? 1 : -1;
@@ -2395,6 +2825,7 @@ const TeamTab = memo(function TeamTab({
     lineItemTargets,
     monthKeyPilot,
     pilotOpsWithoutForKpis,
+    pilotAttachOpts,
     pilotTeamSortCol,
     pilotTeamSortDir,
   ]);
@@ -3003,12 +3434,22 @@ const TeamTab = memo(function TeamTab({
                                 const isTeamScope = (team.goalScopeConfig?.[metric] ?? 'individual') === 'team';
                                 const pct = onRelief ? 100 : (hasGoal ? (actual / goal) * 100 : 0);
                                 const barPct = onRelief ? 100 : Math.min(pct, 100);
-                                const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+                                const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins' || metric === 'feedback';
                                 const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
                                 const copyKey = `${m.id}::${metric}`;
 
                                 const isTypedMetric = metric === 'wins' || metric === 'ops';
                                 const typeCounts = isTypedMetric ? getScopedTypeCounts(team, m, metric, referenceDate) : null;
+                                // Match the number shown in the cell: accelerator uses currentValue, not getScopedMetricTotal.
+                                const accelProgressForHeadline =
+                                  !hasGoal && hasAccel(metric) && !isMemberExcludedFromAccelerator(team, m.id, metric)
+                                    ? getAcceleratorProgress(team, m, metric, referenceDate)
+                                    : null;
+                                const headlineMetricValue = hasGoal
+                                  ? actual
+                                  : accelProgressForHeadline
+                                    ? accelProgressForHeadline.currentValue
+                                    : actual;
                                 const cellContent = (
                                   <div className="flex flex-col items-center gap-1">
                                     {hasGoal ? (
@@ -3160,6 +3601,29 @@ const TeamTab = memo(function TeamTab({
                                                     </div>
                                                   </div>
                                                 )}
+                                                {metric === "wins" && wtn.noAccountRecord.length > 0 && (
+                                                  <div className="mt-2">
+                                                    <p className="font-semibold mb-1 italic text-muted-foreground/80">Without account record {GOAL_METRIC_LABELS[metric]}</p>
+                                                    <div
+                                                      className={`${wtn.noAccountRecord.length > 6 ? "columns-3" : wtn.noAccountRecord.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground/80 italic`}
+                                                    >
+                                                      {wtn.noAccountRecord.map((name) => (
+                                                        <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                {(() => {
+                                                  // Reconcile the stat-card count with the unique NB/Growth names shown above.
+                                                  // Any remaining delta comes from wins/ops whose names are either missing or categorized separately.
+                                                  const namedCount = wtn.nb.length + wtn.growth.length;
+                                                  const untracked = headlineMetricValue - namedCount;
+                                                  return untracked > 0 ? (
+                                                    <p className="text-muted-foreground/60 mt-1.5 italic">
+                                                      + {untracked} without account records
+                                                    </p>
+                                                  ) : null;
+                                                })()}
                                               </div>
                                             );
                                           })() : (
@@ -3170,6 +3634,11 @@ const TeamTab = memo(function TeamTab({
                                                   <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
                                                 ))}
                                               </div>
+                                              {headlineMetricValue - accountNames.length > 0 && (
+                                                <p className="text-xs text-muted-foreground/60 mt-1.5 italic">
+                                                  + {headlineMetricValue - accountNames.length} without account records
+                                                </p>
+                                              )}
                                             </>
                                           )}
                                         </TooltipContent>
@@ -3204,7 +3673,7 @@ const TeamTab = memo(function TeamTab({
                                     const hasGoal = !!team.enabledGoals[metric] && goal > 0;
                                     const pct = hasGoal ? (actual / goal) * 100 : 0;
                                     const barPct = Math.min(pct, 100);
-                                    const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins';
+                                    const hasAcctNames = metric === 'ops' || metric === 'demos' || metric === 'wins' || metric === 'feedback';
                                     const accountNames = hasAcctNames ? getScopedAccountNames(team, m, metric, referenceDate) : [];
                                     const copyKey = `${m.id}::${metric}`;
 
@@ -3269,6 +3738,9 @@ const TeamTab = memo(function TeamTab({
                                                 <p className="text-xs font-semibold text-green-500">Copied!</p>
                                               ) : (metric === 'wins' || metric === 'ops') ? (() => {
                                                 const wtn = getScopedTypeNames(team, m, metric, referenceDate);
+                                                const actual = getScopedMetricTotal(team, m, metric, referenceDate);
+                                                const namedCount = wtn.nb.length + wtn.growth.length;
+                                                const untracked = actual - namedCount;
                                                 return (
                                                   <div className="text-xs">
                                                     {wtn.nb.length > 0 && (
@@ -3290,6 +3762,23 @@ const TeamTab = memo(function TeamTab({
                                                           ))}
                                                         </div>
                                                       </div>
+                                                    )}
+                                                    {metric === "wins" && wtn.noAccountRecord.length > 0 && (
+                                                      <div className="mt-2">
+                                                        <p className="font-semibold mb-1 italic text-muted-foreground/80">Without account record {GOAL_METRIC_LABELS[metric]}</p>
+                                                        <div
+                                                          className={`${wtn.noAccountRecord.length > 6 ? "columns-3" : wtn.noAccountRecord.length > 3 ? "columns-2" : ""} gap-x-4 text-muted-foreground/80 italic`}
+                                                        >
+                                                          {wtn.noAccountRecord.map((name) => (
+                                                            <p key={name} className="break-inside-avoid truncate leading-relaxed">{name}</p>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    )}
+                                                    {untracked > 0 && (
+                                                      <p className="text-muted-foreground/60 mt-1.5 italic">
+                                                        + {untracked} without account records
+                                                      </p>
                                                     )}
                                                   </div>
                                                 );
@@ -3378,7 +3867,7 @@ const TeamTab = memo(function TeamTab({
                       <TooltipContent side="bottom" className="max-w-[320px] p-3">
                         <p className="text-xs font-semibold mb-2">Rep activity ({monthKeyPilot})</p>
                         <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
-                          {Array.from(pilotCtx.pilotRepNames).map((rk) => {
+                          {Array.from(allRepsForPilotMonthlyStats).map((rk) => {
                             const od = pilotRepOpsDemosMap.get(rk) ?? { ops: 0, demos: 0 };
                             const wins = pilotKpis.repWinRows.find((r) => r.repKey === rk)?.wins ?? 0;
                             const label = repNameToSentenceCase(
@@ -3448,7 +3937,14 @@ const TeamTab = memo(function TeamTab({
                         return { label: lab, repKey: rk, snap: k };
                       });
                     const snapForRep = (rk: string) =>
-                      getPilotKpiSnapshot(pilotOpsForKpis, new Set([rk]), lineItemTargets, monthKeyPilot, pilotOpsWithoutForKpis);
+                      getPilotKpiSnapshot(
+                        pilotOpsForKpis,
+                        new Set([rk]),
+                        lineItemTargets,
+                        monthKeyPilot,
+                        pilotOpsWithoutForKpis,
+                        pilotAttachOpts,
+                      );
                     const top10bottom10 = (
                       arr: Array<{ label: string; value: number; display?: string }>,
                     ) => {
@@ -3533,7 +4029,7 @@ const TeamTab = memo(function TeamTab({
                   label="Ops"
                   value={pilotKpis.ops}
                   breakdown={top20PilotMonthlyStatBreakdown(
-                    Array.from(pilotCtx.pilotRepNames).map((rk) => ({
+                    Array.from(allRepsForPilotMonthlyStats).map((rk) => ({
                       label: repNameToSentenceCase(
                         pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
                       ),
@@ -3546,7 +4042,7 @@ const TeamTab = memo(function TeamTab({
                   label="Demos"
                   value={pilotKpis.demos}
                   breakdown={top20PilotMonthlyStatBreakdown(
-                    Array.from(pilotCtx.pilotRepNames).map((rk) => ({
+                    Array.from(allRepsForPilotMonthlyStats).map((rk) => ({
                       label: repNameToSentenceCase(
                         pilotKpis.repWinRows.find((r) => r.repKey === rk)?.displayName ?? rk,
                       ),
@@ -3865,6 +4361,8 @@ const TeamTab = memo(function TeamTab({
             isGAPhase={isGAPhase}
             pilotSelectedIds={isGAPhase ? gaFunnelSelectedIds : undefined}
             setPilotSelectedIds={isGAPhase ? setGaFunnelSelectedIds : undefined}
+            phaseLabels={phaseLabels}
+            phaseCalcConfigs={phaseCalcConfigs}
             pilotFunnel={
               isPilotView && pilotCtx && pilotCtx.pilotSalesTeams.length > 0
                 ? {
@@ -3875,6 +4373,14 @@ const TeamTab = memo(function TeamTab({
                     metricsByWeek,
                     tamRows,
                     winsDetailRows,
+                    activityRows,
+                    callRows,
+                    connectRows,
+                    demoRows,
+                    opsRows,
+                    feedbackRows,
+                    superhexRows,
+                    metricExclusions: funnelMetricEx,
                   }
                 : undefined
             }
@@ -3942,7 +4448,6 @@ const TeamTab = memo(function TeamTab({
                       );
                       return tamSumForReps(tamRows, repsForSalesTeam(st, asn)) > 0;
                     });
-                    const weeklyOppFlags = isGAPhase ? NO_OPPORTUNITY_FLAGS : team.overallGoal.opportunityFlags;
                     return weeklyPilotSalesTeams.map((st) => {
                       const assignment = projectTeamAssignments.find(
                         (a) => a.teamId === team.id && a.salesTeamId === st.id && a.monthIndex === pilotMonthIndex,
@@ -3955,8 +4460,27 @@ const TeamTab = memo(function TeamTab({
                             ? teamTam
                             : 0
                           : metKey === "wins"
-                            ? pilotWinsInWeek(metricsByWeek, winsDetailRows, weeklyOppFlags, repSet, wk)
-                            : sumMetricForRepsInWeek(metricsByWeek, metKey, repSet, wk);
+                            ? pilotWinsInWeek(
+                                metricsByWeek,
+                                winsDetailRows,
+                                team,
+                                phaseLabels,
+                                phaseCalcConfigs,
+                                isGAPhase,
+                                repSet,
+                                wk,
+                                funnelMetricEx,
+                              )
+                            : sumFunnelMetricWithExclusions(
+                                metKey,
+                                repSet,
+                                wk,
+                                metricsByWeek,
+                                rawRowsByFunnelMetric,
+                                indexedRawRowsByFunnelMetric,
+                                funnelMetricEx,
+                                prospectingFilterOptions,
+                              );
                       const allMetricRows: { label: string; key: keyof FunnelData }[] = [
                         { label: "TAM", key: "tam" },
                         { label: "Activity", key: "activity" },
@@ -4681,6 +5205,14 @@ type WeekOverWeekPilotFunnel = {
   metricsByWeek: MetricsByWeekBundle;
   tamRows: Record<string, unknown>[];
   winsDetailRows: Record<string, unknown>[];
+  activityRows: Record<string, unknown>[];
+  callRows: Record<string, unknown>[];
+  connectRows: Record<string, unknown>[];
+  demoRows: Record<string, unknown>[];
+  opsRows: Record<string, unknown>[];
+  feedbackRows: Record<string, unknown>[];
+  superhexRows: Record<string, unknown>[];
+  metricExclusions: MetricExclusionRow[];
 };
 
 type PilotFunnelRow = { id: string; name: string; chartName: string; repKeys: Set<string>; tamTotal: number };
@@ -4691,12 +5223,16 @@ function WeekOverWeekView({
   isGAPhase = false,
   pilotSelectedIds,
   setPilotSelectedIds,
+  phaseLabels,
+  phaseCalcConfigs,
 }: {
   team: Team;
   pilotFunnel?: WeekOverWeekPilotFunnel;
   isGAPhase?: boolean;
   pilotSelectedIds?: Set<string>;
   setPilotSelectedIds?: React.Dispatch<React.SetStateAction<Set<string>>>;
+  phaseLabels: Record<number, string>;
+  phaseCalcConfigs: Record<string, Record<number, PhaseCalcConfig>>;
 }) {
   const [internalPilotSelected, setInternalPilotSelected] = useState<Set<string>>(() => new Set());
   const selectedPlayers = pilotSelectedIds ?? internalPilotSelected;
@@ -4709,7 +5245,7 @@ function WeekOverWeekView({
 
   const [funnelSearchOpen, setFunnelSearchOpen] = useState(false);
 
-  const pilotRows: PilotFunnelRow[] | null = (() => {
+  const pilotRows: PilotFunnelRow[] | null = useMemo(() => {
     if (!pilotFunnel?.pilotSalesTeams.length) return null;
     const { pilotSalesTeams, projectTeamAssignments, teamId, pilotMonthIndex, tamRows } = pilotFunnel;
     return pilotSalesTeams.map((st) => {
@@ -4721,51 +5257,80 @@ function WeekOverWeekView({
       const chartName = isGAPhase ? pilotSalesTeamShortLabel(name) : name;
       return { id: st.id, name, chartName, repKeys, tamTotal: tamSumForReps(tamRows, repKeys) };
     });
-  })();
+  }, [pilotFunnel, isGAPhase]);
 
   const isPilotChart = pilotRows !== null && pilotRows.length > 0;
   const bundle = pilotFunnel?.metricsByWeek;
   const pilotWinsDetailRows = pilotFunnel?.winsDetailRows;
-  const pilotOppFlag = isGAPhase ? NO_OPPORTUNITY_FLAGS : team.overallGoal.opportunityFlags;
+  const pilotChartMetricEx = pilotFunnel?.metricExclusions ?? [];
+  const pilotFunnelRawByMetric: Record<MetricExclusionMetric, Record<string, unknown>[] | undefined> | null =
+    pilotFunnel
+      ? {
+          activity: pilotFunnel.activityRows,
+          calls: pilotFunnel.callRows,
+          connects: pilotFunnel.connectRows,
+          demos: pilotFunnel.demoRows,
+          ops: pilotFunnel.opsRows,
+          wins: pilotFunnel.winsDetailRows,
+          feedback: pilotFunnel.feedbackRows,
+        }
+      : null;
+  const pilotFunnelIndexedByMetric: Record<MetricExclusionMetric, IndexedRowsByRepAndWeek | undefined> | null =
+    pilotFunnel
+      ? {
+          activity: indexRowsByRepAndWeek(pilotFunnel.activityRows, "activity"),
+          calls: indexRowsByRepAndWeek(pilotFunnel.callRows, "calls"),
+          connects: indexRowsByRepAndWeek(pilotFunnel.connectRows, "connects"),
+          demos: indexRowsByRepAndWeek(pilotFunnel.demoRows, "demos"),
+          ops: indexRowsByRepAndWeek(pilotFunnel.opsRows, "ops"),
+          wins: indexRowsByRepAndWeek(pilotFunnel.winsDetailRows, "wins"),
+          feedback: indexRowsByRepAndWeek(pilotFunnel.feedbackRows, "feedback"),
+        }
+      : null;
+  const prospectingFilterOptions = useMemo(
+    () => {
+      if (!pilotFunnel) return undefined;
+      const lookups = new Map<string, { accountIds: Set<string>; accountNames: Set<string> }>();
+      const notesSets = new Set<string>();
+      const addNotes = (notes: string[] | undefined) => {
+        if (!notes || notes.length === 0) return;
+        const key = notes.map((n) => n.toLowerCase().trim()).sort().join("||");
+        if (!key) return;
+        notesSets.add(key);
+      };
+      addNotes(resolvePhaseCalcConfig(team, undefined, phaseCalcConfigs).prospectingNotes);
+      for (const cfg of Object.values(phaseCalcConfigs[team.id] ?? {})) addNotes(cfg.prospectingNotes);
+      for (const key of notesSets) {
+        const notes = key.split("||").filter(Boolean);
+        lookups.set(key, buildProspectingNotesAccountSets(pilotFunnel.superhexRows, notes));
+      }
+      return {
+        team,
+        phaseLabels,
+        phaseCalcByTeam: phaseCalcConfigs,
+        prospectingLookupByKey: lookups,
+      };
+    },
+    [pilotFunnel, team, phaseLabels, phaseCalcConfigs],
+  );
 
-  const allWeeks = getTeamWeekKeys(team.startDate, team.endDate);
+  const allWeeks = useMemo(() => getTeamWeekKeys(team.startDate, team.endDate), [team.startDate, team.endDate]);
   const maxWeeks = chartRange === "all" ? allWeeks.length : parseInt(chartRange);
-  const weeks = allWeeks.slice(-maxWeeks);
+  const weeks = useMemo(() => allWeeks.slice(-maxWeeks), [allWeeks, maxWeeks]);
 
   const handleRangeChange = (v: ChartRange) => { setChartRange(v); saveChartRange(v); };
 
   const currentWeek = getCurrentWeekKey();
-
-  const METRIC_COLORS: Record<string, string> = {
-    TAM: "hsl(340, 55%, 55%)",
-    Call: "hsl(215, 55%, 55%)",
-    Connect: "hsl(140, 50%, 45%)",
-    Ops: "hsl(30, 65%, 50%)",
-    Demo: "hsl(280, 50%, 58%)",
-    Win: "hsl(24, 85%, 55%)",
-    Feedback: "hsl(190, 55%, 50%)",
-    Activity: "hsl(60, 60%, 45%)",
-  };
-  const metricKeys: { key: keyof FunnelData; label: string }[] = [
-    { key: "tam", label: "TAM" },
-    { key: "activity", label: "Activity" },
-    { key: "calls", label: "Call" },
-    { key: "connects", label: "Connect" },
-    { key: "ops", label: "Ops" },
-    { key: "demos", label: "Demo" },
-    { key: "wins", label: "Win" },
-    { key: "feedback", label: "Feedback" },
-  ];
 
   const weekKeyList = weeks.map((w) => w.key);
   const hasMetricsTam = isPilotChart
     ? (pilotRows ?? []).some((p) => p.tamTotal > 0)
     : members.some((m) => m.touchedTam > 0);
 
-  const chartData = weeks.map((week) => {
+  const chartData = useMemo(() => weeks.map((week) => {
     const row: Record<string, unknown> = { week: week.label };
     if (isPilotChart && pilotRows && bundle) {
-      metricKeys.forEach(({ key, label }) => {
+      METRIC_KEYS.forEach(({ key, label }) => {
         if (key === "tam") {
           row[label] = hasMetricsTam
             ? pilotRows.reduce((s, p) => s + p.tamTotal, 0)
@@ -4775,27 +5340,65 @@ function WeekOverWeekView({
             (s, p) =>
               s +
               (key === "wins"
-                ? pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, week.key)
-                : sumMetricForRepsInWeek(bundle, key, p.repKeys, week.key)),
+                ? pilotWinsInWeek(
+                    bundle,
+                    pilotWinsDetailRows,
+                    team,
+                    phaseLabels,
+                    phaseCalcConfigs,
+                    isGAPhase,
+                    p.repKeys,
+                    week.key,
+                    pilotChartMetricEx,
+                  )
+                : sumFunnelMetricWithExclusions(
+                    key,
+                    p.repKeys,
+                    week.key,
+                    bundle,
+                    pilotFunnelRawByMetric!,
+                    pilotFunnelIndexedByMetric!,
+                    pilotChartMetricEx,
+                    prospectingFilterOptions,
+                  )),
             0,
           );
         }
       });
-      pilotRows.forEach((p, pi) => {
+      pilotRows.forEach((p) => {
         if (!selectedPlayers.has(p.id)) return;
-        metricKeys.forEach(({ key, label }) => {
+        METRIC_KEYS.forEach(({ key, label }) => {
           row[`${p.chartName} ${label}`] =
             key === "tam"
               ? (hasMetricsTam ? p.tamTotal : 0)
               : key === "wins"
-                ? pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, week.key)
-                : sumMetricForRepsInWeek(bundle, key, p.repKeys, week.key);
+                ? pilotWinsInWeek(
+                    bundle,
+                    pilotWinsDetailRows,
+                    team,
+                    phaseLabels,
+                    phaseCalcConfigs,
+                    isGAPhase,
+                    p.repKeys,
+                    week.key,
+                    pilotChartMetricEx,
+                  )
+                : sumFunnelMetricWithExclusions(
+                    key,
+                    p.repKeys,
+                    week.key,
+                    bundle,
+                    pilotFunnelRawByMetric!,
+                    pilotFunnelIndexedByMetric!,
+                    pilotChartMetricEx,
+                    prospectingFilterOptions,
+                  );
         });
       });
       row._roles = {};
       return row;
     }
-    metricKeys.forEach(({ key, label }) => {
+    METRIC_KEYS.forEach(({ key, label }) => {
       row[label] =
         key === "tam"
           ? hasMetricsTam
@@ -4805,7 +5408,7 @@ function WeekOverWeekView({
     });
     members.forEach((m) => {
       if (selectedPlayers.has(m.id)) {
-        metricKeys.forEach(({ key, label }) => {
+        METRIC_KEYS.forEach(({ key, label }) => {
           row[`${m.name} ${label}`] =
             key === "tam"
               ? hasMetricsTam
@@ -4822,7 +5425,7 @@ function WeekOverWeekView({
     });
     row._roles = roles;
     return row;
-  });
+  }), [weeks, isPilotChart, pilotRows, bundle, selectedPlayers, pilotWinsDetailRows, team, phaseLabels, phaseCalcConfigs, isGAPhase, pilotChartMetricEx, pilotFunnelRawByMetric, pilotFunnelIndexedByMetric, prospectingFilterOptions, hasMetricsTam, members, weekKeyList]);
 
   const togglePlayer = (id: string) => {
     setSelectedPlayers((prev) => {
@@ -4845,37 +5448,10 @@ function WeekOverWeekView({
   const selectedMembers = members.filter((m) => selectedPlayers.has(m.id));
   const selectedPilotRows =
     isPilotChart && pilotRows ? pilotRows.filter((p) => selectedPlayers.has(p.id)) : [];
-  const PLAYER_COLORS = [
-    "hsl(350, 60%, 58%)",
-    "hsl(180, 45%, 48%)",
-    "hsl(45, 70%, 55%)",
-    "hsl(300, 45%, 55%)",
-    "hsl(160, 50%, 42%)",
-  ];
-
-  const FunnelTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const roles: Record<string, string> = payload[0]?.payload?._roles || {};
-    return (
-      <div style={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, borderRadius: "8px", color: chartColors.tooltipText, padding: "10px 14px", fontSize: 12 }}>
-        <p style={{ fontWeight: 600, marginBottom: 6 }}>{label}</p>
-        {payload.filter((e: any) => !e.dataKey?.startsWith("_")).map((entry: any, i: number) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, margin: "2px 0" }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: entry.color, display: "inline-block", flexShrink: 0 }} />
-            <span>{entry.name}: <strong>{entry.value}</strong></span>
-          </div>
-        ))}
-        {Object.keys(roles).length > 0 && (
-          <div style={{ borderTop: `1px solid ${chartColors.tooltipBorder}`, marginTop: 6, paddingTop: 6 }}>
-            <p style={{ fontSize: 10, opacity: 0.6, marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em" }}>Roles this week</p>
-            {Object.entries(roles).map(([name, role]) => (
-              <p key={name} style={{ margin: "2px 0" }}>{name}: <strong>{role as string}</strong></p>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const tooltipRenderer = useCallback(
+    (props: any) => <FunnelTooltipContent {...props} chartColors={chartColors} />,
+    [chartColors],
+  );
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 glow-card">
@@ -4894,7 +5470,7 @@ function WeekOverWeekView({
             ))}
           </select>
           <div className="flex flex-wrap gap-1">
-          {metricKeys.map(({ label }) => {
+          {METRIC_KEYS.map(({ label }) => {
             const isActive = selectedMetrics.has(label);
             return (
               <button
@@ -4920,9 +5496,9 @@ function WeekOverWeekView({
             <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
             <XAxis dataKey="week" tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
             <YAxis allowDecimals={false} tick={{ fill: chartColors.axisText, fontSize: 12 }} axisLine={{ stroke: chartColors.axisLine }} tickLine={false} />
-            <Tooltip content={<FunnelTooltip />} />
+            <Tooltip content={tooltipRenderer} />
             <Legend />
-            {metricKeys.map(({ label }) =>
+            {METRIC_KEYS.map(({ label }) =>
               selectedMetrics.has(label) ? (
                 <Line key={label} type="monotone" dataKey={label} stroke={METRIC_COLORS[label]} strokeWidth={2.5} dot={{ r: 4 }} />
               ) : null
@@ -4932,7 +5508,7 @@ function WeekOverWeekView({
               const id = isPilotChart ? (ent as PilotFunnelRow).id : (ent as TeamMember).id;
               const name = isPilotChart ? (ent as PilotFunnelRow).chartName : (ent as TeamMember).name;
               return selectedPlayers.has(id)
-                ? metricKeys.filter(({ label }) => selectedMetrics.has(label)).map(({ label }) => (
+                ? METRIC_KEYS.filter(({ label }) => selectedMetrics.has(label)).map(({ label }) => (
                     <Line key={`${id}-${label}`} type="monotone" dataKey={`${name} ${label}`} stroke={PLAYER_COLORS[i % PLAYER_COLORS.length]} strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 3 }} />
                   ))
                 : null;
@@ -5102,19 +5678,101 @@ function WeekOverWeekView({
                 const idx = pilotRows!.indexOf(p);
                 const validWeeks = weeks.filter((w) => {
                   const tam = hasMetricsTam ? p.tamTotal : 0;
-                  const calls = sumMetricForRepsInWeek(bundle, "calls", p.repKeys, w.key);
-                  const connects = sumMetricForRepsInWeek(bundle, "connects", p.repKeys, w.key);
-                  const demos = sumMetricForRepsInWeek(bundle, "demos", p.repKeys, w.key);
-                  const wins = pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, w.key);
+                  const calls = sumFunnelMetricWithExclusions(
+                    "calls",
+                    p.repKeys,
+                    w.key,
+                    bundle,
+                    pilotFunnelRawByMetric!,
+                    pilotFunnelIndexedByMetric!,
+                    pilotChartMetricEx,
+                    prospectingFilterOptions,
+                  );
+                  const connects = sumFunnelMetricWithExclusions(
+                    "connects",
+                    p.repKeys,
+                    w.key,
+                    bundle,
+                    pilotFunnelRawByMetric!,
+                    pilotFunnelIndexedByMetric!,
+                    pilotChartMetricEx,
+                    prospectingFilterOptions,
+                  );
+                  const demos = sumFunnelMetricWithExclusions(
+                    "demos",
+                    p.repKeys,
+                    w.key,
+                    bundle,
+                    pilotFunnelRawByMetric!,
+                    pilotFunnelIndexedByMetric!,
+                    pilotChartMetricEx,
+                    prospectingFilterOptions,
+                  );
+                  const wins = pilotWinsInWeek(
+                    bundle,
+                    pilotWinsDetailRows,
+                    team,
+                    phaseLabels,
+                    phaseCalcConfigs,
+                    isGAPhase,
+                    p.repKeys,
+                    w.key,
+                    pilotChartMetricEx,
+                  );
                   return tam > 0 || calls > 0 || connects > 0 || demos > 0 || wins > 0;
                 });
                 const totals = validWeeks.reduce(
                   (acc, w) => ({
                     tam: acc.tam,
-                    calls: acc.calls + sumMetricForRepsInWeek(bundle, "calls", p.repKeys, w.key),
-                    connects: acc.connects + sumMetricForRepsInWeek(bundle, "connects", p.repKeys, w.key),
-                    demos: acc.demos + sumMetricForRepsInWeek(bundle, "demos", p.repKeys, w.key),
-                    wins: acc.wins + pilotWinsInWeek(bundle, pilotWinsDetailRows, pilotOppFlag, p.repKeys, w.key),
+                    calls:
+                      acc.calls +
+                      sumFunnelMetricWithExclusions(
+                        "calls",
+                        p.repKeys,
+                        w.key,
+                        bundle,
+                        pilotFunnelRawByMetric!,
+                        pilotFunnelIndexedByMetric!,
+                        pilotChartMetricEx,
+                        prospectingFilterOptions,
+                      ),
+                    connects:
+                      acc.connects +
+                      sumFunnelMetricWithExclusions(
+                        "connects",
+                        p.repKeys,
+                        w.key,
+                        bundle,
+                        pilotFunnelRawByMetric!,
+                        pilotFunnelIndexedByMetric!,
+                        pilotChartMetricEx,
+                        prospectingFilterOptions,
+                      ),
+                    demos:
+                      acc.demos +
+                      sumFunnelMetricWithExclusions(
+                        "demos",
+                        p.repKeys,
+                        w.key,
+                        bundle,
+                        pilotFunnelRawByMetric!,
+                        pilotFunnelIndexedByMetric!,
+                        pilotChartMetricEx,
+                        prospectingFilterOptions,
+                      ),
+                    wins:
+                      acc.wins +
+                      pilotWinsInWeek(
+                        bundle,
+                        pilotWinsDetailRows,
+                        team,
+                        phaseLabels,
+                        phaseCalcConfigs,
+                        isGAPhase,
+                        p.repKeys,
+                        w.key,
+                        pilotChartMetricEx,
+                      ),
                   }),
                   { tam: hasMetricsTam ? 0 : p.tamTotal, calls: 0, connects: 0, demos: 0, wins: 0 },
                 );

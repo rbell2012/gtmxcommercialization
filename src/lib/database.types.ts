@@ -153,10 +153,38 @@ export interface DbTeamPhasePriority {
   updated_at: string;
 }
 
+export interface DbTeamPhaseConfig {
+  id: string;
+  team_id: string;
+  month_index: number;
+  opportunity_flags: string[];
+  line_item_targets: string[];
+  prospecting_notes: string[];
+  /** Pilot attach rate denominator: flagged_wins | all_wins */
+  attach_rate_denom: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbTeamMetricExclusion {
+  id: string;
+  team_id: string;
+  metric: string;
+  field: string;
+  value: string;
+  month_key: string;
+  /** exclusion (default) or inclusion (+1 when no matching row) */
+  kind: string;
+  /** When set, rule applies only to this member; null = entire team */
+  member_id: string | null;
+  created_at: string;
+}
+
 export interface DbSuperhex {
   id: string;
   salesforce_accountid: string | null;
   account_name: string | null;
+  prospecting_notes: string | null;
   rep_name: string;
   total_activities: number;
   first_activity_date: string | null;
@@ -198,6 +226,7 @@ export interface DbMetricsDemos {
   rep_name: string;
   account_name: string | null;
   subject: string | null;
+  event_status: string | null;
   created_at: string;
   updated_at: string;
 }

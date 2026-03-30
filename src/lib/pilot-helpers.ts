@@ -1,6 +1,10 @@
 import { dateToWeekKey, isWinStage } from "@/lib/metrics-helpers";
 import { lineItemsMatchTargetNames, parseLineItemTotal } from "@/lib/lineItemParser";
 import type { MetricsByWeekBundle, ProjectTeamAssignment, SalesTeam, Team } from "@/contexts/TeamsContext";
+import type { AttachRateDenomMode, PhaseCalcConfig } from "@/lib/phase-calc-config";
+import { resolvePhaseCalcConfig } from "@/lib/phase-calc-config";
+import type { MetricExclusionRow } from "@/lib/metric-exclusions";
+import { rowExcludedForTeamMetric, teamWideMetricRulesOnly } from "@/lib/metric-exclusions";
 
 export const PILOT_REGION_PHASE_LABELS = [
   "Sales Org Pilot / Commercial Lead",
@@ -43,6 +47,38 @@ export function filterByOpportunityFlag(
     const n = String(r.opportunity_name ?? "").toLowerCase();
     return lowers.some((fl) => n.includes(fl));
   });
+}
+
+/** When `notes` is non-empty, keep only rows whose account_prospecting_notes contains ANY value (case-insensitive). */
+export function filterByProspectingNotes(
+  rows: Record<string, unknown>[],
+  notes: string[],
+): Record<string, unknown>[] {
+  if (!notes || notes.length === 0) return rows;
+  const lowers = notes.map((n) => n.toLowerCase());
+  return rows.filter((r) => {
+    const n = String(r.account_prospecting_notes ?? "").toLowerCase();
+    return lowers.some((needle) => n.includes(needle));
+  });
+}
+
+export function buildProspectingNotesAccountSets(
+  shRows: Record<string, unknown>[],
+  notes: string[],
+): { accountIds: Set<string>; accountNames: Set<string> } {
+  if (!notes || notes.length === 0) return { accountIds: new Set(), accountNames: new Set() };
+  const lowers = notes.map((n) => n.toLowerCase());
+  const accountIds = new Set<string>();
+  const accountNames = new Set<string>();
+  for (const row of shRows) {
+    const pn = String(row.prospecting_notes ?? "").toLowerCase();
+    if (!lowers.some((needle) => pn.includes(needle))) continue;
+    const accountId = row.salesforce_accountid;
+    if (typeof accountId === "string" && accountId.trim()) accountIds.add(accountId.trim());
+    const accountName = row.account_name;
+    if (typeof accountName === "string" && accountName.trim()) accountNames.add(accountName.trim().toLowerCase());
+  }
+  return { accountIds, accountNames };
 }
 
 /**
@@ -95,11 +131,12 @@ export type LifetimeStatsPhaseSlice = {
  */
 export function countOpsWinsSplitForLifetimeStats(
   opsRows: Record<string, unknown>[],
-  targets: string[],
+  team: Team,
   phases: LifetimeStatsPhaseSlice[],
   assignments: ProjectTeamAssignment[],
   salesTeams: SalesTeam[],
   teamId: string,
+  phaseCalcByTeam: Record<string, Record<number, PhaseCalcConfig>>,
 ): { pilotPhaseWins: number; otherPhaseWins: number; total: number } {
   const monthMeta = new Map<string, { isPilotLabeledMonth: boolean; pilotReps: Set<string> }>();
   for (const ph of phases) {
@@ -116,14 +153,34 @@ export function countOpsWinsSplitForLifetimeStats(
 
   for (const row of opsRows) {
     if (!isWinStage(row.opportunity_stage as string | null, row.opportunity_type as string | null)) continue;
-    if (targets.length > 0 && !lineItemsMatchTargetNames(row.line_items as string | null, targets)) continue;
 
     const ed = effectiveWinDate(row);
     const mk = monthKeyFromDateStr(ed);
+
+    const phSlice = mk ? phases.find((p) => `${p.year}-${String(p.month + 1).padStart(2, "0")}` === mk) : undefined;
+    const cfg = phSlice
+      ? resolvePhaseCalcConfig(team, phSlice.monthIndex, phaseCalcByTeam)
+      : resolvePhaseCalcConfig(team, undefined, phaseCalcByTeam);
+
+    if (cfg.opportunityFlags.length > 0) {
+      const n = String(row.opportunity_name ?? "").toLowerCase();
+      const lowers = cfg.opportunityFlags.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.prospectingNotes.length > 0) {
+      const n = String(row.account_prospecting_notes ?? "").toLowerCase();
+      const lowers = cfg.prospectingNotes.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.lineItemTargets.length > 0 && !lineItemsMatchTargetNames(row.line_items as string | null, cfg.lineItemTargets)) {
+      continue;
+    }
+
     if (!mk) {
       otherPhaseWins++;
       continue;
     }
+
     const meta = monthMeta.get(mk);
     if (!meta) {
       otherPhaseWins++;
@@ -144,6 +201,198 @@ export function countOpsWinsSplitForLifetimeStats(
   };
 }
 
+export type LifetimeMetricSplit = {
+  pilotLabeledMonths: number;
+  otherMonths: number;
+  total: number;
+};
+
+/**
+ * Lifetime ops from raw metrics: per-month phase config (flags, prospecting notes, line items)
+ * then pilot-labeled months with assignments count member + pilot-rep rows; other months members only.
+ */
+export function countLifetimeOpsAdjustedSplit(
+  opsRows: Record<string, unknown>[],
+  team: Team,
+  phases: LifetimeStatsPhaseSlice[],
+  assignments: ProjectTeamAssignment[],
+  salesTeams: SalesTeam[],
+  teamId: string,
+  phaseCalcByTeam: Record<string, Record<number, PhaseCalcConfig>>,
+  memberRepKeys: Set<string>,
+): LifetimeMetricSplit {
+  const monthMeta = new Map<string, { isPilotLabeledMonth: boolean; pilotReps: Set<string> }>();
+  for (const ph of phases) {
+    const mk = `${ph.year}-${String(ph.month + 1).padStart(2, "0")}`;
+    const pilotReps = resolvePilotAssignments(assignments, salesTeams, teamId, ph.monthIndex).pilotRepNames;
+    monthMeta.set(mk, {
+      isPilotLabeledMonth: isPilotRegionPhaseLabel(ph.label),
+      pilotReps,
+    });
+  }
+
+  let pilotLabeledMonths = 0;
+  let otherMonths = 0;
+
+  for (const row of opsRows) {
+    const mk = monthKeyFromDateStr(row.op_created_date as string | null);
+    const phSlice = mk ? phases.find((p) => `${p.year}-${String(p.month + 1).padStart(2, "0")}` === mk) : undefined;
+    const cfg = phSlice
+      ? resolvePhaseCalcConfig(team, phSlice.monthIndex, phaseCalcByTeam)
+      : resolvePhaseCalcConfig(team, undefined, phaseCalcByTeam);
+
+    if (cfg.opportunityFlags.length > 0) {
+      const n = String(row.opportunity_name ?? "").toLowerCase();
+      const lowers = cfg.opportunityFlags.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.prospectingNotes.length > 0) {
+      const n = String(row.account_prospecting_notes ?? "").toLowerCase();
+      const lowers = cfg.prospectingNotes.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.lineItemTargets.length > 0 && !lineItemsMatchTargetNames(row.line_items as string | null, cfg.lineItemTargets)) {
+      continue;
+    }
+
+    const rk = repKey(row.rep_name as string);
+    if (!mk) {
+      if (memberRepKeys.has(rk)) otherMonths++;
+      continue;
+    }
+
+    const meta = monthMeta.get(mk);
+    if (!meta) {
+      if (memberRepKeys.has(rk)) otherMonths++;
+      continue;
+    }
+    if (meta.isPilotLabeledMonth && meta.pilotReps.size > 0) {
+      if (memberRepKeys.has(rk) || meta.pilotReps.has(rk)) pilotLabeledMonths++;
+    } else {
+      if (memberRepKeys.has(rk)) otherMonths++;
+    }
+  }
+
+  return {
+    pilotLabeledMonths,
+    otherMonths,
+    total: pilotLabeledMonths + otherMonths,
+  };
+}
+
+/**
+ * Lifetime demos: pilot-labeled months with assignments = member + pilot reps; other months members only.
+ * Demos are not filtered by opportunity name (no op name on demo rows).
+ */
+export function countLifetimeDemosAdjustedSplit(
+  demoRows: Record<string, unknown>[],
+  phases: LifetimeStatsPhaseSlice[],
+  assignments: ProjectTeamAssignment[],
+  salesTeams: SalesTeam[],
+  teamId: string,
+  memberRepKeys: Set<string>,
+): LifetimeMetricSplit {
+  const monthMeta = new Map<string, { isPilotLabeledMonth: boolean; pilotReps: Set<string> }>();
+  for (const ph of phases) {
+    const mk = `${ph.year}-${String(ph.month + 1).padStart(2, "0")}`;
+    const pilotReps = resolvePilotAssignments(assignments, salesTeams, teamId, ph.monthIndex).pilotRepNames;
+    monthMeta.set(mk, {
+      isPilotLabeledMonth: isPilotRegionPhaseLabel(ph.label),
+      pilotReps,
+    });
+  }
+
+  let pilotLabeledMonths = 0;
+  let otherMonths = 0;
+
+  for (const row of demoRows) {
+    const mk = monthKeyFromDateStr(row.demo_date as string | null);
+    const rk = repKey(row.rep_name as string);
+    if (!mk) {
+      if (memberRepKeys.has(rk)) otherMonths++;
+      continue;
+    }
+    const meta = monthMeta.get(mk);
+    if (!meta) {
+      if (memberRepKeys.has(rk)) otherMonths++;
+      continue;
+    }
+    if (meta.isPilotLabeledMonth && meta.pilotReps.size > 0) {
+      if (memberRepKeys.has(rk) || meta.pilotReps.has(rk)) pilotLabeledMonths++;
+    } else {
+      if (memberRepKeys.has(rk)) otherMonths++;
+    }
+  }
+
+  return {
+    pilotLabeledMonths,
+    otherMonths,
+    total: pilotLabeledMonths + otherMonths,
+  };
+}
+
+/** Ops rows that contribute to attributed lifetime wins (same filters as countOpsWinsSplitForLifetimeStats). */
+export function filterOpsRowsForLifetimeAttributedPath(
+  opsRows: Record<string, unknown>[],
+  team: Team,
+  phases: LifetimeStatsPhaseSlice[],
+  assignments: ProjectTeamAssignment[],
+  salesTeams: SalesTeam[],
+  teamId: string,
+  phaseCalcByTeam: Record<string, Record<number, PhaseCalcConfig>>,
+): Record<string, unknown>[] {
+  const monthMeta = new Map<string, { isPilotLabeledMonth: boolean; pilotReps: Set<string> }>();
+  for (const ph of phases) {
+    const mk = `${ph.year}-${String(ph.month + 1).padStart(2, "0")}`;
+    const pilotReps = resolvePilotAssignments(assignments, salesTeams, teamId, ph.monthIndex).pilotRepNames;
+    monthMeta.set(mk, {
+      isPilotLabeledMonth: isPilotRegionPhaseLabel(ph.label),
+      pilotReps,
+    });
+  }
+
+  const out: Record<string, unknown>[] = [];
+  for (const row of opsRows) {
+    if (!isWinStage(row.opportunity_stage as string | null, row.opportunity_type as string | null)) continue;
+
+    const ed = effectiveWinDate(row);
+    const mk = monthKeyFromDateStr(ed);
+
+    const phSlice = mk ? phases.find((p) => `${p.year}-${String(p.month + 1).padStart(2, "0")}` === mk) : undefined;
+    const cfg = phSlice
+      ? resolvePhaseCalcConfig(team, phSlice.monthIndex, phaseCalcByTeam)
+      : resolvePhaseCalcConfig(team, undefined, phaseCalcByTeam);
+
+    if (cfg.opportunityFlags.length > 0) {
+      const n = String(row.opportunity_name ?? "").toLowerCase();
+      const lowers = cfg.opportunityFlags.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.prospectingNotes.length > 0) {
+      const n = String(row.account_prospecting_notes ?? "").toLowerCase();
+      const lowers = cfg.prospectingNotes.map((f) => f.toLowerCase());
+      if (!lowers.some((fl) => n.includes(fl))) continue;
+    }
+    if (cfg.lineItemTargets.length > 0 && !lineItemsMatchTargetNames(row.line_items as string | null, cfg.lineItemTargets)) {
+      continue;
+    }
+
+    if (!mk) {
+      out.push(row);
+      continue;
+    }
+
+    const meta = monthMeta.get(mk);
+    if (!meta) {
+      out.push(row);
+      continue;
+    }
+    out.push(row);
+  }
+
+  return out;
+}
+
 /**
  * Sum qualified wins in `winsDetailRows` for reps in `repKeys` in ISO week `weekKey`.
  * Rows must include `_effective_date` (from metrics_wins + win_stage_date merge) and `opportunity_name`.
@@ -153,15 +402,24 @@ export function sumWinsInWeekForReps(
   repKeys: Set<string>,
   weekKey: string,
   opportunityFlags: string[],
+  prospectingNotes: string[],
+  metricExclusions?: MetricExclusionRow[],
 ): number {
   const lowers = (opportunityFlags ?? []).map((f) => f.toLowerCase());
+  const notes = (prospectingNotes ?? []).map((n) => n.toLowerCase());
+  const excl = teamWideMetricRulesOnly(metricExclusions ?? []);
   let n = 0;
   for (const row of winsDetailRows) {
     const rk = repKey(row.rep_name as string);
     if (!repKeys.has(rk)) continue;
+    if (excl.length > 0 && rowExcludedForTeamMetric(row, excl, "wins")) continue;
     if (lowers.length > 0) {
       const name = String(row.opportunity_name ?? "").toLowerCase();
       if (!lowers.some((fl) => name.includes(fl))) continue;
+    }
+    if (notes.length > 0) {
+      const val = String(row.account_prospecting_notes ?? "").toLowerCase();
+      if (!notes.some((needle) => val.includes(needle))) continue;
     }
     const ed = row._effective_date as string | null | undefined;
     if (!ed || dateToWeekKey(ed) !== weekKey) continue;
@@ -362,20 +620,22 @@ export function getPilotWinsWithTargetBreakdown(
 export function getPilotPhaseWinsCount(
   team: Team,
   _phaseLabel: string,
-  _monthIndex: number,
+  monthIndex: number,
   year: number,
   month: number,
   opsRows: Record<string, unknown>[],
   _assignments: ProjectTeamAssignment[],
   _salesTeams: SalesTeam[],
+  phaseCalcByTeam?: Record<string, Record<number, PhaseCalcConfig>>,
 ): number | null {
-  const flags = team.overallGoal?.opportunityFlags ?? [];
-  const targets = team.overallGoal?.lineItemTargets ?? [];
+  const cfg = resolvePhaseCalcConfig(team, monthIndex, phaseCalcByTeam ?? {});
+  const flags = cfg.opportunityFlags;
+  const targets = cfg.lineItemTargets;
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
 
   if (flags.length === 0) return null;
 
-  const flaggedOps = filterByOpportunityFlag(opsRows, flags);
+  const flaggedOps = filterByProspectingNotes(filterByOpportunityFlag(opsRows, flags), cfg.prospectingNotes);
   let n = 0;
   for (const row of flaggedOps) {
     if (!isWinStage(row.opportunity_stage as string | null, row.opportunity_type as string | null)) continue;
@@ -408,11 +668,18 @@ export function getPilotAttachRate(
   pilotRepNames: Set<string>,
   targets: string[],
   monthKey: string,
+  options?: {
+    /** When attachDenomMode is all_wins, count denominator wins from this pool (unfiltered ops). */
+    denomOpsRows?: Record<string, unknown>[];
+    attachDenomMode?: AttachRateDenomMode;
+  },
 ): number | null {
   const withTarget = getPilotWinRowsInMonth(opsRows, pilotRepNames, targets, monthKey, {
     withTargetOnly: true,
   }).length;
-  const allWins = countPilotAllWinsInMonth(opsRows, pilotRepNames, monthKey);
+  const denomPool =
+    options?.attachDenomMode === "all_wins" && options.denomOpsRows != null ? options.denomOpsRows : opsRows;
+  const allWins = countPilotAllWinsInMonth(denomPool, pilotRepNames, monthKey);
   if (allWins === 0) return null;
   return withTarget / allWins;
 }
@@ -533,12 +800,16 @@ export function getPilotKpiSnapshot(
   targets: string[],
   monthKey: string,
   opsRowsWithout?: Record<string, unknown>[],
+  attachOpts?: { denomOpsRows?: Record<string, unknown>[]; attachDenomMode?: AttachRateDenomMode },
 ): PilotKpiSnapshot {
   return {
     avgMrrWithout: getPilotAvgMrr(opsRowsWithout ?? opsRows, pilotRepNames, targets, monthKey, false),
     avgMrrWith: getPilotAvgMrr(opsRows, pilotRepNames, targets, monthKey, true),
     avgPrice: getPilotAvgPrice(opsRows, pilotRepNames, targets, monthKey),
-    attachRate: getPilotAttachRate(opsRows, pilotRepNames, targets, monthKey),
+    attachRate: getPilotAttachRate(opsRows, pilotRepNames, targets, monthKey, {
+      denomOpsRows: attachOpts?.denomOpsRows,
+      attachDenomMode: attachOpts?.attachDenomMode,
+    }),
   };
 }
 
@@ -572,6 +843,7 @@ export function getPilotAccountNamesForTeam(
   teamRepKeys: Set<string>,
   targets: string[],
   monthKey: string,
+  attachOpts?: { denomOpsRows?: Record<string, unknown>[]; attachDenomMode?: AttachRateDenomMode },
 ): PilotMetricAccounts {
   const wins = getPilotWinRowsInMonth(opsRows, teamRepKeys, targets, monthKey);
   const avgMrrWithout: string[] = [];
@@ -592,8 +864,12 @@ export function getPilotAccountNamesForTeam(
     }
   }
 
+  const denomPool =
+    attachOpts?.attachDenomMode === "all_wins" && attachOpts.denomOpsRows
+      ? attachOpts.denomOpsRows
+      : opsRows;
   const attachAllWins: string[] = [];
-  for (const row of filterPilotOpsRows(opsRows, teamRepKeys)) {
+  for (const row of filterPilotOpsRows(denomPool, teamRepKeys)) {
     const stage = row.opportunity_stage as string | null | undefined;
     const opType = row.opportunity_type as string | null | undefined;
     if (!isWinStage(stage, opType)) continue;
@@ -643,8 +919,13 @@ export function getPilotKpiSnapshotForWeek(
   targets: string[],
   weekKey: string,
   opsRowsWithout?: Record<string, unknown>[],
+  attachOpts?: { denomOpsRows?: Record<string, unknown>[]; attachDenomMode?: AttachRateDenomMode },
 ): PilotKpiSnapshot {
-  const allWins = winRowsInWeekForReps(opsRowsWithout ?? opsRows, pilotRepNames, targets, weekKey, false);
+  const denomPool =
+    attachOpts?.attachDenomMode === "all_wins" && attachOpts.denomOpsRows
+      ? attachOpts.denomOpsRows
+      : (opsRowsWithout ?? opsRows);
+  const allWins = winRowsInWeekForReps(denomPool, pilotRepNames, targets, weekKey, false);
   const withTarget = winRowsInWeekForReps(opsRows, pilotRepNames, targets, weekKey, true);
 
   const mrrWithout: number[] = [];

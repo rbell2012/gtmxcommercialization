@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import type { DbTeamPhaseLabel } from "@/lib/database.types";
+import type { DbTeamPhaseLabel, DbTeamPhaseConfig } from "@/lib/database.types";
+import { normalizeAttachRateDenom, type AttachRateDenomMode } from "@/lib/phase-calc-config";
+import { dbMutate } from "@/lib/supabase-helpers";
 import { Settings as SettingsIcon, Plus, Users, Trash2, Edit2, UserPlus, ArrowUpDown, ArrowUp, ArrowDown, Calendar, GripVertical, ArchiveRestore, ChevronDown, ChevronRight, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,9 +18,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip as UiTooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -48,7 +52,7 @@ import {
   DEFAULT_OVERALL_GOAL_CONFIG,
   type OverallGoalConfig,
 } from "@/contexts/TeamsContext";
-import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, type ComputedPhase } from "@/lib/test-phases";
+import { generateTestPhases, splitPhases, isCurrentMonth, phaseToDate, PHASE_LABEL_OPTIONS, isAllowedPhaseLabel, type ComputedPhase } from "@/lib/test-phases";
 import { getPhaseWinsLabel } from "@/lib/quota-helpers";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
@@ -58,6 +62,22 @@ function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr + "T00:00:00");
   d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
+}
+
+type PhaseCalcDraft = {
+  opportunityFlags: string[];
+  lineItemTargets: string[];
+  prospectingNotes: string[];
+  attachRateDenom: AttachRateDenomMode;
+};
+
+function phaseCalcDefaults(og: OverallGoalConfig): PhaseCalcDraft {
+  return {
+    opportunityFlags: [...(og.opportunityFlags ?? [])],
+    lineItemTargets: [...(og.lineItemTargets ?? [])],
+    prospectingNotes: [],
+    attachRateDenom: "flagged_wins",
+  };
 }
 
 function formatDateRange(startDate: string | null, endDate: string | null): string | null {
@@ -71,6 +91,15 @@ function formatDateRange(startDate: string | null, endDate: string | null): stri
   const start = fmt(startDate);
   const end = endDate ? fmt(endDate) : null;
   return end ? `${start} – ${end}` : start;
+}
+
+function formatMonthKeyLabel(monthKey: string): string {
+  if (!monthKey) return "All months";
+  const [year, month] = monthKey.split("-");
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || m < 1 || m > 12) return monthKey;
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 const Settings = () => {
@@ -102,6 +131,11 @@ const Settings = () => {
     opsRows,
     projectTeamAssignments,
     salesTeams,
+    phasePriorities,
+    phaseCalcConfigs,
+    metricExclusionsByTeam,
+    reloadAll,
+    reloadCore,
   } = useTeams();
   const { toast } = useToast();
 
@@ -192,8 +226,6 @@ const Settings = () => {
   const [editTeamGoalsByLevel, setEditTeamGoalsByLevel] = useState<TeamGoalsByLevel>({ ...DEFAULT_TEAM_GOALS_BY_LEVEL });
   const [editGoalScopeConfig, setEditGoalScopeConfig] = useState<GoalScopeConfig>({ ...DEFAULT_GOAL_SCOPE_CONFIG });
   const [editOverallGoal, setEditOverallGoal] = useState<OverallGoalConfig>({ ...DEFAULT_OVERALL_GOAL_CONFIG });
-  const [lineItemTargetDraft, setLineItemTargetDraft] = useState("");
-  const [opportunityFlagDraft, setOpportunityFlagDraft] = useState("");
   const [selectedEditMonth, setSelectedEditMonth] = useState<Date | null>(null);
   const [settingsPrevExpanded, setSettingsPrevExpanded] = useState(false);
   const [settingsNextExpanded, setSettingsNextExpanded] = useState(false);
@@ -203,6 +235,19 @@ const Settings = () => {
   const [editAttributedRepMemberId, setEditAttributedRepMemberId] = useState<string | null>(null);
   const [editReliefMonthMembers, setEditReliefMonthMembers] = useState<string[]>([]);
   const [editDialogPhaseLabels, setEditDialogPhaseLabels] = useState<Record<number, string>>({});
+  const [editDialogPhasePriorities, setEditDialogPhasePriorities] = useState<Record<number, string>>({});
+  const [editDialogPhaseCalc, setEditDialogPhaseCalc] = useState<Record<number, PhaseCalcDraft>>({});
+  const [exclusionFieldDraft, setExclusionFieldDraft] = useState<Record<string, string>>({});
+  const [exclusionValueDraft, setExclusionValueDraft] = useState<Record<string, string>>({});
+  const [exclusionKindDraft, setExclusionKindDraft] = useState<Record<string, "exclusion" | "inclusion">>({});
+  /** "__all__" = team-wide; else member uuid */
+  const [exclusionMemberDraft, setExclusionMemberDraft] = useState<Record<string, string>>({});
+  const [phaseCalcOpen, setPhaseCalcOpen] = useState<Record<number, boolean>>({});
+  const [phaseOppFlagDraft, setPhaseOppFlagDraft] = useState<Record<number, string>>({});
+  const [phaseLineDraft, setPhaseLineDraft] = useState<Record<number, string>>({});
+  const [phaseProspNotesDraft, setPhaseProspNotesDraft] = useState<Record<number, string>>({});
+  const [teamDefaultFlagDraft, setTeamDefaultFlagDraft] = useState("");
+  const [teamDefaultLineDraft, setTeamDefaultLineDraft] = useState("");
 
   const [deleteTeamId, setDeleteTeamId] = useState<string | null>(null);
 
@@ -211,6 +256,8 @@ const Settings = () => {
   const [unarchiveTeamId, setUnarchiveTeamId] = useState<string | null>(null);
 
   const today = new Date().toISOString().slice(0, 10);
+  const currentMonthKey = toMonthKey(new Date());
+  const exclusionMonthKey = selectedEditMonth ? toMonthKey(selectedEditMonth) : currentMonthKey;
   const endedTeams = teams.filter((t) => !t.isActive && t.endDate && t.endDate < today);
 
   useEffect(() => {
@@ -220,20 +267,68 @@ const Settings = () => {
   useEffect(() => {
     if (!editTeamId) {
       setEditDialogPhaseLabels({});
+      setEditDialogPhasePriorities({});
+      setEditDialogPhaseCalc({});
+      setPhaseCalcOpen({});
+      setPhaseOppFlagDraft({});
+      setPhaseLineDraft({});
+      setPhaseProspNotesDraft({});
+      setTeamDefaultFlagDraft("");
+      setTeamDefaultLineDraft("");
       return;
     }
-    void supabase
-      .from("team_phase_labels")
-      .select("*")
-      .eq("team_id", editTeamId)
-      .then(({ data }) => {
-        const labels: Record<number, string> = {};
-        for (const row of (data ?? []) as DbTeamPhaseLabel[]) {
-          labels[row.month_index] = row.label;
-        }
-        setEditDialogPhaseLabels(labels);
-      });
-  }, [editTeamId]);
+    setEditDialogPhasePriorities({ ...(phasePriorities[editTeamId] ?? {}) });
+
+    void Promise.all([
+      supabase.from("team_phase_labels").select("*").eq("team_id", editTeamId),
+      supabase.from("team_phase_configs").select("*").eq("team_id", editTeamId),
+    ]).then(([lRes, cRes]) => {
+      const labels: Record<number, string> = {};
+      for (const row of (lRes.data ?? []) as DbTeamPhaseLabel[]) {
+        labels[row.month_index] = row.label;
+      }
+      setEditDialogPhaseLabels(labels);
+
+      const fromDb: Record<number, PhaseCalcDraft> = {};
+      for (const row of (cRes.data ?? []) as DbTeamPhaseConfig[]) {
+        const oflags = Array.isArray(row.opportunity_flags)
+          ? row.opportunity_flags.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean)
+          : [];
+        const lt = Array.isArray(row.line_item_targets)
+          ? row.line_item_targets.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean)
+          : [];
+        const pn = Array.isArray(row.prospecting_notes)
+          ? row.prospecting_notes.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean)
+          : [];
+        fromDb[row.month_index] = {
+          opportunityFlags: oflags,
+          lineItemTargets: lt,
+          prospectingNotes: pn,
+          attachRateDenom: normalizeAttachRateDenom(row.attach_rate_denom),
+        };
+      }
+
+      const team = teams.find((t) => t.id === editTeamId);
+      const gF = team?.overallGoal?.opportunityFlags ?? [];
+      const gT = team?.overallGoal?.lineItemTargets ?? [];
+      const phaseList = generateTestPhases(
+        editTeamStartDate || null,
+        editTeamEndDate || null,
+        labels,
+      );
+      const merged: Record<number, PhaseCalcDraft> = {};
+      for (const ph of phaseList) {
+        merged[ph.monthIndex] =
+          fromDb[ph.monthIndex] ??
+          phaseCalcDefaults({
+            ...DEFAULT_OVERALL_GOAL_CONFIG,
+            opportunityFlags: gF,
+            lineItemTargets: gT,
+          });
+      }
+      setEditDialogPhaseCalc(merged);
+    });
+  }, [editTeamId, editTeamStartDate, editTeamEndDate, teams, phasePriorities]);
 
   const confirmUnarchiveTeam = async () => {
     if (!unarchiveTeamId) return;
@@ -332,8 +427,6 @@ const Settings = () => {
     setEditTeamGoalsByLevel(JSON.parse(JSON.stringify(team.teamGoalsByLevel)));
     setEditGoalScopeConfig({ ...DEFAULT_GOAL_SCOPE_CONFIG, ...team.goalScopeConfig });
     setEditOverallGoal({ ...DEFAULT_OVERALL_GOAL_CONFIG, ...(team.overallGoal ?? {}) });
-    setLineItemTargetDraft("");
-    setOpportunityFlagDraft("");
     setEditReliefMonthMembers([...(team.reliefMonthMembers ?? [])]);
     setSelectedEditMonth(null);
     const currentRoster = team.members.filter((m) => m.isActive).map((m) => m.id);
@@ -344,7 +437,44 @@ const Settings = () => {
     setEditAttributedRepMemberId(ar);
   };
 
-  const saveEditTeam = () => {
+  const persistTeamPhaseRows = async (teamId: string) => {
+    const phases = generateTestPhases(editTeamStartDate || null, editTeamEndDate || null, editDialogPhaseLabels);
+    for (const p of phases) {
+      const label = editDialogPhaseLabels[p.monthIndex] ?? "";
+      const priority = editDialogPhasePriorities[p.monthIndex] ?? "";
+      const calc = editDialogPhaseCalc[p.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+      await dbMutate(
+        supabase.from("team_phase_labels").upsert(
+          { team_id: teamId, month_index: p.monthIndex, label },
+          { onConflict: "team_id,month_index" },
+        ),
+        "team phase label",
+      );
+      await dbMutate(
+        supabase.from("team_phase_priorities").upsert(
+          { team_id: teamId, month_index: p.monthIndex, priority },
+          { onConflict: "team_id,month_index" },
+        ),
+        "team phase priority",
+      );
+      await dbMutate(
+        supabase.from("team_phase_configs").upsert(
+          {
+            team_id: teamId,
+            month_index: p.monthIndex,
+            opportunity_flags: calc.opportunityFlags,
+            line_item_targets: calc.lineItemTargets,
+            prospecting_notes: calc.prospectingNotes,
+            attach_rate_denom: calc.attachRateDenom,
+          },
+          { onConflict: "team_id,month_index" },
+        ),
+        "team phase config",
+      );
+    }
+  };
+
+  const saveEditTeam = async () => {
     if (!editTeamId || !editTeamName.trim()) return;
     const validAttributedRep =
       editAttributedRepMemberId && editTeamMembers.includes(editAttributedRepMemberId)
@@ -405,6 +535,7 @@ const Settings = () => {
 
       toast({ title: "Team updated" });
     }
+    await persistTeamPhaseRows(editTeamId);
     setEditTeamId(null);
   };
 
@@ -876,6 +1007,7 @@ const Settings = () => {
                                         opsRows,
                                         projectTeamAssignments,
                                         salesTeams,
+                                        phaseCalcByTeam: phaseCalcConfigs,
                                         resolveTeamPhase: () => ({ monthIndex: phase.monthIndex, label: phase.label }),
                                       })
                                     : "0";
@@ -896,9 +1028,632 @@ const Settings = () => {
                           </button>
                         </div>
                       )}
+
+                      <div className="mt-4 space-y-3 border-t border-border pt-3 text-left">
+                        <p className="text-xs font-semibold text-foreground">Phase calculation &amp; labels</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          Each month: phase label, priority, opportunity flags, and line item targets. Per-phase values override team defaults below for that month only.
+                        </p>
+
+                        <div className="rounded-md border border-border/60 bg-background/40 p-2 space-y-2">
+                          <p className="text-[10px] font-medium text-foreground">Team-wide defaults (fallback)</p>
+                          <p className="text-[9px] text-muted-foreground">Stored on the team; used when a phase has no saved config row.</p>
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-medium text-muted-foreground">Opportunity flags</span>
+                            <div className="flex flex-wrap gap-1 min-h-[20px]">
+                              {(editOverallGoal.opportunityFlags ?? []).map((flag, idx) => (
+                                <Badge key={`df-${flag}-${idx}`} variant="secondary" className="text-[9px] font-normal gap-0.5 pr-0.5 py-0 h-5">
+                                  <span className="max-w-[160px] truncate" title={flag}>{flag}</span>
+                                  <button
+                                    type="button"
+                                    className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                    aria-label={`Remove ${flag}`}
+                                    onClick={() =>
+                                      setEditOverallGoal((prev) => ({
+                                        ...prev,
+                                        opportunityFlags: (prev.opportunityFlags ?? []).filter((_, i) => i !== idx),
+                                      }))
+                                    }
+                                  >×</button>
+                                </Badge>
+                              ))}
+                            </div>
+                            <div className="flex gap-1">
+                              <Input
+                                placeholder="Add flag"
+                                value={teamDefaultFlagDraft}
+                                onChange={(e) => setTeamDefaultFlagDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return;
+                                  e.preventDefault();
+                                  const t = teamDefaultFlagDraft.trim();
+                                  if (!t) return;
+                                  setEditOverallGoal((prev) => ({
+                                    ...prev,
+                                    opportunityFlags: (prev.opportunityFlags ?? []).includes(t) ? (prev.opportunityFlags ?? []) : [...(prev.opportunityFlags ?? []), t],
+                                  }));
+                                  setTeamDefaultFlagDraft("");
+                                }}
+                                className="h-6 flex-1 text-[10px]"
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-6 text-[9px] px-2" onClick={() => {
+                                const t = teamDefaultFlagDraft.trim();
+                                if (!t) return;
+                                setEditOverallGoal((prev) => ({
+                                  ...prev,
+                                  opportunityFlags: (prev.opportunityFlags ?? []).includes(t) ? (prev.opportunityFlags ?? []) : [...(prev.opportunityFlags ?? []), t],
+                                }));
+                                setTeamDefaultFlagDraft("");
+                              }}>Add</Button>
+                            </div>
+                          </div>
+                          <div className="space-y-1 pt-1 border-t border-border/40">
+                            <span className="text-[10px] font-medium text-muted-foreground">Line item targets</span>
+                            <div className="flex flex-wrap gap-1 min-h-[20px]">
+                              {editOverallGoal.lineItemTargets.map((name, idx) => (
+                                <Badge key={`dt-${name}-${idx}`} variant="secondary" className="text-[9px] font-normal gap-0.5 pr-0.5 py-0 h-5">
+                                  <span className="max-w-[160px] truncate" title={name}>{name}</span>
+                                  <button
+                                    type="button"
+                                    className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                    aria-label={`Remove ${name}`}
+                                    onClick={() =>
+                                      setEditOverallGoal((prev) => ({
+                                        ...prev,
+                                        lineItemTargets: prev.lineItemTargets.filter((_, i) => i !== idx),
+                                      }))
+                                    }
+                                  >×</button>
+                                </Badge>
+                              ))}
+                            </div>
+                            <div className="flex gap-1">
+                              <Input
+                                placeholder="Product name"
+                                value={teamDefaultLineDraft}
+                                onChange={(e) => setTeamDefaultLineDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return;
+                                  e.preventDefault();
+                                  const t = teamDefaultLineDraft.trim();
+                                  if (!t) return;
+                                  setEditOverallGoal((prev) => ({
+                                    ...prev,
+                                    lineItemTargets: prev.lineItemTargets.includes(t) ? prev.lineItemTargets : [...prev.lineItemTargets, t],
+                                  }));
+                                  setTeamDefaultLineDraft("");
+                                }}
+                                className="h-6 flex-1 text-[10px]"
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-6 text-[9px] px-2" onClick={() => {
+                                const t = teamDefaultLineDraft.trim();
+                                if (!t) return;
+                                setEditOverallGoal((prev) => ({
+                                  ...prev,
+                                  lineItemTargets: prev.lineItemTargets.includes(t) ? prev.lineItemTargets : [...prev.lineItemTargets, t],
+                                }));
+                                setTeamDefaultLineDraft("");
+                              }}>Add</Button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {phases.map((phase) => {
+                          const calc = editDialogPhaseCalc[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                          const labelVal = isAllowedPhaseLabel(editDialogPhaseLabels[phase.monthIndex] ?? "")
+                            ? (editDialogPhaseLabels[phase.monthIndex] ?? "")
+                            : (editDialogPhaseLabels[phase.monthIndex] ? "__legacy__" : "__none__");
+                          return (
+                            <Collapsible
+                              key={`phase-calc-${phase.monthIndex}`}
+                              open={phaseCalcOpen[phase.monthIndex] ?? false}
+                              onOpenChange={(open) => setPhaseCalcOpen((prev) => ({ ...prev, [phase.monthIndex]: open }))}
+                            >
+                              <CollapsibleTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center justify-between rounded-md border border-border/50 bg-muted/20 px-2 py-1.5 text-left text-xs font-medium hover:bg-muted/40"
+                                >
+                                  <span>{phase.monthLabel}</span>
+                                  <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${phaseCalcOpen[phase.monthIndex] ? "rotate-180" : ""}`} />
+                                </button>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="space-y-2 border border-t-0 border-border/50 rounded-b-md bg-background/30 px-2 py-2">
+                                <div>
+                                  <label className="text-[10px] text-muted-foreground">Phase label</label>
+                                  <Select
+                                    value={labelVal === "__legacy__" ? "__none__" : labelVal || "__none__"}
+                                    onValueChange={(v) =>
+                                      setEditDialogPhaseLabels((prev) => ({
+                                        ...prev,
+                                        [phase.monthIndex]: v === "__none__" ? "" : v,
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 mt-0.5 bg-background text-[10px]">
+                                      <SelectValue placeholder="—" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__" className="text-xs">—</SelectItem>
+                                      {PHASE_LABEL_OPTIONS.map((opt) => (
+                                        <SelectItem key={opt} value={opt} className="text-xs">{opt}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {labelVal === "__legacy__" && (
+                                    <p className="text-[9px] text-amber-600/90 mt-0.5">Legacy label on file — pick an option to replace.</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-muted-foreground">Priority</label>
+                                  <Textarea
+                                    value={editDialogPhasePriorities[phase.monthIndex] ?? ""}
+                                    onChange={(e) =>
+                                      setEditDialogPhasePriorities((prev) => ({
+                                        ...prev,
+                                        [phase.monthIndex]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="—"
+                                    rows={2}
+                                    className="mt-0.5 text-[10px] min-h-[48px]"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-medium text-foreground">Opportunity flags</span>
+                                  <div className="flex flex-wrap gap-1 min-h-[20px] mt-0.5">
+                                    {calc.opportunityFlags.map((flag, idx) => (
+                                      <Badge key={`pf-${phase.monthIndex}-${flag}-${idx}`} variant="secondary" className="text-[9px] font-normal gap-0.5 pr-0.5 py-0 h-5">
+                                        <span className="max-w-[140px] truncate" title={flag}>{flag}</span>
+                                        <button
+                                          type="button"
+                                          className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                          onClick={() =>
+                                            setEditDialogPhaseCalc((prev) => ({
+                                              ...prev,
+                                              [phase.monthIndex]: {
+                                                ...calc,
+                                                opportunityFlags: calc.opportunityFlags.filter((_, i) => i !== idx),
+                                              },
+                                            }))
+                                          }
+                                        >×</button>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <div className="flex gap-1 mt-1">
+                                    <Input
+                                      placeholder="Add flag"
+                                      value={phaseOppFlagDraft[phase.monthIndex] ?? ""}
+                                      onChange={(e) =>
+                                        setPhaseOppFlagDraft((prev) => ({ ...prev, [phase.monthIndex]: e.target.value }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key !== "Enter") return;
+                                        e.preventDefault();
+                                        const t = (phaseOppFlagDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              opportunityFlags: cur.opportunityFlags.includes(t) ? cur.opportunityFlags : [...cur.opportunityFlags, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseOppFlagDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                      className="h-6 flex-1 text-[10px]"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-[9px] px-2"
+                                      onClick={() => {
+                                        const t = (phaseOppFlagDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              opportunityFlags: cur.opportunityFlags.includes(t) ? cur.opportunityFlags : [...cur.opportunityFlags, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseOppFlagDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                    >
+                                      Add
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-medium text-foreground">Line item targets</span>
+                                  <div className="flex flex-wrap gap-1 min-h-[20px] mt-0.5">
+                                    {calc.lineItemTargets.map((name, idx) => (
+                                      <Badge key={`pl-${phase.monthIndex}-${name}-${idx}`} variant="secondary" className="text-[9px] font-normal gap-0.5 pr-0.5 py-0 h-5">
+                                        <span className="max-w-[140px] truncate" title={name}>{name}</span>
+                                        <button
+                                          type="button"
+                                          className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                          onClick={() =>
+                                            setEditDialogPhaseCalc((prev) => ({
+                                              ...prev,
+                                              [phase.monthIndex]: {
+                                                ...calc,
+                                                lineItemTargets: calc.lineItemTargets.filter((_, i) => i !== idx),
+                                              },
+                                            }))
+                                          }
+                                        >×</button>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <div className="flex gap-1 mt-1">
+                                    <Input
+                                      placeholder="Product name"
+                                      value={phaseLineDraft[phase.monthIndex] ?? ""}
+                                      onChange={(e) =>
+                                        setPhaseLineDraft((prev) => ({ ...prev, [phase.monthIndex]: e.target.value }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key !== "Enter") return;
+                                        e.preventDefault();
+                                        const t = (phaseLineDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              lineItemTargets: cur.lineItemTargets.includes(t) ? cur.lineItemTargets : [...cur.lineItemTargets, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseLineDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                      className="h-6 flex-1 text-[10px]"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-[9px] px-2"
+                                      onClick={() => {
+                                        const t = (phaseLineDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              lineItemTargets: cur.lineItemTargets.includes(t) ? cur.lineItemTargets : [...cur.lineItemTargets, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseLineDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                    >
+                                      Add
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] font-medium text-foreground">Prospecting notes</span>
+                                  <div className="flex flex-wrap gap-1 min-h-[20px] mt-0.5">
+                                    {calc.prospectingNotes.map((note, idx) => (
+                                      <Badge key={`pn-${phase.monthIndex}-${note}-${idx}`} variant="secondary" className="text-[9px] font-normal gap-0.5 pr-0.5 py-0 h-5">
+                                        <span className="max-w-[140px] truncate" title={note}>{note}</span>
+                                        <button
+                                          type="button"
+                                          className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                          onClick={() =>
+                                            setEditDialogPhaseCalc((prev) => ({
+                                              ...prev,
+                                              [phase.monthIndex]: {
+                                                ...calc,
+                                                prospectingNotes: calc.prospectingNotes.filter((_, i) => i !== idx),
+                                              },
+                                            }))
+                                          }
+                                        >×</button>
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <div className="flex gap-1 mt-1">
+                                    <Input
+                                      placeholder="Add note value"
+                                      value={phaseProspNotesDraft[phase.monthIndex] ?? ""}
+                                      onChange={(e) =>
+                                        setPhaseProspNotesDraft((prev) => ({ ...prev, [phase.monthIndex]: e.target.value }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key !== "Enter") return;
+                                        e.preventDefault();
+                                        const t = (phaseProspNotesDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              prospectingNotes: cur.prospectingNotes.includes(t) ? cur.prospectingNotes : [...cur.prospectingNotes, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseProspNotesDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                      className="h-6 flex-1 text-[10px]"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 text-[9px] px-2"
+                                      onClick={() => {
+                                        const t = (phaseProspNotesDraft[phase.monthIndex] ?? "").trim();
+                                        if (!t) return;
+                                        setEditDialogPhaseCalc((prev) => {
+                                          const cur = prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal);
+                                          return {
+                                            ...prev,
+                                            [phase.monthIndex]: {
+                                              ...cur,
+                                              prospectingNotes: cur.prospectingNotes.includes(t) ? cur.prospectingNotes : [...cur.prospectingNotes, t],
+                                            },
+                                          };
+                                        });
+                                        setPhaseProspNotesDraft((prev) => ({ ...prev, [phase.monthIndex]: "" }));
+                                      }}
+                                    >
+                                      Add
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-muted-foreground">Attach rate denominator</label>
+                                  <Select
+                                    value={calc.attachRateDenom}
+                                    onValueChange={(v) =>
+                                      setEditDialogPhaseCalc((prev) => ({
+                                        ...prev,
+                                        [phase.monthIndex]: {
+                                          ...(prev[phase.monthIndex] ?? phaseCalcDefaults(editOverallGoal)),
+                                          attachRateDenom: v === "all_wins" ? "all_wins" : "flagged_wins",
+                                        },
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="h-8 mt-0.5 bg-background text-[10px]">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="flagged_wins" className="text-xs">
+                                        Flagged wins (default)
+                                      </SelectItem>
+                                      <SelectItem value="all_wins" className="text-xs">
+                                        All wins
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-[9px] text-muted-foreground mt-0.5">
+                                    Pilot attach rate: numerator uses flagged wins with target products; denominator uses
+                                    flagged wins only vs all wins (before name flags).
+                                  </p>
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })()}
+
+                {/* ── Manual metric edits (inclusions / exclusions) ── */}
+                {editTeamId && (
+                  <div className="rounded-md border border-border bg-secondary/10 p-3 space-y-3">
+                    <h4 className="text-sm font-semibold text-foreground">Manual Edits</h4>
+                    <p className="text-[10px] text-muted-foreground">
+                      <span className="font-medium text-foreground">Exclusions</span> drop matching rows from funnel
+                      totals (rows still show on Data). <span className="font-medium text-foreground">Inclusions</span> add
+                      +1 for the month when no matching row exists (no double count if stream data already matches).
+                      Matching is case-insensitive substring. Each rule applies to the currently selected test phase month.
+                      Choose a member to attribute the rule to that rep only, or <span className="font-medium text-foreground">All reps</span> for the whole team.
+                      Separate multiple values with commas to add one chip per value (e.g. <span className="font-mono">acme,beta,gamma</span>).
+                    </p>
+                    {(
+                      [
+                        {
+                          metric: "ops",
+                          label: "Ops",
+                          fields: [{ value: "opportunity_name", label: "Opportunity name" }],
+                        },
+                        {
+                          metric: "wins",
+                          label: "Wins",
+                          fields: [
+                            { value: "opportunity_name", label: "Opportunity name" },
+                            { value: "account_name", label: "Account name" },
+                          ],
+                        },
+                        { metric: "demos", label: "Demos", fields: [{ value: "account_name", label: "Account name" }] },
+                        { metric: "feedback", label: "Feedback", fields: [{ value: "account_name", label: "Account name" }] },
+                      ] as const
+                    ).map((block) => {
+                      const exList = (metricExclusionsByTeam[editTeamId] ?? []).filter((e) => e.metric === block.metric);
+                      const dk = `${block.metric}`;
+                      const manualEditRoster = editTeamMembers
+                        .map((id) => allMembersById.get(id))
+                        .filter((m): m is NonNullable<typeof m> => m != null)
+                        .sort((a, b) => a.name.localeCompare(b.name));
+                      return (
+                        <div key={block.metric} className="rounded border border-border/40 bg-background/40 p-2 space-y-2">
+                          <div className="text-xs font-medium">{block.label}</div>
+                          <div className="flex flex-wrap gap-1">
+                            {exList.map((ex) => {
+                              const isInclusion = ex.kind === "inclusion";
+                              const chipBorder = isInclusion
+                                ? "border border-green-500/60 text-green-700 dark:text-green-400"
+                                : "border border-red-500/60 text-red-700 dark:text-red-400";
+                              const memberSuffix = ex.memberId
+                                ? ` · ${allMembersById.get(ex.memberId)?.name ?? "Unknown"}`
+                                : "";
+                              const chipText = `${ex.field}: ${ex.value} (${formatMonthKeyLabel(ex.monthKey)})${memberSuffix}`;
+                              return (
+                                <Badge
+                                  key={ex.id}
+                                  variant="secondary"
+                                  className={`text-[9px] gap-0.5 pr-0.5 ${chipBorder}`}
+                                >
+                                  <span className="max-w-[220px] truncate" title={chipText}>
+                                    {chipText}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
+                                    onClick={async () => {
+                                      await dbMutate(
+                                        supabase.from("team_metric_exclusions").delete().eq("id", ex.id),
+                                        "remove manual edit",
+                                      );
+                                      toast({ title: "Rule removed" });
+                                      await reloadCore();
+                                    }}
+                                  >
+                                    ×
+                                  </button>
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                          <div className="flex flex-wrap items-end gap-1">
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-[9px] text-muted-foreground">Type</label>
+                              <Select
+                                value={exclusionKindDraft[dk] ?? "exclusion"}
+                                onValueChange={(v) =>
+                                  setExclusionKindDraft((prev) => ({
+                                    ...prev,
+                                    [dk]: v === "inclusion" ? "inclusion" : "exclusion",
+                                  }))
+                                }
+                              >
+                                <SelectTrigger className="h-7 w-[104px] text-[10px] bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="exclusion" className="text-xs">
+                                    Exclusion
+                                  </SelectItem>
+                                  <SelectItem value="inclusion" className="text-xs">
+                                    Inclusion
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-[9px] text-muted-foreground">Member</label>
+                              <Select
+                                value={exclusionMemberDraft[dk] ?? "__all__"}
+                                onValueChange={(v) => setExclusionMemberDraft((prev) => ({ ...prev, [dk]: v }))}
+                              >
+                                <SelectTrigger className="h-7 w-[128px] text-[10px] bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__all__" className="text-xs">
+                                    All reps
+                                  </SelectItem>
+                                  {manualEditRoster.map((m) => (
+                                    <SelectItem key={m.id} value={m.id} className="text-xs">
+                                      {m.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              <label className="text-[9px] text-muted-foreground">Field</label>
+                              <Select
+                                value={exclusionFieldDraft[dk] ?? block.fields[0].value}
+                                onValueChange={(v) => setExclusionFieldDraft((prev) => ({ ...prev, [dk]: v }))}
+                              >
+                                <SelectTrigger className="h-7 w-[130px] text-[10px] bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {block.fields.map((f) => (
+                                    <SelectItem key={f.value} value={f.value} className="text-xs">
+                                      {f.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Input
+                              placeholder="Opportunity or account value"
+                              value={exclusionValueDraft[dk] ?? ""}
+                              onChange={(e) => setExclusionValueDraft((prev) => ({ ...prev, [dk]: e.target.value }))}
+                              className="h-7 flex-1 min-w-[100px] text-[10px]"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-[10px]"
+                              onClick={async () => {
+                                const field = exclusionFieldDraft[dk] ?? block.fields[0].value;
+                                const raw = exclusionValueDraft[dk] ?? "";
+                                const segments = raw
+                                  .split(",")
+                                  .map((s) => s.trim())
+                                  .filter((s) => s.length > 0);
+                                const kind = exclusionKindDraft[dk] ?? "exclusion";
+                                const month_key = exclusionMonthKey;
+                                const memberPick = exclusionMemberDraft[dk] ?? "__all__";
+                                const member_id = memberPick === "__all__" ? null : memberPick;
+                                if (segments.length === 0 || !editTeamId) return;
+                                const rows = segments.map((value) => ({
+                                  team_id: editTeamId,
+                                  metric: block.metric,
+                                  field,
+                                  value,
+                                  month_key,
+                                  kind,
+                                  member_id,
+                                }));
+                                await dbMutate(
+                                  supabase.from("team_metric_exclusions").insert(rows),
+                                  "add manual edit",
+                                );
+                                setExclusionValueDraft((prev) => ({ ...prev, [dk]: "" }));
+                                const kindLabel = kind === "inclusion" ? "Inclusion" : "Exclusion";
+                                toast({
+                                  title:
+                                    segments.length === 1
+                                      ? `${kindLabel} added`
+                                      : `${segments.length} ${kindLabel.toLowerCase()}s added`,
+                                });
+                                await reloadCore();
+                              }}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {/* ── Team Members ── */}
                 {(() => {
@@ -1239,155 +1994,10 @@ const Settings = () => {
                       </div>
                     </div>
 
-                    <div className="space-y-2 pt-1">
-                      <div>
-                        <span className="text-xs font-medium text-foreground">Opportunity flags</span>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          Only opportunities whose name contains ANY of these values (case-insensitive) count toward wins, losses, and avg price. Leave empty to include all.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 min-h-[22px]">
-                        {(editOverallGoal.opportunityFlags ?? []).map((flag, idx) => (
-                          <Badge
-                            key={`${flag}-${idx}`}
-                            variant="secondary"
-                            className="text-[10px] font-normal gap-1 pr-0.5 py-0 h-6"
-                          >
-                            <span className="max-w-[200px] truncate" title={flag}>
-                              {flag}
-                            </span>
-                            <button
-                              type="button"
-                              className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
-                              aria-label={`Remove ${flag}`}
-                              onClick={() =>
-                                setEditOverallGoal((prev) => ({
-                                  ...prev,
-                                  opportunityFlags: (prev.opportunityFlags ?? []).filter((_, i) => i !== idx),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Input
-                          placeholder="Flag text, then Add or Enter"
-                          value={opportunityFlagDraft}
-                          onChange={(e) => setOpportunityFlagDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            const t = opportunityFlagDraft.trim();
-                            if (!t) return;
-                            setEditOverallGoal((prev) => ({
-                              ...prev,
-                              opportunityFlags: (prev.opportunityFlags ?? []).includes(t)
-                                ? (prev.opportunityFlags ?? [])
-                                : [...(prev.opportunityFlags ?? []), t],
-                            }));
-                            setOpportunityFlagDraft("");
-                          }}
-                          className="h-7 flex-1 min-w-[140px] bg-background border-border/50 text-foreground text-[10px]"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-[10px]"
-                          onClick={() => {
-                            const t = opportunityFlagDraft.trim();
-                            if (!t) return;
-                            setEditOverallGoal((prev) => ({
-                              ...prev,
-                              opportunityFlags: (prev.opportunityFlags ?? []).includes(t)
-                                ? (prev.opportunityFlags ?? [])
-                                : [...(prev.opportunityFlags ?? []), t],
-                            }));
-                            setOpportunityFlagDraft("");
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-border/60 pt-3 mt-1 space-y-2">
-                      <div>
-                        <span className="text-xs font-medium text-foreground">Line item targets</span>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          Exact product names as in <code className="text-[10px]">metrics_ops.line_items</code>. Totals show on the pilot page when pilot regions are visible.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 min-h-[22px]">
-                        {editOverallGoal.lineItemTargets.map((name, idx) => (
-                          <Badge
-                            key={`${name}-${idx}`}
-                            variant="secondary"
-                            className="text-[10px] font-normal gap-1 pr-0.5 py-0 h-6"
-                          >
-                            <span className="max-w-[200px] truncate" title={name}>
-                              {name}
-                            </span>
-                            <button
-                              type="button"
-                              className="rounded-sm p-0.5 hover:bg-muted-foreground/20"
-                              aria-label={`Remove ${name}`}
-                              onClick={() =>
-                                setEditOverallGoal((prev) => ({
-                                  ...prev,
-                                  lineItemTargets: prev.lineItemTargets.filter((_, i) => i !== idx),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          </Badge>
-                        ))}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Input
-                          placeholder="Product name, then Add or Enter"
-                          value={lineItemTargetDraft}
-                          onChange={(e) => setLineItemTargetDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key !== "Enter") return;
-                            e.preventDefault();
-                            const t = lineItemTargetDraft.trim();
-                            if (!t) return;
-                            setEditOverallGoal((prev) => ({
-                              ...prev,
-                              lineItemTargets: prev.lineItemTargets.includes(t)
-                                ? prev.lineItemTargets
-                                : [...prev.lineItemTargets, t],
-                            }));
-                            setLineItemTargetDraft("");
-                          }}
-                          className="h-7 flex-1 min-w-[140px] bg-background border-border/50 text-foreground text-[10px]"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-[10px]"
-                          onClick={() => {
-                            const t = lineItemTargetDraft.trim();
-                            if (!t) return;
-                            setEditOverallGoal((prev) => ({
-                              ...prev,
-                              lineItemTargets: prev.lineItemTargets.includes(t)
-                                ? prev.lineItemTargets
-                                : [...prev.lineItemTargets, t],
-                            }));
-                            setLineItemTargetDraft("");
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                    </div>
+                    <p className="text-[10px] text-muted-foreground pt-2 border-t border-border/40 mt-2">
+                      <span className="font-medium text-foreground">Pilot filters:</span> opportunity flags and line item targets are set per test phase below.{" "}
+                      <span className="font-medium text-foreground">Team defaults</span> there apply when a phase has no saved row yet and are stored on the team as overall goal fields when you save.
+                    </p>
                   </div>
                 </div>
 
