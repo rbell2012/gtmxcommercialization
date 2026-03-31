@@ -873,11 +873,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const updatedMembersRef = useRef<TeamMember[]>([]);
 
   // ── load metrics data (heavy, external pipeline) ──
-  const loadMetrics = useCallback(async (): Promise<CachedMetrics> => {
+  const loadMetrics = useCallback(async (repNames?: string[]): Promise<CachedMetrics> => {
     const metricsCacheKey = "teamsContext.metricsCache.v3";
     const metricsCacheTtlMs = 120_000;
+    const repNameFilter =
+      repNames && repNames.length > 0 ? { column: "rep_name", values: repNames } : undefined;
     let cachedLight:
-      | {
+      | Partial<{
           actRows: Record<string, unknown>[];
           callRows: Record<string, unknown>[];
           conRows: Record<string, unknown>[];
@@ -885,7 +887,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           fbRows: Record<string, unknown>[];
           shRows: Record<string, unknown>[];
           tamRows: Record<string, unknown>[];
-        }
+        }>
       | null = null;
     try {
       const raw = sessionStorage.getItem(metricsCacheKey);
@@ -902,13 +904,13 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
         };
         if (parsed.ts && Date.now() - parsed.ts <= metricsCacheTtlMs) {
           cachedLight = {
-            actRows: parsed.actRows ?? [],
-            callRows: parsed.callRows ?? [],
-            conRows: parsed.conRows ?? [],
-            demoRows: parsed.demoRows ?? [],
-            fbRows: parsed.fbRows ?? [],
-            shRows: parsed.shRows ?? [],
-            tamRows: parsed.tamRows ?? [],
+            actRows: parsed.actRows,
+            callRows: parsed.callRows,
+            conRows: parsed.conRows,
+            demoRows: parsed.demoRows,
+            fbRows: parsed.fbRows,
+            shRows: parsed.shRows,
+            tamRows: parsed.tamRows,
           };
         }
       }
@@ -917,34 +919,44 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     }
 
     const [actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows] = await Promise.all([
-      cachedLight
+      cachedLight && cachedLight.actRows !== undefined
         ? Promise.resolve(cachedLight.actRows)
-        : fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid"),
-      cachedLight
+        : fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid", 1000, repNameFilter),
+      cachedLight && cachedLight.callRows !== undefined
         ? Promise.resolve(cachedLight.callRows)
-        : fetchAllRows("metrics_calls", "rep_name, call_date"),
-      cachedLight
+        : fetchAllRows("metrics_calls", "rep_name, call_date", 1000, repNameFilter),
+      cachedLight && cachedLight.conRows !== undefined
         ? Promise.resolve(cachedLight.conRows)
-        : fetchAllRows("metrics_connects", "rep_name, connect_date"),
-      cachedLight
+        : fetchAllRows("metrics_connects", "rep_name, connect_date", 1000, repNameFilter),
+      cachedLight && cachedLight.demoRows !== undefined
         ? Promise.resolve(cachedLight.demoRows)
-        : fetchAllRows("metrics_demos", "rep_name, demo_date, account_name, event_status"),
+        : fetchAllRows("metrics_demos", "rep_name, demo_date, account_name, event_status", 1000, repNameFilter),
+      // Ops/Wins: fetch full tables (no rep filter) to avoid RPC timeouts;
+      // casing is normalized client-side via `toLowerCase().trim()`.
       fetchAllRows(
         "metrics_ops",
         "id, rep_name, op_date, op_created_date, opportunity_name, opportunity_stage, win_stage_date, opportunity_type, opportunity_software_mrr, account_prospecting_notes, line_items",
+        1000,
       ),
       fetchAllRows(
         "metrics_wins",
-        "id, rep_name, win_date, account_name, opportunity_name, opportunity_stage, opportunity_type, opportunity_software_mrr, line_items",
+        "id, rep_name, win_date, account_name, opportunity_name, opportunity_stage, opportunity_type, opportunity_software_mrr, account_prospecting_notes, line_items",
+        1000,
       ),
-      cachedLight ? Promise.resolve(cachedLight.fbRows) : fetchAllRows("metrics_feedback", "rep_name, feedback_date, account_name"),
-      cachedLight
+      cachedLight && cachedLight.fbRows !== undefined
+        ? Promise.resolve(cachedLight.fbRows)
+        : fetchAllRows("metrics_feedback", "rep_name, feedback_date, account_name", 1000, repNameFilter),
+      cachedLight && cachedLight.shRows !== undefined
         ? Promise.resolve(cachedLight.shRows)
         : fetchAllRows(
             "superhex",
             "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date",
+            1000,
+            repNameFilter,
           ),
-      cachedLight ? Promise.resolve(cachedLight.tamRows) : fetchAllRows("metrics_tam", "rep_name, tam"),
+      cachedLight && cachedLight.tamRows !== undefined
+        ? Promise.resolve(cachedLight.tamRows)
+        : fetchAllRows("metrics_tam", "rep_name, tam", 1000, repNameFilter),
     ]);
 
     const aggregateBy = (rows: Record<string, unknown>[], dateField: string, keyFn: (d: string) => string): AggCounts => {
@@ -1607,7 +1619,11 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     if (inFlightLoadRef.current) return;
     inFlightLoadRef.current = true;
     try {
-      const metrics = await loadMetrics();
+      const { data: namesData } = await supabase.from("members").select("name").is("archived_at", null);
+      const repNames = (namesData ?? [])
+        .map((r) => (r as { name?: unknown }).name)
+        .filter((n): n is string => typeof n === "string" && n.trim().length > 0);
+      const metrics = await loadMetrics(repNames);
       await loadCore(metrics);
     } catch (err) {
       console.error("[TeamsContext] loadAll failed:", err);
@@ -1631,6 +1647,36 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     debounceRef.current = setTimeout(() => loadAll(), 500);
   }, [loadAll]);
 
+  const invalidateMetricsCacheTable = useCallback((table: string | undefined) => {
+    if (!table) return;
+    const metricsCacheKey = "teamsContext.metricsCache.v3";
+    const keyByTable: Record<string, string | undefined> = {
+      metrics_activity: "actRows",
+      metrics_calls: "callRows",
+      metrics_connects: "conRows",
+      metrics_demos: "demoRows",
+      metrics_feedback: "fbRows",
+      superhex: "shRows",
+      metrics_tam: "tamRows",
+    };
+    const key = keyByTable[table];
+    if (!key) return;
+    try {
+      const raw = sessionStorage.getItem(metricsCacheKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed !== "object" || parsed === null) return;
+      delete parsed[key];
+      sessionStorage.setItem(metricsCacheKey, JSON.stringify(parsed));
+    } catch {
+      try {
+        sessionStorage.removeItem(metricsCacheKey);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
   const debouncedLoadCore = useCallback(() => {
     if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
     coreDebounceRef.current = setTimeout(() => loadCore(), 500);
@@ -1645,14 +1691,32 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadCore)
-      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_calls" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_connects" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_demos" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_calls" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_connects" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_demos" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_ops" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_wins" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, debouncedLoadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, (payload) => {
+        invalidateMetricsCacheTable(payload?.table);
+        debouncedLoadAll();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_sales_teams" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_projected_bookings" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "project_team_assignments" }, debouncedLoadCore)
@@ -1667,7 +1731,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [loadAll, debouncedLoadAll, debouncedLoadCore]);
+  }, [loadAll, debouncedLoadAll, debouncedLoadCore, invalidateMetricsCacheTable]);
 
   // ── mutations ──
 
@@ -1793,8 +1857,40 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
           JSON.stringify(old.overallGoal.opportunityFlags ?? []) !== JSON.stringify(updated.overallGoal.opportunityFlags ?? [])
         );
 
-        if (
-          old &&
+        const objectionsOrRisksChanged =
+          !!old &&
+          (JSON.stringify(old.topObjections) !== JSON.stringify(updated.topObjections) ||
+            JSON.stringify(old.biggestRisks) !== JSON.stringify(updated.biggestRisks));
+
+        const otherTeamColumnsChanged =
+          !!old &&
+          (old.name !== updated.name ||
+            old.owner !== updated.owner ||
+            old.leadRep !== updated.leadRep ||
+            old.isActive !== updated.isActive ||
+            old.startDate !== updated.startDate ||
+            old.endDate !== updated.endDate ||
+            old.totalTam !== updated.totalTam ||
+            old.tamSubmitted !== updated.tamSubmitted ||
+            old.missionPurpose !== updated.missionPurpose ||
+            old.missionSubmitted !== updated.missionSubmitted ||
+            old.missionLastEdit !== updated.missionLastEdit ||
+            old.executiveSponsor !== updated.executiveSponsor ||
+            old.executiveProxy !== updated.executiveProxy ||
+            old.revenueLever !== updated.revenueLever ||
+            old.businessGoal !== updated.businessGoal ||
+            old.whatWeAreTesting !== updated.whatWeAreTesting ||
+            old.onboardingProcess !== updated.onboardingProcess ||
+            old.signalsSubmitted !== updated.signalsSubmitted ||
+            old.signalsLastEdit !== updated.signalsLastEdit ||
+            old.attributedRepMemberId !== updated.attributedRepMemberId ||
+            goalsChanged ||
+            overallGoalChanged);
+
+        const signalsListsOnly = objectionsOrRisksChanged && !otherTeamColumnsChanged;
+
+        const fullTeamRowPersist =
+          !!old &&
           (old.name !== updated.name ||
             old.owner !== updated.owner ||
             old.leadRep !== updated.leadRep ||
@@ -1818,8 +1914,20 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
             old.signalsLastEdit !== updated.signalsLastEdit ||
             old.attributedRepMemberId !== updated.attributedRepMemberId ||
             goalsChanged ||
-            overallGoalChanged)
-        ) {
+            overallGoalChanged);
+
+        if (signalsListsOnly) {
+          dbMutate(
+            supabase
+              .from("teams")
+              .update({
+                top_objections: updated.topObjections,
+                biggest_risks: updated.biggestRisks,
+              })
+              .eq("id", teamId),
+            "update team",
+          );
+        } else if (fullTeamRowPersist) {
           dbMutate(
             supabase
               .from("teams")

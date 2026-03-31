@@ -1,5 +1,18 @@
 # Changelog
 
+## Location — Sterno Monthly Goals hover + metric row pagination (`src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`, `src/lib/metric-exclusions.ts`, `src/lib/quota-helpers.ts`)
+
+**Rationale:** Monthly Goals cells showed ops/wins counts that did not match NB/Growth hover lists (partial or unstable paged loads, missing display names, or wins masquerading as account names when `account_name` was null). Users need tooltips that reconcile with the headline number and clearly label wins tied only to opportunity names.
+
+**Changes:**
+- **`fetchAllRows`:** Adds `.order("id", { ascending: true })` before `.range()` so OFFSET pagination over large metric tables is deterministic (avoids skipped or duplicated rows across pages).
+- **`buildWinTypesByMonthForRep`:** Splits tooltip names into NB/Growth buckets vs `noAccountRecord` when `account_name` is empty but `opportunity_name` exists.
+- **`buildOpsTypesByMonthForRep`:** Returns a `noAccountRecord` array on the names shape for type alignment (always empty for ops today).
+- **`WinTypeNames` / `getScopedTypeNames`:** Propagate and merge `noAccountRecord` for team-scoped typed metrics.
+- **`Index.tsx` (TeamTab Monthly Goals):** Ops/wins tooltips show `+ N without account records` when the cell total exceeds NB+Growth named rows; wins list a muted “Without account record” section for opportunity-name-only rows. Former-members row uses the same pattern.
+
+---
+
 ## Location — Metrics load: direct tables vs RPC pagination (`src/contexts/TeamsContext.tsx`)
 
 **Rationale:** `loadMetrics` used PostgREST RPCs with a large `rep_names` array plus `.range()` pagination. Subsequent pages returned HTTP 500 (timeouts), and `fetchAllRpcRows` stopped early—truncating ops/demos/wins/superhex so many members showed 0. Direct `fetchAllRows` table pagination avoids the expensive RPC+OFFSET path; the rep filter added little value (~1.2k names vs ~1k distinct reps in data).
@@ -3113,4 +3126,11 @@
 **Rationale:** Teams and members could render as empty due to a React StrictMode race in the initial load path, where `loadCore` was skipped after metrics resolved, leaving project and settings views with no core data.
 **Changes:** - Removed the stale `mountedRef` guard path in `loadAll` that could bail before `loadCore`, and removed the associated mount/unmount ref lifecycle block.
 - Added resilient `loadAll` error handling: logs primary load failures and attempts a fallback `loadCore()` call so teams/members can still hydrate if metrics loading errors.
+---
+
+## Location - Front end project pages Mission & Signals editing (`src/pages/Index.tsx`)
+**Rationale:** Clicking "Edit" for Mission & Signals could become non-editable because realtime `teams` reloads replace `activeTeam` and can temporarily revert `missionSubmitted` / `signalsSubmitted` UI to read mode mid-interaction.
+**Changes:**
+- Added local `isMissionEditing` / `isSignalsEditing` state in `src/pages/Index.tsx` to keep the edit UI stable during realtime reloads.
+- Reset local edit state when `activeTab` changes, so switching projects always starts in the correct mode.
 ---

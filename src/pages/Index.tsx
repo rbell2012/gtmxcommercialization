@@ -29,6 +29,7 @@ import {
   teamWideMetricRulesOnly,
 } from "@/lib/metric-exclusions";
 import RichTextEditor, { RichTextDisplay } from "@/components/RichTextEditor";
+import { DebouncedTeamStringListField } from "@/components/DebouncedTeamStringListField";
 import { AcceleratorConfigTooltip } from "@/components/AcceleratorConfigTooltip";
 import {
   isPilotRegionPhaseLabel,
@@ -837,6 +838,488 @@ function PilotRegionsPicker({
   );
 }
 
+const LifetimeStatsSection = memo(function LifetimeStatsSection({
+  team,
+  computedPhases,
+  activePhase,
+  isGAPhase,
+  isFirstGAMonth,
+  opsRows,
+  demoRows,
+  projectTeamAssignments,
+  salesTeams,
+  phaseCalcConfigs,
+  memberTeamHistory,
+}: {
+  team: Team;
+  computedPhases: TestPhase[];
+  activePhase: TestPhase | null;
+  isGAPhase: boolean | undefined;
+  isFirstGAMonth: boolean | null;
+  opsRows: Record<string, unknown>[];
+  demoRows: Record<string, unknown>[];
+  projectTeamAssignments: ProjectTeamAssignment[];
+  salesTeams: SalesTeam[];
+  phaseCalcConfigs: Record<string, Record<number, PhaseCalcConfig>>;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+}) {
+  const content = useMemo(() => {
+    const members = team.members;
+    const og = team.overallGoal;
+    const lifetimePhaseSlices = computedPhases.map((p) => ({
+      monthIndex: p.monthIndex,
+      label: p.label,
+      year: p.year,
+      month: p.month,
+    }));
+    const pilotOpsFiltered = filterOpsRowsForLifetimeAttributedPath(
+      opsRows,
+      team,
+      lifetimePhaseSlices,
+      projectTeamAssignments,
+      salesTeams,
+      team.id,
+      phaseCalcConfigs,
+    );
+    const pilotOpsForLifetimeAvgPrice = activePhase?.label === "GA / Commercial Lead" ? opsRows : pilotOpsFiltered;
+    const attributedRep = team.attributedRepMemberId
+      ? team.members.find((m) => m.id === team.attributedRepMemberId) ?? null
+      : null;
+    const monthIndicesForPath = computedPhases.map((p) => p.monthIndex);
+    const hasOppWinsPath =
+      teamQualifiesForAttributedOpsWinsPath(team, monthIndicesForPath, phaseCalcConfigs) && attributedRep != null;
+    const hasAnyOppFlags =
+      monthIndicesForPath.some(
+        (mi) => resolvePhaseCalcConfig(team, mi, phaseCalcConfigs).opportunityFlags.length > 0,
+      ) || (team.overallGoal?.opportunityFlags?.length ?? 0) > 0;
+
+    const winsSplit = hasOppWinsPath
+      ? countOpsWinsSplitForLifetimeStats(
+          opsRows,
+          team,
+          lifetimePhaseSlices,
+          projectTeamAssignments,
+          salesTeams,
+          team.id,
+          phaseCalcConfigs,
+        )
+      : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
+    const allowedMonthsByMember = new Map(
+      members.map((m) => [m.id, getMemberAssignedMonths(m.id, team.id, memberTeamHistory, team.startDate)]),
+    );
+    const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
+
+    const lifetimeWins = hasOppWinsPath ? winsSplit.total : members.reduce((s, m) => s + getMemberLifetimeWins(m, allowedMonthsFor(m)), 0);
+
+    const memberRepKeysLifetime = new Set(members.map((m) => m.name.toLowerCase().trim()));
+    const lifetimeOpsSplit = hasAnyOppFlags
+      ? countLifetimeOpsAdjustedSplit(
+          opsRows,
+          team,
+          lifetimePhaseSlices,
+          projectTeamAssignments,
+          salesTeams,
+          team.id,
+          phaseCalcConfigs,
+          memberRepKeysLifetime,
+        )
+      : null;
+    const lifetimeDemosSplit = hasAnyOppFlags
+      ? countLifetimeDemosAdjustedSplit(
+          demoRows,
+          lifetimePhaseSlices,
+          projectTeamAssignments,
+          salesTeams,
+          team.id,
+          memberRepKeysLifetime,
+        )
+      : null;
+
+    const lifetimeOps = lifetimeOpsSplit
+      ? lifetimeOpsSplit.total
+      : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)), 0);
+    const lifetimeDemos = lifetimeDemosSplit
+      ? lifetimeDemosSplit.total
+      : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)), 0);
+    const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "feedback", allowedMonthsFor(m)), 0);
+    const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)), 0);
+    const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, "calls", allowedMonthsFor(m)), 0);
+    const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m)), 0);
+    const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m)), 0);
+
+    const opsBreakdown = lifetimeOpsSplit
+      ? [
+          { label: "Pilot phases (members + assigned reps)", value: lifetimeOpsSplit.pilotLabeledMonths },
+          { label: "Other phases (members only)", value: lifetimeOpsSplit.otherMonths },
+        ]
+      : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)) }));
+    const demosBreakdown = lifetimeDemosSplit
+      ? [
+          { label: "Pilot phases (members + assigned reps)", value: lifetimeDemosSplit.pilotLabeledMonths },
+          { label: "Other phases (members only)", value: lifetimeDemosSplit.otherMonths },
+        ]
+      : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)) }));
+    const winsBreakdown =
+      hasOppWinsPath && attributedRep
+        ? [
+            { label: "Pilot phases (assigned reps)", value: winsSplit.pilotPhaseWins },
+            { label: "Other phases", value: winsSplit.otherPhaseWins },
+          ]
+        : members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m, allowedMonthsFor(m)) }));
+    const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback", allowedMonthsFor(m)) }));
+    const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)) }));
+
+    const callToConnectRates = members.map((m) => {
+      const calls = getMemberLifetimeFunnelTotal(m, "calls", allowedMonthsFor(m));
+      const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
+      const pct = calls > 0 ? (connects / calls) * 100 : 0;
+      return { label: m.name, calls, connects, pct };
+    });
+    const connectToDemoRates = members.map((m) => {
+      const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
+      const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
+      const pct = connects > 0 ? (demos / connects) * 100 : 0;
+      return { label: m.name, connects, demos, pct };
+    });
+    const demoToWinRates =
+      hasOppWinsPath && attributedRep
+        ? [
+            {
+              label: "Pilot + other phases",
+              demos: lifetimeDemosF,
+              wins: lifetimeWins,
+              pct: lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0,
+            },
+          ]
+        : members.map((m) => {
+            const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
+            const wins = getMemberLifetimeWins(m, allowedMonthsFor(m));
+            const pct = demos > 0 ? (wins / demos) * 100 : 0;
+            return { label: m.name, demos, wins, pct };
+          });
+    const showWinsGoal = og.winsEnabled && og.wins > 0;
+    const showTotalPriceGoal = og.totalPriceEnabled && og.totalPrice > 0;
+    const showDiscountThresholdGoal = og.discountThresholdEnabled && og.discountThreshold > 0;
+    const showRealizedPriceGoal = og.realizedPriceEnabled && og.realizedPrice > 0;
+    const showOverallGoal = showWinsGoal || showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal;
+    const winsProgressPct = showWinsGoal ? Math.min(100, (lifetimeWins / og.wins) * 100) : 0;
+    const callToConnectTotalPct = lifetimeCalls > 0 ? (lifetimeConnects / lifetimeCalls) * 100 : 0;
+    const connectToDemoTotalPct = lifetimeConnects > 0 ? (lifetimeDemosF / lifetimeConnects) * 100 : 0;
+    const demoToWinTotalPct = lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0;
+
+    const pilotLifetimeCtx = isPilotRegionPhaseLabel(activePhase?.label ?? null)
+      ? resolvePilotAssignments(projectTeamAssignments, salesTeams, team.id, activePhase?.monthIndex ?? 0)
+      : null;
+    const lifetimeLineTargets = resolvePhaseCalcConfig(team, activePhase?.monthIndex ?? undefined, phaseCalcConfigs).lineItemTargets;
+    const lifetimeAvgPrice = pilotLifetimeCtx
+      ? getPilotAvgPriceAllTime(pilotOpsForLifetimeAvgPrice, pilotLifetimeCtx.pilotRepNames, lifetimeLineTargets)
+      : null;
+    const discountThresholdCurrent = og.totalPrice > 0 && lifetimeAvgPrice != null ? 1 - lifetimeAvgPrice / og.totalPrice : null;
+
+    const winsLifetimeTooltip = hasOppWinsPath
+      ? "Lifetime wins = pilot phases + other phases. Pilot phases: closes in months labeled Sales Org Pilot / Recommendations / GA, counting only reps assigned to pilot regions that month. Other phases: all other qualifying closes (other months, non-assigned pilot months, or pilot months where the closer is not on the roster), plus closes outside the test window. Same opportunity flags and line-item rules apply."
+      : "Total closed wins across all weeks of the test (summed from weekly funnel data).";
+
+    const todayChip = computedPhases.length > 0
+      ? (() => {
+          const today = new Date();
+          const todayPhase =
+            computedPhases.find((p) => p.year === today.getFullYear() && p.month === today.getMonth()) ?? null;
+          if (!todayPhase) return null;
+          return (
+            <span className="rounded-full bg-muted/30 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              In month {todayPhase.monthIndex + 1} of {computedPhases.length}
+            </span>
+          );
+        })()
+      : null;
+
+    return (
+      <div className="mb-4 rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Trophy className="h-4 w-4 text-accent" />
+          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-accent">Lifetime Stats</h3>
+          <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">Entire Test</span>
+          {todayChip}
+        </div>
+
+        <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
+          <UiTooltip>
+            <TooltipTrigger asChild>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">
+                  {lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%
+                </p>
+                <p className="text-[10px] text-muted-foreground">Call→Connect</p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px]">
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed">% of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.</p>
+                <div className="text-[11px] text-muted-foreground">
+                  Total: {lifetimeConnects.toLocaleString()} ÷ {lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
+                </div>
+                <div className="h-px bg-accent/20" />
+                <div className="space-y-1 text-xs">
+                  {callToConnectRates.map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground truncate">{r.label}</span>
+                      <span className="font-medium text-foreground whitespace-nowrap">
+                        {r.connects.toLocaleString()}/{r.calls.toLocaleString()} ({r.pct.toFixed(0)}%)
+                      </span>
+                    </div>
+                  ))}
+                  <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                    <span className="font-semibold text-foreground">Total</span>
+                    <span className="font-semibold text-accent whitespace-nowrap">
+                      {lifetimeConnects.toLocaleString()}/{lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </TooltipContent>
+          </UiTooltip>
+
+          <UiTooltip>
+            <TooltipTrigger asChild>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-accent">
+                  {lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%
+                </p>
+                <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px]">
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed">% of live connections that converted to a demo. Calculated as: Demos ÷ Connects.</p>
+                <div className="text-[11px] text-muted-foreground">
+                  Total: {lifetimeDemosF.toLocaleString()} ÷ {lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
+                </div>
+                <div className="h-px bg-accent/20" />
+                <div className="space-y-1 text-xs">
+                  {connectToDemoRates.map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground truncate">{r.label}</span>
+                      <span className="font-medium text-foreground whitespace-nowrap">
+                        {r.demos.toLocaleString()}/{r.connects.toLocaleString()} ({r.pct.toFixed(0)}%)
+                      </span>
+                    </div>
+                  ))}
+                  <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                    <span className="font-semibold text-foreground">Total</span>
+                    <span className="font-semibold text-accent whitespace-nowrap">
+                      {lifetimeDemosF.toLocaleString()}/{lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </TooltipContent>
+          </UiTooltip>
+
+          <UiTooltip>
+            <TooltipTrigger asChild>
+              <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                <p className="font-display text-lg font-bold text-foreground">
+                  {lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%
+                </p>
+                <p className="text-[10px] text-muted-foreground">Demo→Win</p>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px]">
+              <div className="space-y-2">
+                <p className="text-xs leading-relaxed">% of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.</p>
+                <div className="text-[11px] text-muted-foreground">
+                  Total: {lifetimeWins.toLocaleString()} ÷ {lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
+                </div>
+                <div className="h-px bg-accent/20" />
+                <div className="space-y-1 text-xs">
+                  {demoToWinRates.map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground truncate">{r.label}</span>
+                      <span className="font-medium text-foreground whitespace-nowrap">
+                        {r.wins.toLocaleString()}/{r.demos.toLocaleString()} ({r.pct.toFixed(0)}%)
+                      </span>
+                    </div>
+                  ))}
+                  <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
+                    <span className="font-semibold text-foreground">Total</span>
+                    <span className="font-semibold text-accent whitespace-nowrap">
+                      {lifetimeWins.toLocaleString()}/{lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </TooltipContent>
+          </UiTooltip>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <StatCard icon={<Handshake className="h-5 w-5 text-accent" />} label="Ops" value={lifetimeOps} tooltip="Total number of opportunities (ops) opened across all weeks of the test." breakdown={opsBreakdown} />
+          <StatCard icon={<Video className="h-5 w-5 text-primary" />} label="Demos" value={lifetimeDemos} tooltip="Total demo records logged across all weeks of the test." breakdown={demosBreakdown} />
+          <StatCard icon={<TrendingUp className="h-5 w-5 text-accent" />} label="Wins" value={lifetimeWins} tooltip={winsLifetimeTooltip} breakdown={winsBreakdown} />
+          <StatCard icon={<MessageCircle className="h-5 w-5 text-primary" />} label="Feedback" value={lifetimeFeedback} tooltip="Total feedback interactions logged in Google Sheets across all weeks of the test." breakdown={feedbackBreakdown} />
+          <StatCard icon={<Activity className="h-5 w-5 text-accent" />} label="Activity" value={lifetimeActivity} tooltip="Total activity count (calls, emails, texts) logged across all weeks of the test." breakdown={activityBreakdown} />
+        </div>
+
+        {showOverallGoal && (
+          <div className="mt-3 border-t border-accent/10 pt-3 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Overall Goal</p>
+            <div className="space-y-3">
+              {showWinsGoal && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-foreground">Wins</span>
+                    <span className="text-[11px] font-semibold text-accent">
+                      {lifetimeWins.toLocaleString()} / {og.wins.toLocaleString()} ({winsProgressPct.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
+                    <div className="h-full bg-accent" style={{ width: `${winsProgressPct}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {(showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal) && (
+                <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
+                  {showTotalPriceGoal && (
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="text-[10px] text-muted-foreground">Total Price</p>
+                      <p className="font-display text-lg font-bold text-foreground">${og.totalPrice.toLocaleString()}</p>
+                    </div>
+                  )}
+                  {showDiscountThresholdGoal && (
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="text-[10px] text-muted-foreground">Discount %</p>
+                      <p className={`font-display text-lg font-bold ${discountThresholdCurrent != null ? "text-accent" : "text-foreground"}`}>
+                        {discountThresholdCurrent != null ? `${(discountThresholdCurrent * 100).toFixed(1)}%` : `${og.discountThreshold.toLocaleString()}%`}
+                      </p>
+                      {discountThresholdCurrent != null && (
+                        <p className="text-[10px] text-muted-foreground">Goal: {og.discountThreshold.toLocaleString()}%</p>
+                      )}
+                    </div>
+                  )}
+                  {showRealizedPriceGoal && (
+                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
+                      <p className="text-[10px] text-muted-foreground">Realized Price</p>
+                      <p className="font-display text-lg font-bold text-foreground">
+                        {lifetimeAvgPrice != null
+                          ? `$${lifetimeAvgPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+                          : `$${og.realizedPrice.toLocaleString()}`}
+                      </p>
+                      {lifetimeAvgPrice != null && <p className="text-[10px] text-muted-foreground">Goal: ${og.realizedPrice.toLocaleString()}</p>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [team, computedPhases, activePhase, opsRows, demoRows, projectTeamAssignments, salesTeams, phaseCalcConfigs, memberTeamHistory]);
+
+  return content;
+});
+
+const TamSection = memo(function TamSection({
+  team,
+  referenceDate,
+  memberTeamHistory,
+  allMembersById,
+  updateTeam,
+}: {
+  team: Team;
+  referenceDate: Date | undefined;
+  memberTeamHistory: MemberTeamHistoryEntry[];
+  allMembersById: Record<string, TeamMember>;
+  updateTeam: (teamId: string, updater: (team: Team) => Team) => void;
+}) {
+  const content = useMemo(() => {
+    const activeMembers = getTeamMembersForMonth(team, referenceDate, memberTeamHistory, allMembersById);
+    const allowedMonthsByMember = new Map(
+      activeMembers.map((m) => [m.id, getMemberAssignedMonths(m.id, team.id, memberTeamHistory, team.startDate)]),
+    );
+    const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
+    const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
+    if (hasMetricsTam) {
+      const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
+      const teamTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
+      const teamActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)), 0);
+      const membersWithTam = activeMembers.filter((m) => m.touchedTam > 0);
+      const avgTam = membersWithTam.length > 0 ? Math.round(teamTam / membersWithTam.length) : 0;
+      const pctOfTam = Math.min(100, teamTam > 0 ? (teamTouched / teamTam) * 100 : 0);
+      const avgTouchesAcct = teamTouched > 0 ? (teamActivity / teamTouched).toFixed(1) : "—";
+      return (
+        <div className="mb-8 rounded-lg border border-primary/30 bg-primary/5 bg-card p-5 glow-card">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
+              <span className="font-display text-2xl font-bold text-primary">{teamTam.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Avg TAM</label>
+              <span className="font-display text-2xl font-bold text-foreground">{avgTam.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">% of TAM</label>
+              <span className="font-display text-2xl font-bold text-primary">{pctOfTam.toFixed(0)}%</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
+              <span className="font-display text-2xl font-bold text-foreground">{avgTouchesAcct}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const fbTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[team.id] ?? 0), 0);
+    const fbActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)), 0);
+    const fbAvg = activeMembers.length > 0 ? Math.round((team.totalTam || 0) / activeMembers.length) : 0;
+    const totalTam = team.totalTam || 0;
+    const fbPctOfTam = Math.min(100, totalTam > 0 ? (fbTouched / totalTam) * 100 : 0);
+    const fbAvgTouchesAcct = fbTouched > 0 ? (fbActivity / fbTouched).toFixed(1) : "—";
+
+    return (
+      <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${team.tamSubmitted ? "border-primary/30 bg-primary/5" : "border-border"}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
+              <Input
+                type="number"
+                min={0}
+                value={team.totalTam || ""}
+                onChange={(e) =>
+                  updateTeam(team.id, (t) => ({ ...t, totalTam: Math.max(0, parseInt(e.target.value) || 0) }))
+                }
+                className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
+                placeholder="0"
+                disabled={team.tamSubmitted}
+              />
+              {team.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Avg TAM</label>
+              <span className="font-display text-2xl font-bold text-foreground">{fbAvg.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">% of TAM</label>
+              <span className="font-display text-2xl font-bold text-primary">{fbPctOfTam.toFixed(0)}%</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
+              <span className="font-display text-2xl font-bold text-foreground">{fbAvgTouchesAcct}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }, [team, referenceDate, memberTeamHistory, allMembersById, updateTeam]);
+
+  return content;
+});
+
 const Index = () => {
   const { pilotId } = useParams<{ pilotId?: string }>();
   const navigate = useNavigate();
@@ -930,18 +1413,40 @@ const Index = () => {
 
   const { toast } = useToast();
 
-  const allRoles = [...DEFAULT_ROLES, ...customRoles];
+  const allRoles = useMemo(() => [...DEFAULT_ROLES, ...customRoles], [customRoles]);
 
-  const activeTeam = teams.find((t) => t.id === activeTab);
+  const activeTeam = useMemo(() => teams.find((t) => t.id === activeTab), [teams, activeTab]);
+
+  const [isMissionEditing, setIsMissionEditing] = useState(false);
+  const [isSignalsEditing, setIsSignalsEditing] = useState(false);
+
+  // Keep the edit UI stable even if realtime reloads briefly return stale `*_submitted` values.
+  useEffect(() => {
+    setIsMissionEditing(false);
+    setIsSignalsEditing(false);
+  }, [activeTab]);
+
+  const openAddMemberForActiveTab = useCallback(() => {
+    if (!activeTeam) return;
+    navigate(`/${pilotNameToSlug(activeTeam.name)}`);
+    setAddMemberOpen(true);
+  }, [activeTeam, navigate]);
+  const activeHistoricalTeam = useMemo(
+    () => (activeTeam ? getHistoricalTeam(activeTeam, referenceDate, teamGoalsHistory) : null),
+    [activeTeam, referenceDate, teamGoalsHistory],
+  );
 
   const teamLabels = phaseLabels[activeTeam?.id ?? ""] ?? {};
   const teamPriorities = phasePriorities[activeTeam?.id ?? ""] ?? {};
-  const computedPhases = activeTeam
-    ? generateTestPhases(activeTeam.startDate, activeTeam.endDate, teamLabels, teamPriorities)
-    : [];
-  const overallProgress = activeTeam
-    ? computeOverallProgress(activeTeam.startDate, activeTeam.endDate)
-    : 0;
+  const computedPhases = useMemo(
+    () =>
+      activeTeam ? generateTestPhases(activeTeam.startDate, activeTeam.endDate, teamLabels, teamPriorities) : [],
+    [activeTeam, teamLabels, teamPriorities],
+  );
+  const overallProgress = useMemo(
+    () => (activeTeam ? computeOverallProgress(activeTeam.startDate, activeTeam.endDate) : 0),
+    [activeTeam],
+  );
 
   const activePhase = useMemo(() => {
     if (computedPhases.length === 0) return null;
@@ -976,7 +1481,7 @@ const Index = () => {
     setAddRoleOpen(false);
   }, [newRoleName, allRoles, addCustomRole]);
 
-  const addWin = () => {
+  const addWin = useCallback(() => {
     if (!selectedMember || !restaurantName.trim()) return;
 
     const member = activeTeam?.members.find((m) => m.id === selectedMember);
@@ -1031,7 +1536,7 @@ const Index = () => {
     setSelectedMember("");
     setRestaurantName("");
     setStoryText("");
-  };
+  }, [selectedMember, restaurantName, storyText, activeTeam, updateTeam, activeTab, toast]);
 
   const addMember = () => {
     if (!newName.trim()) return;
@@ -1380,7 +1885,7 @@ const Index = () => {
 
         {/* Mission & Purpose */}
         {activeTeam && (
-        <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.missionSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+        <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.missionSubmitted && !isMissionEditing ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
           <div className="flex items-center justify-between mb-4">
             <label className="font-display text-lg font-semibold text-foreground">Mission & Purpose of Test</label>
             <div className="flex items-center gap-2">
@@ -1389,13 +1894,32 @@ const Index = () => {
                   last edit: {new Date(activeTeam.missionLastEdit).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
                 </span>
               )}
-              {!activeTeam.missionSubmitted ? (
-                <Button size="sm" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: true, missionLastEdit: new Date().toISOString() }))} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
-                  Submit
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setIsMissionEditing(true);
+                    updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: false }));
+                  }}
+                  className="text-xs h-7 border-border text-muted-foreground hover:text-foreground"
+                >
+                  Edit
                 </Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, missionSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
-                  Edit
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setIsMissionEditing(false);
+                    updateTeam(activeTeam.id, (t) => ({
+                      ...t,
+                      missionSubmitted: true,
+                      missionLastEdit: new Date().toISOString(),
+                    }));
+                  }}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
+                >
+                  Submit
                 </Button>
               )}
             </div>
@@ -1404,7 +1928,7 @@ const Index = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-4">
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Revenue Lever</label>
-              {activeTeam.missionSubmitted ? (
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
                 <p className="text-sm text-foreground min-h-[1.5rem]">{activeTeam.revenueLever || <span className="text-muted-foreground/50 italic">—</span>}</p>
               ) : (
                 <Select
@@ -1424,7 +1948,7 @@ const Index = () => {
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Business Goal</label>
-              {activeTeam.missionSubmitted ? (
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
                 <RichTextDisplay value={activeTeam.businessGoal} />
               ) : (
                 <RichTextEditor
@@ -1437,7 +1961,7 @@ const Index = () => {
             </div>
             <div className="sm:col-span-2">
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">What We Are Testing</label>
-              {activeTeam.missionSubmitted ? (
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
                 <RichTextDisplay value={activeTeam.whatWeAreTesting} />
               ) : (
                 <RichTextEditor
@@ -1450,7 +1974,7 @@ const Index = () => {
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Sponsor</label>
-              {activeTeam.missionSubmitted ? (
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
                 <RichTextDisplay value={activeTeam.executiveSponsor} />
               ) : (
                 <RichTextEditor
@@ -1463,7 +1987,7 @@ const Index = () => {
             </div>
             <div>
               <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Executive Proxy</label>
-              {activeTeam.missionSubmitted ? (
+              {activeTeam.missionSubmitted && !isMissionEditing ? (
                 <RichTextDisplay value={activeTeam.executiveProxy} />
               ) : (
                 <RichTextEditor
@@ -1478,7 +2002,7 @@ const Index = () => {
 
           <div>
             <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Product Description</label>
-            {activeTeam.missionSubmitted ? (
+            {activeTeam.missionSubmitted && !isMissionEditing ? (
               <RichTextDisplay value={activeTeam.missionPurpose} />
             ) : (
               <RichTextEditor
@@ -1494,7 +2018,7 @@ const Index = () => {
 
         {/* Signals */}
         {activeTeam && (
-          <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.signalsSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
+          <div className={`mb-4 rounded-lg border bg-card p-5 glow-card ${activeTeam.signalsSubmitted && !isSignalsEditing ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
             <div className="flex items-center justify-between mb-4">
               <label className="font-display text-lg font-semibold text-foreground">Signals</label>
               <div className="flex items-center gap-2">
@@ -1503,22 +2027,32 @@ const Index = () => {
                     last edit: {new Date(activeTeam.signalsLastEdit).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
                   </span>
                 )}
-                {!activeTeam.signalsSubmitted ? (
+                {activeTeam.signalsSubmitted && !isSignalsEditing ? (
                   <Button
                     size="sm"
-                    onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, signalsSubmitted: true, signalsLastEdit: new Date().toISOString() }))}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
+                    variant="outline"
+                    onClick={() => {
+                      setIsSignalsEditing(true);
+                      updateTeam(activeTeam.id, (t) => ({ ...t, signalsSubmitted: false }));
+                    }}
+                    className="text-xs h-7 border-border text-muted-foreground hover:text-foreground"
                   >
-                    Submit
+                    Edit
                   </Button>
                 ) : (
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, signalsSubmitted: false }))}
-                    className="text-xs h-7 border-border text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      setIsSignalsEditing(false);
+                      updateTeam(activeTeam.id, (t) => ({
+                        ...t,
+                        signalsSubmitted: true,
+                        signalsLastEdit: new Date().toISOString(),
+                      }));
+                    }}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4"
                   >
-                    Edit
+                    Submit
                   </Button>
                 )}
               </div>
@@ -1527,7 +2061,7 @@ const Index = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 mb-4">
               <div>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Top 3 objections</label>
-                {activeTeam.signalsSubmitted ? (
+                {activeTeam.signalsSubmitted && !isSignalsEditing ? (
                   <ol className="list-decimal pl-5 space-y-1">
                     {(activeTeam.topObjections ?? []).slice(0, 3).map((v, i) => (
                       <li key={i} className="text-sm text-foreground min-h-[1.5rem]">
@@ -1536,30 +2070,20 @@ const Index = () => {
                     ))}
                   </ol>
                 ) : (
-                  <ol className="list-decimal pl-5 space-y-2">
-                    {(activeTeam.topObjections ?? ["", "", ""]).slice(0, 3).map((v, i) => (
-                      <li key={i}>
-                        <Input
-                          value={v}
-                          onChange={(e) => {
-                            updateTeam(activeTeam.id, (t) => {
-                              const next = [...t.topObjections];
-                              next[i] = e.target.value;
-                              return { ...t, topObjections: next };
-                            });
-                          }}
-                          placeholder={`Objection ${i + 1}`}
-                          className="bg-secondary/20 border-border text-foreground text-sm h-9"
-                        />
-                      </li>
-                    ))}
-                  </ol>
+                  <DebouncedTeamStringListField
+                    key={`${activeTeam.id}-top-objections`}
+                    values={(activeTeam.topObjections ?? ["", "", ""]).slice(0, 3)}
+                    onCommit={(next) =>
+                      updateTeam(activeTeam.id, (t) => ({ ...t, topObjections: next }))
+                    }
+                    placeholders={["Objection 1", "Objection 2", "Objection 3"]}
+                  />
                 )}
               </div>
 
               <div>
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Biggest Risks</label>
-                {activeTeam.signalsSubmitted ? (
+                {activeTeam.signalsSubmitted && !isSignalsEditing ? (
                   <ol className="list-decimal pl-5 space-y-1">
                     {(activeTeam.biggestRisks ?? []).slice(0, 3).map((v, i) => (
                       <li key={i} className="text-sm text-foreground min-h-[1.5rem]">
@@ -1568,30 +2092,20 @@ const Index = () => {
                     ))}
                   </ol>
                 ) : (
-                  <ol className="list-decimal pl-5 space-y-2">
-                    {(activeTeam.biggestRisks ?? ["", "", ""]).slice(0, 3).map((v, i) => (
-                      <li key={i}>
-                        <Input
-                          value={v}
-                          onChange={(e) => {
-                            updateTeam(activeTeam.id, (t) => {
-                              const next = [...t.biggestRisks];
-                              next[i] = e.target.value;
-                              return { ...t, biggestRisks: next };
-                            });
-                          }}
-                          placeholder={`Risk ${i + 1}`}
-                          className="bg-secondary/20 border-border text-foreground text-sm h-9"
-                        />
-                      </li>
-                    ))}
-                  </ol>
+                  <DebouncedTeamStringListField
+                    key={`${activeTeam.id}-biggest-risks`}
+                    values={(activeTeam.biggestRisks ?? ["", "", ""]).slice(0, 3)}
+                    onCommit={(next) =>
+                      updateTeam(activeTeam.id, (t) => ({ ...t, biggestRisks: next }))
+                    }
+                    placeholders={["Risk 1", "Risk 2", "Risk 3"]}
+                  />
                 )}
               </div>
 
               <div className="sm:col-span-2">
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Onboarding Process</label>
-                {activeTeam.signalsSubmitted ? (
+                {activeTeam.signalsSubmitted && !isSignalsEditing ? (
                   <RichTextDisplay value={activeTeam.onboardingProcess} />
                 ) : (
                   <RichTextEditor
@@ -1627,541 +2141,32 @@ const Index = () => {
           )}
 
         {/* ── Lifetime Stats (entire test, not adjustable) ── */}
-        {activeTeam && (() => {
-          const members = activeTeam.members;
-          const og = activeTeam.overallGoal;
-          const lifetimePhaseSlices = computedPhases.map((p) => ({
-            monthIndex: p.monthIndex,
-            label: p.label,
-            year: p.year,
-            month: p.month,
-          }));
-          const pilotOpsFiltered = filterOpsRowsForLifetimeAttributedPath(
-            opsRows,
-            activeTeam,
-            lifetimePhaseSlices,
-            projectTeamAssignments,
-            salesTeams,
-            activeTeam.id,
-            phaseCalcConfigs,
-          );
-          const pilotOpsForLifetimeAvgPrice =
-            activePhase?.label === "GA / Commercial Lead" ? opsRows : pilotOpsFiltered;
-          const attributedRep = activeTeam.attributedRepMemberId
-            ? activeTeam.members.find((m) => m.id === activeTeam.attributedRepMemberId) ?? null
-            : null;
-          const monthIndicesForPath = computedPhases.map((p) => p.monthIndex);
-          const hasOppWinsPath =
-            teamQualifiesForAttributedOpsWinsPath(activeTeam, monthIndicesForPath, phaseCalcConfigs) &&
-            attributedRep != null;
-          const hasAnyOppFlags =
-            monthIndicesForPath.some(
-              (mi) => resolvePhaseCalcConfig(activeTeam, mi, phaseCalcConfigs).opportunityFlags.length > 0,
-            ) || (activeTeam.overallGoal?.opportunityFlags?.length ?? 0) > 0;
-
-          const winsSplit = hasOppWinsPath
-            ? countOpsWinsSplitForLifetimeStats(
-                opsRows,
-                activeTeam,
-                lifetimePhaseSlices,
-                projectTeamAssignments,
-                salesTeams,
-                activeTeam.id,
-                phaseCalcConfigs,
-              )
-            : { pilotPhaseWins: 0, otherPhaseWins: 0, total: 0 };
-          const allowedMonthsByMember = new Map(
-            members.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory, activeTeam.startDate)])
-          );
-          const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
-
-          const lifetimeWins = hasOppWinsPath
-            ? winsSplit.total
-            : members.reduce((s, m) => s + getMemberLifetimeWins(m, allowedMonthsFor(m)), 0);
-
-          const memberRepKeysLifetime = new Set(members.map((m) => m.name.toLowerCase().trim()));
-          const lifetimeOpsSplit = hasAnyOppFlags
-            ? countLifetimeOpsAdjustedSplit(
-                opsRows,
-                activeTeam,
-                lifetimePhaseSlices,
-                projectTeamAssignments,
-                salesTeams,
-                activeTeam.id,
-                phaseCalcConfigs,
-                memberRepKeysLifetime,
-              )
-            : null;
-          const lifetimeDemosSplit = hasAnyOppFlags
-            ? countLifetimeDemosAdjustedSplit(
-                demoRows,
-                lifetimePhaseSlices,
-                projectTeamAssignments,
-                salesTeams,
-                activeTeam.id,
-                memberRepKeysLifetime,
-              )
-            : null;
-
-          const lifetimeOps = lifetimeOpsSplit
-            ? lifetimeOpsSplit.total
-            : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'ops', allowedMonthsFor(m)), 0);
-          const lifetimeDemos = lifetimeDemosSplit
-            ? lifetimeDemosSplit.total
-            : members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'demos', allowedMonthsFor(m)), 0);
-          const lifetimeFeedback = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'feedback', allowedMonthsFor(m)), 0);
-          const lifetimeActivity = members.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
-          const lifetimeCalls = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'calls', allowedMonthsFor(m)), 0);
-          const lifetimeConnects = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'connects', allowedMonthsFor(m)), 0);
-          const lifetimeDemosF = members.reduce((s, m) => s + getMemberLifetimeFunnelTotal(m, 'demos', allowedMonthsFor(m)), 0);
-
-          // Per-metric breakdowns for the hover tooltips
-          const opsBreakdown = lifetimeOpsSplit
-            ? [
-                { label: "Pilot phases (members + assigned reps)", value: lifetimeOpsSplit.pilotLabeledMonths },
-                { label: "Other phases (members only)", value: lifetimeOpsSplit.otherMonths },
-              ]
-            : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "ops", allowedMonthsFor(m)) }));
-          const demosBreakdown = lifetimeDemosSplit
-            ? [
-                { label: "Pilot phases (members + assigned reps)", value: lifetimeDemosSplit.pilotLabeledMonths },
-                { label: "Other phases (members only)", value: lifetimeDemosSplit.otherMonths },
-              ]
-            : members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "demos", allowedMonthsFor(m)) }));
-          const winsBreakdown = hasOppWinsPath && attributedRep
-            ? [
-                { label: "Pilot phases (assigned reps)", value: winsSplit.pilotPhaseWins },
-                { label: "Other phases", value: winsSplit.otherPhaseWins },
-              ]
-            : members.map((m) => ({ label: m.name, value: getMemberLifetimeWins(m, allowedMonthsFor(m)) }));
-          const feedbackBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "feedback", allowedMonthsFor(m)) }));
-          const activityBreakdown = members.map((m) => ({ label: m.name, value: getMemberLifetimeMetricTotal(m, "activity", allowedMonthsFor(m)) }));
-
-          // Per-member conversion rate breakdowns (numerator / denominator + percent)
-          const callToConnectRates = members.map((m) => {
-            const calls = getMemberLifetimeFunnelTotal(m, "calls", allowedMonthsFor(m));
-            const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
-            const pct = calls > 0 ? (connects / calls) * 100 : 0;
-            return { label: m.name, calls, connects, pct };
-          });
-          const connectToDemoRates = members.map((m) => {
-            const connects = getMemberLifetimeFunnelTotal(m, "connects", allowedMonthsFor(m));
-            const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
-            const pct = connects > 0 ? (demos / connects) * 100 : 0;
-            return { label: m.name, connects, demos, pct };
-          });
-          const demoToWinRates = hasOppWinsPath && attributedRep
-            ? [
-                {
-                  label: "Pilot + other phases",
-                  demos: lifetimeDemosF,
-                  wins: lifetimeWins,
-                  pct: lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0,
-                },
-              ]
-            : members.map((m) => {
-                const demos = getMemberLifetimeFunnelTotal(m, "demos", allowedMonthsFor(m));
-                const wins = getMemberLifetimeWins(m, allowedMonthsFor(m));
-                const pct = demos > 0 ? (wins / demos) * 100 : 0;
-                return { label: m.name, demos, wins, pct };
-              });
-          const showWinsGoal = og.winsEnabled && og.wins > 0;
-          const showTotalPriceGoal = og.totalPriceEnabled && og.totalPrice > 0;
-          const showDiscountThresholdGoal = og.discountThresholdEnabled && og.discountThreshold > 0;
-          const showRealizedPriceGoal = og.realizedPriceEnabled && og.realizedPrice > 0;
-          const showOverallGoal = showWinsGoal || showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal;
-          const winsProgressPct = showWinsGoal ? Math.min(100, (lifetimeWins / og.wins) * 100) : 0;
-          const callToConnectTotalPct = lifetimeCalls > 0 ? (lifetimeConnects / lifetimeCalls) * 100 : 0;
-          const connectToDemoTotalPct = lifetimeConnects > 0 ? (lifetimeDemosF / lifetimeConnects) * 100 : 0;
-          const demoToWinTotalPct = lifetimeDemosF > 0 ? (lifetimeWins / lifetimeDemosF) * 100 : 0;
-
-          const pilotLifetimeCtx = isPilotRegionPhaseLabel(activePhase?.label ?? null)
-            ? resolvePilotAssignments(projectTeamAssignments, salesTeams, activeTeam.id, activePhase?.monthIndex ?? 0)
-            : null;
-          const lifetimeLineTargets = resolvePhaseCalcConfig(
-            activeTeam,
-            activePhase?.monthIndex ?? undefined,
-            phaseCalcConfigs,
-          ).lineItemTargets;
-          const lifetimeAvgPrice = pilotLifetimeCtx
-            ? getPilotAvgPriceAllTime(pilotOpsForLifetimeAvgPrice, pilotLifetimeCtx.pilotRepNames, lifetimeLineTargets)
-            : null;
-          const discountThresholdCurrent =
-            og.totalPrice > 0 && lifetimeAvgPrice != null
-              ? 1 - lifetimeAvgPrice / og.totalPrice
-              : null;
-
-          const winsLifetimeTooltip = hasOppWinsPath
-            ? "Lifetime wins = pilot phases + other phases. Pilot phases: closes in months labeled Sales Org Pilot / Recommendations / GA, counting only reps assigned to pilot regions that month. Other phases: all other qualifying closes (other months, non-assigned pilot months, or pilot months where the closer is not on the roster), plus closes outside the test window. Same opportunity flags and line-item rules apply."
-            : "Total closed wins across all weeks of the test (summed from weekly funnel data).";
-
-          return (
-            <>
-            <div className="mb-4 rounded-xl border-2 border-accent/30 bg-gradient-to-br from-card via-card to-accent/5 p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <Trophy className="h-4 w-4 text-accent" />
-                <h3 className="font-display text-sm font-bold uppercase tracking-wider text-accent">
-                  Lifetime Stats
-                </h3>
-                <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent">
-                  Entire Test
-                </span>
-                {computedPhases.length > 0 && (() => {
-                  const today = new Date();
-                  const todayPhase = computedPhases.find(
-                    (p) => p.year === today.getFullYear() && p.month === today.getMonth()
-                  );
-                  if (!todayPhase) return null;
-                  return (
-                    <span className="rounded-full bg-muted/30 px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      In month {todayPhase.monthIndex + 1} of {computedPhases.length}
-                    </span>
-                  );
-                })()}
-              </div>
-              <div className="mb-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
-                <UiTooltip>
-                  <TooltipTrigger asChild>
-                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                      <p className="font-display text-lg font-bold text-foreground">{lifetimeCalls > 0 ? ((lifetimeConnects / lifetimeCalls) * 100).toFixed(0) : 0}%</p>
-                      <p className="text-[10px] text-muted-foreground">Call→Connect</p>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    <div className="space-y-2">
-                      <p className="text-xs leading-relaxed">
-                        % of calls that resulted in a live connection with a prospect. Calculated as: Connects ÷ Calls.
-                      </p>
-                      <div className="text-[11px] text-muted-foreground">
-                        Total: {lifetimeConnects.toLocaleString()} ÷ {lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
-                      </div>
-                      <div className="h-px bg-accent/20" />
-                      <div className="space-y-1 text-xs">
-                        {callToConnectRates.map((r) => (
-                          <div key={r.label} className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground truncate">{r.label}</span>
-                            <span className="font-medium text-foreground whitespace-nowrap">
-                              {r.connects.toLocaleString()}/{r.calls.toLocaleString()} ({r.pct.toFixed(0)}%)
-                            </span>
-                          </div>
-                        ))}
-                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
-                          <span className="font-semibold text-foreground">Total</span>
-                          <span className="font-semibold text-accent whitespace-nowrap">
-                            {lifetimeConnects.toLocaleString()}/{lifetimeCalls.toLocaleString()} ({callToConnectTotalPct.toFixed(0)}%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </UiTooltip>
-                <UiTooltip>
-                  <TooltipTrigger asChild>
-                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                      <p className="font-display text-lg font-bold text-accent">{lifetimeConnects > 0 ? ((lifetimeDemosF / lifetimeConnects) * 100).toFixed(0) : 0}%</p>
-                      <p className="text-[10px] text-muted-foreground">Connect→Demo</p>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    <div className="space-y-2">
-                      <p className="text-xs leading-relaxed">
-                        % of live connections that converted to a demo. Calculated as: Demos ÷ Connects.
-                      </p>
-                      <div className="text-[11px] text-muted-foreground">
-                        Total: {lifetimeDemosF.toLocaleString()} ÷ {lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
-                      </div>
-                      <div className="h-px bg-accent/20" />
-                      <div className="space-y-1 text-xs">
-                        {connectToDemoRates.map((r) => (
-                          <div key={r.label} className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground truncate">{r.label}</span>
-                            <span className="font-medium text-foreground whitespace-nowrap">
-                              {r.demos.toLocaleString()}/{r.connects.toLocaleString()} ({r.pct.toFixed(0)}%)
-                            </span>
-                          </div>
-                        ))}
-                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
-                          <span className="font-semibold text-foreground">Total</span>
-                          <span className="font-semibold text-accent whitespace-nowrap">
-                            {lifetimeDemosF.toLocaleString()}/{lifetimeConnects.toLocaleString()} ({connectToDemoTotalPct.toFixed(0)}%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </UiTooltip>
-                <UiTooltip>
-                  <TooltipTrigger asChild>
-                    <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                      <p className="font-display text-lg font-bold text-foreground">{lifetimeDemosF > 0 ? ((lifetimeWins / lifetimeDemosF) * 100).toFixed(0) : 0}%</p>
-                      <p className="text-[10px] text-muted-foreground">Demo→Win</p>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px]">
-                    <div className="space-y-2">
-                      <p className="text-xs leading-relaxed">
-                        % of demos that resulted in a closed win. Calculated as: Wins ÷ Demos.
-                      </p>
-                      <div className="text-[11px] text-muted-foreground">
-                        Total: {lifetimeWins.toLocaleString()} ÷ {lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
-                      </div>
-                      <div className="h-px bg-accent/20" />
-                      <div className="space-y-1 text-xs">
-                        {demoToWinRates.map((r) => (
-                          <div key={r.label} className="flex items-center justify-between gap-3">
-                            <span className="text-muted-foreground truncate">{r.label}</span>
-                            <span className="font-medium text-foreground whitespace-nowrap">
-                              {r.wins.toLocaleString()}/{r.demos.toLocaleString()} ({r.pct.toFixed(0)}%)
-                            </span>
-                          </div>
-                        ))}
-                        <div className="pt-1 flex items-center justify-between gap-3 border-t border-accent/10">
-                          <span className="font-semibold text-foreground">Total</span>
-                          <span className="font-semibold text-accent whitespace-nowrap">
-                            {lifetimeWins.toLocaleString()}/{lifetimeDemosF.toLocaleString()} ({demoToWinTotalPct.toFixed(0)}%)
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </TooltipContent>
-                </UiTooltip>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <StatCard
-                  icon={<Handshake className="h-5 w-5 text-accent" />}
-                  label="Ops"
-                  value={lifetimeOps}
-                  tooltip="Total number of opportunities (ops) opened across all weeks of the test."
-                  breakdown={opsBreakdown}
-                />
-                <StatCard
-                  icon={<Video className="h-5 w-5 text-primary" />}
-                  label="Demos"
-                  value={lifetimeDemos}
-                  tooltip="Total demo records logged across all weeks of the test."
-                  breakdown={demosBreakdown}
-                />
-                <StatCard
-                  icon={<TrendingUp className="h-5 w-5 text-accent" />}
-                  label="Wins"
-                  value={lifetimeWins}
-                  tooltip={winsLifetimeTooltip}
-                  breakdown={winsBreakdown}
-                />
-                <StatCard
-                  icon={<MessageCircle className="h-5 w-5 text-primary" />}
-                  label="Feedback"
-                  value={lifetimeFeedback}
-                  tooltip="Total feedback interactions logged in Google Sheets across all weeks of the test."
-                  breakdown={feedbackBreakdown}
-                />
-                <StatCard
-                  icon={<Activity className="h-5 w-5 text-accent" />}
-                  label="Activity"
-                  value={lifetimeActivity}
-                  tooltip="Total activity count (calls, emails, texts) logged across all weeks of the test."
-                  breakdown={activityBreakdown}
-                />
-              </div>
-            {showOverallGoal && (
-              <div className="mt-3 border-t border-accent/10 pt-3 space-y-2">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                  Overall Goal
-                </p>
-                <div className="space-y-3">
-                  {showWinsGoal && (
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-medium text-foreground">Wins</span>
-                        <span className="text-[11px] font-semibold text-accent">
-                          {lifetimeWins.toLocaleString()} / {og.wins.toLocaleString()} ({winsProgressPct.toFixed(0)}%)
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded bg-muted/40 overflow-hidden">
-                        <div className="h-full bg-accent" style={{ width: `${winsProgressPct}%` }} />
-                      </div>
-                    </div>
-                  )}
-
-                  {(showTotalPriceGoal || showDiscountThresholdGoal || showRealizedPriceGoal) && (
-                    <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
-                      {showTotalPriceGoal && (
-                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                          <p className="text-[10px] text-muted-foreground">Total Price</p>
-                          <p className="font-display text-lg font-bold text-foreground">
-                            ${og.totalPrice.toLocaleString()}
-                          </p>
-                        </div>
-                      )}
-                      {showDiscountThresholdGoal && (
-                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                          <p className="text-[10px] text-muted-foreground">Discount %</p>
-                          <p className={`font-display text-lg font-bold ${discountThresholdCurrent != null ? "text-accent" : "text-foreground"}`}>
-                            {discountThresholdCurrent != null
-                              ? `${(discountThresholdCurrent * 100).toFixed(1)}%`
-                              : `${og.discountThreshold.toLocaleString()}%`}
-                          </p>
-                          {discountThresholdCurrent != null && (
-                            <p className="text-[10px] text-muted-foreground">Goal: {og.discountThreshold.toLocaleString()}%</p>
-                          )}
-                        </div>
-                      )}
-                      {showRealizedPriceGoal && (
-                        <div className="rounded-md bg-accent/5 border border-accent/10 py-2">
-                          <p className="text-[10px] text-muted-foreground">Realized Price</p>
-                          <p className="font-display text-lg font-bold text-foreground">
-                            {lifetimeAvgPrice != null
-                              ? `$${lifetimeAvgPrice.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
-                              : `$${og.realizedPrice.toLocaleString()}`}
-                          </p>
-                          {lifetimeAvgPrice != null && (
-                            <p className="text-[10px] text-muted-foreground">Goal: ${og.realizedPrice.toLocaleString()}</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            </div>
-            </>
-          );
-        })()}
+        {activeTeam && (
+          <LifetimeStatsSection
+            team={activeTeam}
+            computedPhases={computedPhases}
+            activePhase={activePhase}
+            isGAPhase={isGAPhase}
+            isFirstGAMonth={isFirstGAMonth ?? null}
+            opsRows={opsRows}
+            demoRows={demoRows}
+            projectTeamAssignments={projectTeamAssignments}
+            salesTeams={salesTeams}
+            phaseCalcConfigs={phaseCalcConfigs}
+            memberTeamHistory={memberTeamHistory}
+          />
+        )}
 
         {/* Total TAM — external metrics data if available, else manual input (hidden in GA / Commercial Lead) */}
-        {activeTeam && !isGAPhase && (() => {
-          const activeMembers = getTeamMembersForMonth(activeTeam, referenceDate, memberTeamHistory, allMembersById);
-          const allowedMonthsByMember = new Map(
-            activeMembers.map((m) => [m.id, getMemberAssignedMonths(m.id, activeTeam.id, memberTeamHistory, activeTeam.startDate)])
-          );
-          const allowedMonthsFor = (member: TeamMember) => allowedMonthsByMember.get(member.id);
-          const hasMetricsTam = activeMembers.some((m) => m.touchedTam > 0);
-          if (hasMetricsTam) {
-            const teamTam = activeMembers.reduce((s, m) => s + m.touchedTam, 0);
-            const teamTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
-            const teamActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
-            const membersWithTam = activeMembers.filter((m) => m.touchedTam > 0);
-            const avgTam = membersWithTam.length > 0 ? Math.round(teamTam / membersWithTam.length) : 0;
-            const pctOfTam = Math.min(100, teamTam > 0 ? (teamTouched / teamTam) * 100 : 0);
-            const avgTouchesAcct = teamTouched > 0 ? (teamActivity / teamTouched).toFixed(1) : '—';
-            return (
-              <div className="mb-8 rounded-lg border border-primary/30 bg-primary/5 bg-card p-5 glow-card">
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-3">
-                    <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
-                    <span className="font-display text-2xl font-bold text-primary">{teamTam.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Avg TAM</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{avgTam.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">% of TAM</label>
-                    <span className="font-display text-2xl font-bold text-primary">{pctOfTam.toFixed(0)}%</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{avgTouchesAcct}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-          const fbTouched = activeMembers.reduce((s, m) => s + (m.touchedAccountsByTeam[activeTeam.id] ?? 0), 0);
-          const fbActivity = activeMembers.reduce((s, m) => s + getMemberLifetimeMetricTotal(m, 'activity', allowedMonthsFor(m)), 0);
-          const fbAvg = activeMembers.length > 0 ? Math.round((activeTeam.totalTam || 0) / activeMembers.length) : 0;
-          const totalTam = activeTeam.totalTam || 0;
-          const fbPctOfTam = Math.min(100, totalTam > 0 ? (fbTouched / totalTam) * 100 : 0);
-          const fbAvgTouchesAcct = fbTouched > 0 ? (fbActivity / fbTouched).toFixed(1) : '—';
-          return (
-            <div className={`mb-8 rounded-lg border bg-card p-5 glow-card ${activeTeam.tamSubmitted ? 'border-primary/30 bg-primary/5' : 'border-border'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-3">
-                    <label className="font-display text-lg font-semibold text-foreground">Total TAM</label>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={activeTeam.totalTam || ""}
-                      onChange={(e) => updateTeam(activeTeam.id, (t) => ({ ...t, totalTam: Math.max(0, parseInt(e.target.value) || 0) }))}
-                      className="h-9 w-36 bg-secondary/20 border-border text-foreground text-sm"
-                      placeholder="0"
-                      disabled={activeTeam.tamSubmitted}
-                    />
-                    {activeTeam.tamSubmitted && <span className="text-xs font-medium text-primary">✅ Submitted</span>}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Avg TAM</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{fbAvg.toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">% of TAM</label>
-                    <span className="font-display text-2xl font-bold text-primary">{fbPctOfTam.toFixed(0)}%</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-muted-foreground">Avg Touches/Acct</label>
-                    <span className="font-display text-2xl font-bold text-foreground">{fbAvgTouchesAcct}</span>
-                  </div>
-                </div>
-                {!activeTeam.tamSubmitted ? (
-                  <Button size="sm" onClick={() => {
-                    const members = activeTeam.members.filter((m) => m.isActive);
-                    const tamPerMember = members.length > 0 ? Math.round(activeTeam.totalTam / members.length) : 0;
-                    const weekKey = getCurrentWeekKey();
-                    updateTeam(activeTeam.id, (t) => ({
-                      ...t,
-                      tamSubmitted: true,
-                      members: t.members.map((m) => {
-                        if (!m.isActive) return m;
-                        const existing = getMemberFunnel(m, weekKey);
-                        return {
-                          ...m,
-                          funnelByWeek: {
-                            ...m.funnelByWeek,
-                            [weekKey]: { ...existing, tam: tamPerMember },
-                          },
-                        };
-                      }),
-                    }));
-                    for (const m of members) {
-                      const existing = getMemberFunnel(m, weekKey);
-                      dbMutate(
-                        supabase
-                          .from("weekly_funnels")
-                          .upsert(
-                            {
-                              member_id: m.id,
-                              week_key: weekKey,
-                              tam: tamPerMember,
-                              calls: existing.calls,
-                              connects: existing.connects,
-                              ops: existing.ops,
-                              demos: existing.demos,
-                              wins: existing.wins,
-                              feedback: existing.feedback,
-                              activity: existing.activity,
-                              role: existing.role ?? null,
-                              submitted: existing.submitted ?? false,
-                              submitted_at: existing.submittedAt ?? null,
-                            },
-                            { onConflict: "member_id,week_key" }
-                          ),
-                        "upsert TAM funnel",
-                      );
-                    }
-                  }} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs h-8 px-4">
-                    Submit
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => updateTeam(activeTeam.id, (t) => ({ ...t, tamSubmitted: false }))} className="text-xs h-7 border-border text-muted-foreground hover:text-foreground">
-                    Edit
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        {activeTeam && !isGAPhase && (
+          <TamSection
+            team={activeTeam}
+            referenceDate={referenceDate}
+            memberTeamHistory={memberTeamHistory}
+            allMembersById={allMembersById}
+            updateTeam={updateTeam}
+          />
+        )}
 
 
 
@@ -2180,6 +2185,9 @@ const Index = () => {
         </Dialog>
 
           {teams.map((team) => {
+            if (team.id !== activeTab) {
+              return <TabsContent key={team.id} value={team.id} />;
+            }
             const teamLabels = phaseLabels[team.id] ?? {};
             const teamPriorities = phasePriorities[team.id] ?? {};
             const tabPhases = generateTestPhases(team.startDate, team.endDate, teamLabels, teamPriorities);
@@ -2194,11 +2202,8 @@ const Index = () => {
             return (
             <TabsContent key={team.id} value={team.id}>
               <TeamTab
-                team={getHistoricalTeam(team, referenceDate, teamGoalsHistory)}
-                onAddMemberClick={() => {
-                  navigate(`/${pilotNameToSlug(team.name)}`);
-                  setAddMemberOpen(true);
-                }}
+                team={activeHistoricalTeam ?? getHistoricalTeam(team, referenceDate, teamGoalsHistory)}
+                onAddMemberClick={openAddMemberForActiveTab}
                 selectedMember={selectedMember}
                 setSelectedMember={setSelectedMember}
                 restaurantName={restaurantName}
@@ -2486,7 +2491,7 @@ const TeamTab = memo(function TeamTab({
     if (playerColRef.current) {
       setPlayerColW(playerColRef.current.offsetWidth);
     }
-  });
+  }, []);
 
   useEffect(() => {
     if (weeklyScrollRef.current) {
@@ -5263,30 +5268,36 @@ function WeekOverWeekView({
   const bundle = pilotFunnel?.metricsByWeek;
   const pilotWinsDetailRows = pilotFunnel?.winsDetailRows;
   const pilotChartMetricEx = pilotFunnel?.metricExclusions ?? [];
-  const pilotFunnelRawByMetric: Record<MetricExclusionMetric, Record<string, unknown>[] | undefined> | null =
-    pilotFunnel
-      ? {
-          activity: pilotFunnel.activityRows,
-          calls: pilotFunnel.callRows,
-          connects: pilotFunnel.connectRows,
-          demos: pilotFunnel.demoRows,
-          ops: pilotFunnel.opsRows,
-          wins: pilotFunnel.winsDetailRows,
-          feedback: pilotFunnel.feedbackRows,
-        }
-      : null;
-  const pilotFunnelIndexedByMetric: Record<MetricExclusionMetric, IndexedRowsByRepAndWeek | undefined> | null =
-    pilotFunnel
-      ? {
-          activity: indexRowsByRepAndWeek(pilotFunnel.activityRows, "activity"),
-          calls: indexRowsByRepAndWeek(pilotFunnel.callRows, "calls"),
-          connects: indexRowsByRepAndWeek(pilotFunnel.connectRows, "connects"),
-          demos: indexRowsByRepAndWeek(pilotFunnel.demoRows, "demos"),
-          ops: indexRowsByRepAndWeek(pilotFunnel.opsRows, "ops"),
-          wins: indexRowsByRepAndWeek(pilotFunnel.winsDetailRows, "wins"),
-          feedback: indexRowsByRepAndWeek(pilotFunnel.feedbackRows, "feedback"),
-        }
-      : null;
+  const pilotFunnelRawByMetric: Record<MetricExclusionMetric, Record<string, unknown>[] | undefined> | null = useMemo(
+    () =>
+      pilotFunnel
+        ? {
+            activity: pilotFunnel.activityRows,
+            calls: pilotFunnel.callRows,
+            connects: pilotFunnel.connectRows,
+            demos: pilotFunnel.demoRows,
+            ops: pilotFunnel.opsRows,
+            wins: pilotFunnel.winsDetailRows,
+            feedback: pilotFunnel.feedbackRows,
+          }
+        : null,
+    [pilotFunnel],
+  );
+  const pilotFunnelIndexedByMetric: Record<MetricExclusionMetric, IndexedRowsByRepAndWeek | undefined> | null = useMemo(
+    () =>
+      pilotFunnel
+        ? {
+            activity: indexRowsByRepAndWeek(pilotFunnel.activityRows, "activity"),
+            calls: indexRowsByRepAndWeek(pilotFunnel.callRows, "calls"),
+            connects: indexRowsByRepAndWeek(pilotFunnel.connectRows, "connects"),
+            demos: indexRowsByRepAndWeek(pilotFunnel.demoRows, "demos"),
+            ops: indexRowsByRepAndWeek(pilotFunnel.opsRows, "ops"),
+            wins: indexRowsByRepAndWeek(pilotFunnel.winsDetailRows, "wins"),
+            feedback: indexRowsByRepAndWeek(pilotFunnel.feedbackRows, "feedback"),
+          }
+        : null,
+    [pilotFunnel],
+  );
   const prospectingFilterOptions = useMemo(
     () => {
       if (!pilotFunnel) return undefined;
