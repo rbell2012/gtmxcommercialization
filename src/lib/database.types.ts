@@ -234,6 +234,7 @@ export interface DbMetricsDemos {
 export interface DbMetricsOps {
   id: string;
   op_date: string | null;
+  account_name: string | null;
   opportunity_name: string | null;
   opportunity_stage: string | null;
   salesforce_accountid: string | null;
@@ -264,6 +265,13 @@ export interface DbMetricsWins {
   opportunity_software_mrr: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface DbWinSnapshot {
+  id: string;
+  account_name: string | null;
+  salesforce_accountid: string | null;
+  win_date: string | null;
 }
 
 export interface DbMemberTeamHistory {

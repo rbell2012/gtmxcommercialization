@@ -1,5 +1,55 @@
 # Changelog
 
+## Location — Snowflake pipeline operational hardening (`scripts/snowflake_sync.py`, `.github/workflows/sync-snowflake.yml`, `public/_headers`, `src/contexts/TeamsContext.tsx`)
+
+**Rationale:** Address gap analysis items — CI races, push races, batched Supabase upserts, stale-row cleanup, atomic JSON writes, per-table error isolation, CDN cache headers for static metrics, and skipping dead realtime listeners when `VITE_USE_STATIC_METRICS=true`.
+
+**Changes:**
+- **CI:** `concurrency.group: snowflake-sync` with `cancel-in-progress`; `git pull --rebase` before `git push` on data commits.
+- **snowflake_sync:** JSON written to temp files and `os.replace` only if all Snowflake table exports succeed; per-table `try/except` with `sys.exit(1)` on any failure; Supabase upserts chunked (500 rows); after sync, DELETE rows not present in the latest Snowflake id set for `win_snapshots` and `metrics_sales_teams` (paginated fetch + batched delete).
+- **Netlify:** `public/_headers` sets `Cache-Control: public, max-age=300, must-revalidate` for `/data/*`.
+- **Realtime:** Pipeline tables `superhex`, `metrics_activity`, `metrics_demos`, `metrics_ops`, `metrics_feedback` only subscribed when not in static metrics mode; `win_snapshots` and `metrics_sales_teams` still subscribed (Snowflake sync upserts).
+
+---
+
+## Location — Snowflake `queries/*.sql` filled from `gtmx_dashboard.ipynb` (`queries/`)
+
+**Rationale:** Replace placeholder SQL with runnable TOAST.* exports from the Snowflake notebook; keep Sheet-backed `metrics_feedback` / `metrics_tam` as documented stubs; inline CTEs for `metrics_ops`, `superhex`, and `win_snapshots` (cell 18 Boost wins omitted until Sheets land).
+
+**Changes:**
+- **Self-contained:** `metrics_activity.sql` (cell 21), `metrics_chorus.sql` (25), `metrics_sales_teams.sql` (19).
+- **Partial / blockers:** `metrics_ops.sql` (cells 13+14+15, pilot cell 16 commented; dedup from 26; `win_stage_date` null); `win_snapshots.sql` (cell 17 trimmed; cell 18 noted); `metrics_demos.sql` (cell 10 + cell 24-style dedup; cells 11–12 noted); `superhex.sql` (cells 9–10, 13, 17, 21–23, 25, 29; feedback CTE dropped, NULL feedback columns).
+- **Stubs:** `metrics_feedback.sql`, `metrics_tam.sql` — notebook cell references in file headers; still point at `analytics.*` until Sheet data is in Snowflake.
+
+---
+
+## Location — Snowflake migration prep (plan implementation) (`src/lib/metrics-data-source.ts`, `src/lib/metrics-helpers.ts`, `src/contexts/TeamsContext.tsx`, `src/pages/Data.tsx`, `queries/*`, `scripts/snowflake_sync.py`, `scripts/requirements.txt`, `.github/workflows/sync-snowflake.yml`, `docs/snowflake-static-contract.md`, `docs/snowflake-cutover-cleanup.md`, `docs/snowflake-google-sheets-blockers.md`)
+
+**Rationale:** Finish scaffolding from the Snowflake migration plan — derive calls/connects from activity, add Chorus to static exports, centralize metrics data access for the Data page, fix CI git identity, pin Python deps, upsert `metrics_sales_teams`, and document cutover + Google Sheets blockers.
+
+**Changes:**
+- **Calls / connects:** `loadMetrics` fetches expanded `metrics_activity` and derives call/connect rows client-side (Hex-aligned filters). Removed realtime subscriptions on `metrics_calls` / `metrics_connects`.
+- **Shared data source:** `getMetricsDataSource()` / `SupabaseMetricsSource` / `StaticFileMetricsSource` live in `metrics-data-source.ts` with optional date-range filtering for the Data page.
+- **Data page:** Loads `superhex` and time-window test exports through the same source; wins merge `metrics_ops` + `win_snapshots`; calls/connects derived from activity.
+- **Pipeline:** Dropped `metrics_calls` / `metrics_connects` query files; added `metrics_chorus.sql` and `metrics_sales_teams.sql`; sync writes `metrics_chorus.json` and upserts sales teams to Supabase; workflow sets git user for commits and uses `scripts/requirements.txt`.
+- **Docs:** Static contract updated to seven files + column notes; cutover/rollback/local-dev steps in cleanup doc; new Google Sheets blockers doc.
+
+---
+
+## Location — Snowflake prep: static metrics data source + wins consolidation (`src/contexts/TeamsContext.tsx`, `src/lib/database.types.ts`, `supabase/migrations/20260331120000_create_win_snapshots.sql`, `.github/workflows/sync-snowflake.yml`, `scripts/snowflake_sync.py`, `queries/*.sql`, `docs/snowflake-static-contract.md`, `docs/snowflake-cutover-cleanup.md`, `.env.example`)
+
+**Rationale:** Prepare the app for Hex removal and Snowflake adoption by decoupling metrics reads from Supabase pagination, collapsing wins into ops to reduce payload size, and preserving stable win-date attribution via a lightweight Supabase snapshot table.
+
+**Changes:**
+- **`TeamsContext.loadMetrics`:** Added pluggable `MetricsDataSource` implementations (`SupabaseMetricsSource` + `StaticFileMetricsSource`, toggled by `VITE_USE_STATIC_METRICS`); removed sessionStorage metrics cache/invalidation and switched realtime refresh handlers to direct reloads.
+- **Wins consolidation path:** Removed `metrics_wins` fetch and line-item backfill dependency; wins now derive from `metrics_ops` rows filtered with `isWinStage`, enriched with `win_snapshots` (`_effective_date` from snapshot `win_date` and `_win_name` from `account_name` fallback chain).
+- **`metrics_ops` shape:** Added `account_name` to the selected ops columns and to `DbMetricsOps` type; added new `DbWinSnapshot` type.
+- **Supabase migration:** Added `win_snapshots` table (`id`, `account_name`, `salesforce_accountid`, `win_date`) with seed-from-`metrics_wins`, permissive RLS policy, and realtime publication entry.
+- **Snowflake scaffolding:** Added `queries/` SQL contracts for the 8 static metric files plus `win_snapshots` upsert query, CI workflow (`sync-snowflake.yml`), and script (`scripts/snowflake_sync.py`) to export JSON into `public/data` and upsert snapshots to Supabase.
+- **Docs / env:** Added static file contract doc, cutover cleanup checklist, and new `VITE_USE_STATIC_METRICS` flag in `.env.example`.
+
+---
+
 ## Location — Sterno Monthly Goals hover + metric row pagination (`src/contexts/TeamsContext.tsx`, `src/pages/Index.tsx`, `src/lib/metric-exclusions.ts`, `src/lib/quota-helpers.ts`)
 
 **Rationale:** Monthly Goals cells showed ops/wins counts that did not match NB/Growth hover lists (partial or unstable paged loads, missing display names, or wins masquerading as account names when `account_name` was null). Users need tooltips that reconcile with the headline number and clearly label wins tied only to opportunity names.

@@ -1,0 +1,132 @@
+name: Sync Snowflake Metrics
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+concurrency:
+  group: snowflake-sync
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Record sync start time
+        run: echo "SYNC_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Run Snowflake sync
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHEET_ALL_REPS_IN_TESTS_ID: ${{ secrets.SHEET_ALL_REPS_IN_TESTS_ID }}
+          SHEET_MAD_MAX_ID: ${{ secrets.SHEET_MAD_MAX_ID }}
+          SHEET_STERNO_ID: ${{ secrets.SHEET_STERNO_ID }}
+          SHEET_OFFERS_FEEDBACK_ID: ${{ secrets.SHEET_OFFERS_FEEDBACK_ID }}
+        run: python scripts/snowflake_sync.py
+
+      - name: Commit updated data files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain public/data)" ]]; then
+            git add public/data
+            git commit -m "chore: sync static metrics from snowflake"
+            git pull --rebase origin "${{ github.ref_name }}"
+            git push
+          else
+            echo "No data changes to commit."
+          fi
+
+      - name: Notify Slack on failure
+        if: ${{ always() && failure() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ -z "$SLACK_WEBHOOK_URL" ]]; then
+            echo "SLACK_WEBHOOK_URL not configured; skipping Slack notification."
+            exit 0
+          fi
+
+          NOW_EPOCH="$(date +%s)"
+          START_EPOCH="${SYNC_STARTED_AT:-$NOW_EPOCH}"
+          DURATION_SEC="$((NOW_EPOCH - START_EPOCH))"
+          DURATION_FMT="$(printf '%02d:%02d' $((DURATION_SEC/60)) $((DURATION_SEC%60)))"
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          JOB_URL="$(curl -sS \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" \
+            | jq -r '.jobs[] | select(.name=="sync") | .html_url' \
+            | head -n1)"
+
+          if [[ -z "$JOB_URL" || "$JOB_URL" == "null" ]]; then
+            JOB_URL="$RUN_URL"
+          fi
+
+          PAYLOAD="$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg actor "${{ github.actor }}" \
+            --arg workflow "${{ github.workflow }}" \
+            --arg attempt "${{ github.run_attempt }}" \
+            --arg duration "$DURATION_FMT" \
+            --arg run_url "$RUN_URL" \
+            --arg job_url "$JOB_URL" \
+            '{
+              text: "Snowflake sync failed",
+              blocks: [
+                {
+                  type: "header",
+                  text: { type: "plain_text", text: ":x: Snowflake Sync Failed", emoji: true }
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Repository:*\n\($repo)" },
+                    { type: "mrkdwn", text: "*Branch:*\n\($branch)" },
+                    { type: "mrkdwn", text: "*Actor:*\n\($actor)" },
+                    { type: "mrkdwn", text: "*Attempt:*\n#\($attempt)" },
+                    { type: "mrkdwn", text: "*Duration:*\n\($duration) (mm:ss)" },
+                    { type: "mrkdwn", text: "*Workflow:*\n\($workflow)" }
+                  ]
+                },
+                {
+                  type: "actions",
+                  elements: [
+                    { type: "button", text: { type: "plain_text", text: "View Failed Job Logs", emoji: true }, url: $job_url, style: "danger" },
+                    { type: "button", text: { type: "plain_text", text: "View Workflow Run", emoji: true }, url: $run_url }
+                  ]
+                }
+              ]
+            }')"
+
+          curl -sS -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-type: application/json" \
+            --data "$PAYLOAD"

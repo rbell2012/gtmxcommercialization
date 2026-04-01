@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { dbMutate } from "@/lib/supabase-helpers";
-import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment, DbTeamPhaseLabel, DbTeamPhasePriority, DbTeamPhaseConfig, DbTeamMetricExclusion } from "@/lib/database.types";
-import { dateToMonthKey, dateToWeekKey, isWinStage } from "@/lib/metrics-helpers";
+import type { DbTeam, DbMember, DbWeeklyFunnel, DbWinEntry, DbSuperhex, DbMetricsTam, DbMemberTeamHistory, DbTeamGoalsHistory, DbMemberGoalsHistory, DbMetricsSalesTeam, DbMetricsProjectedBookings, DbProjectTeamAssignment, DbTeamPhaseLabel, DbTeamPhasePriority, DbTeamPhaseConfig, DbTeamMetricExclusion, DbWinSnapshot } from "@/lib/database.types";
+import { dateToMonthKey, dateToWeekKey, deriveCallRowsFromActivity, deriveConnectRowsFromActivity, isWinStage } from "@/lib/metrics-helpers";
+import { getMetricsDataSource } from "@/lib/metrics-data-source";
 import type { MetricExclusionMetric, MetricExclusionRow } from "@/lib/metric-exclusions";
 import {
   buildMetricNamesByMonthForRep,
@@ -13,7 +14,7 @@ import {
   parseMetricExclusionsFromDb,
   rowExcludedForTeamMetric,
 } from "@/lib/metric-exclusions";
-import { normalizeAttachRateDenom } from "@/lib/phase-calc-config";
+import { normalizeAttachRateDenom, type PhaseCalcConfig } from "@/lib/phase-calc-config";
 
 // ── Goal metrics system ──
 
@@ -117,7 +118,7 @@ export interface OverallGoalConfig {
   opportunityFlags: string[];
 }
 
-export type { PhaseCalcConfig } from "@/lib/phase-calc-config";
+export type { PhaseCalcConfig };
 
 export const DEFAULT_OVERALL_GOAL_CONFIG: OverallGoalConfig = {
   winsEnabled: false,
@@ -483,7 +484,7 @@ interface CachedMetrics {
   feedbackRows: Record<string, unknown>[];
   shRows: Record<string, unknown>[];
   tamRows: Record<string, unknown>[];
-  /** metrics_wins rows merged with win_stage_date; used for per-team opportunity name filtering */
+  /** Won-opportunity rows derived from metrics_ops and enriched with win_snapshots dates */
   winsDetailRows: Record<string, unknown>[];
 }
 
@@ -721,7 +722,7 @@ interface TeamsContextType {
   tamRows: Record<string, unknown>[];
   /** Pipeline metrics aggregated by week per rep (for pilot team rollups) */
   metricsByWeek: MetricsByWeekBundle;
-  /** Qualified metrics_wins rows with _effective_date; for pilot weekly wins when opportunity flag is set */
+  /** Qualified won-opportunity rows with _effective_date; for pilot weekly wins when opportunity flag is set */
   winsDetailRows: Record<string, unknown>[];
   /** Raw metrics_calls rows (rep_name, call_date) */
   callRows: Record<string, unknown>[];
@@ -752,52 +753,6 @@ function memberGoalsToDbInsert(goals: MemberGoals) {
     goal_feedback: goals.feedback,
     goal_activity: goals.activity,
   };
-}
-
-async function fetchAllRows(
-  table: string,
-  columns: string,
-  pageSize = 1000,
-  filter?: { column: string; values: string[] },
-): Promise<Record<string, unknown>[]> {
-  const all: Record<string, unknown>[] = [];
-  let from = 0;
-  while (true) {
-    // Ensure deterministic pagination: OFFSET/LIMIT without ORDER BY can skip/duplicate rows.
-    let query = supabase.from(table).select(columns).order("id", { ascending: true }).range(from, from + pageSize - 1);
-    if (filter && filter.values.length > 0) {
-      query = query.in(filter.column, filter.values);
-    }
-    const { data, error } = await query;
-    if (error) {
-      console.warn(`[fetchAllRows] ${table} page offset ${from}:`, error.message);
-      break;
-    }
-    if (!data || data.length === 0) break;
-    all.push(...(data as Record<string, unknown>[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return all;
-}
-
-async function fetchAllRpcRows(
-  rpcName: string,
-  params: Record<string, unknown>,
-  pageSize = 1000,
-): Promise<Record<string, unknown>[]> {
-  const all: Record<string, unknown>[] = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .rpc(rpcName, params)
-      .range(from, from + pageSize - 1);
-    if (error || !data || data.length === 0) break;
-    all.push(...(data as Record<string, unknown>[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return all;
 }
 
 function buildIndexedMetricCounts(
@@ -871,93 +826,47 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   const inFlightLoadRef = useRef(false);
   const metricCorrectionsRef = useRef<MetricCorrectionMap>(new Map());
   const updatedMembersRef = useRef<TeamMember[]>([]);
+  const metricsDataSource = useMemo(() => getMetricsDataSource(), []);
 
   // ── load metrics data (heavy, external pipeline) ──
   const loadMetrics = useCallback(async (repNames?: string[]): Promise<CachedMetrics> => {
-    const metricsCacheKey = "teamsContext.metricsCache.v3";
-    const metricsCacheTtlMs = 120_000;
     const repNameFilter =
       repNames && repNames.length > 0 ? { column: "rep_name", values: repNames } : undefined;
-    let cachedLight:
-      | Partial<{
-          actRows: Record<string, unknown>[];
-          callRows: Record<string, unknown>[];
-          conRows: Record<string, unknown>[];
-          demoRows: Record<string, unknown>[];
-          fbRows: Record<string, unknown>[];
-          shRows: Record<string, unknown>[];
-          tamRows: Record<string, unknown>[];
-        }>
-      | null = null;
-    try {
-      const raw = sessionStorage.getItem(metricsCacheKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as {
-          ts?: number;
-          actRows?: Record<string, unknown>[];
-          callRows?: Record<string, unknown>[];
-          conRows?: Record<string, unknown>[];
-          demoRows?: Record<string, unknown>[];
-          fbRows?: Record<string, unknown>[];
-          shRows?: Record<string, unknown>[];
-          tamRows?: Record<string, unknown>[];
-        };
-        if (parsed.ts && Date.now() - parsed.ts <= metricsCacheTtlMs) {
-          cachedLight = {
-            actRows: parsed.actRows,
-            callRows: parsed.callRows,
-            conRows: parsed.conRows,
-            demoRows: parsed.demoRows,
-            fbRows: parsed.fbRows,
-            shRows: parsed.shRows,
-            tamRows: parsed.tamRows,
-          };
-        }
-      }
-    } catch {
-      // ignore cache read errors
-    }
-
-    const [actRows, callRows, conRows, demoRows, opsRows, winsRows, fbRows, shRows, tamRows] = await Promise.all([
-      cachedLight && cachedLight.actRows !== undefined
-        ? Promise.resolve(cachedLight.actRows)
-        : fetchAllRows("metrics_activity", "rep_name, activity_date, salesforce_accountid", 1000, repNameFilter),
-      cachedLight && cachedLight.callRows !== undefined
-        ? Promise.resolve(cachedLight.callRows)
-        : fetchAllRows("metrics_calls", "rep_name, call_date", 1000, repNameFilter),
-      cachedLight && cachedLight.conRows !== undefined
-        ? Promise.resolve(cachedLight.conRows)
-        : fetchAllRows("metrics_connects", "rep_name, connect_date", 1000, repNameFilter),
-      cachedLight && cachedLight.demoRows !== undefined
-        ? Promise.resolve(cachedLight.demoRows)
-        : fetchAllRows("metrics_demos", "rep_name, demo_date, account_name, event_status", 1000, repNameFilter),
-      // Ops/Wins: fetch full tables (no rep filter) to avoid RPC timeouts;
-      // casing is normalized client-side via `toLowerCase().trim()`.
-      fetchAllRows(
+    const [actRows, demoRows, opsRows, fbRows, shRows, tamRows, winSnapshots] = await Promise.all([
+      metricsDataSource.fetchTable(
+        "metrics_activity",
+        "id, rep_name, activity_date, salesforce_accountid, activity_type, activity_outcome, subject",
+        1000,
+        repNameFilter,
+      ),
+      metricsDataSource.fetchTable(
+        "metrics_demos",
+        "rep_name, demo_date, account_name, event_status, demo_source, subject, salesforce_accountid",
+        1000,
+        repNameFilter,
+      ),
+      // Ops/Wins: fetch full ops table (no rep filter); wins are derived via isWinStage + win_snapshots.
+      metricsDataSource.fetchTable(
         "metrics_ops",
-        "id, rep_name, op_date, op_created_date, opportunity_name, opportunity_stage, win_stage_date, opportunity_type, opportunity_software_mrr, account_prospecting_notes, line_items",
+        "id, rep_name, op_date, op_created_date, opportunity_name, opportunity_stage, win_stage_date, opportunity_type, opportunity_software_mrr, account_prospecting_notes, line_items, account_name",
         1000,
       ),
-      fetchAllRows(
-        "metrics_wins",
-        "id, rep_name, win_date, account_name, opportunity_name, opportunity_stage, opportunity_type, opportunity_software_mrr, account_prospecting_notes, line_items",
+      metricsDataSource.fetchTable("metrics_feedback", "rep_name, feedback_date, account_name, source, feedback", 1000, repNameFilter),
+      metricsDataSource.fetchTable(
+        "superhex",
+        "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date",
         1000,
+        repNameFilter,
       ),
-      cachedLight && cachedLight.fbRows !== undefined
-        ? Promise.resolve(cachedLight.fbRows)
-        : fetchAllRows("metrics_feedback", "rep_name, feedback_date, account_name", 1000, repNameFilter),
-      cachedLight && cachedLight.shRows !== undefined
-        ? Promise.resolve(cachedLight.shRows)
-        : fetchAllRows(
-            "superhex",
-            "rep_name, salesforce_accountid, total_activities, first_activity_date, first_call_date, first_connect_date, first_demo_date, last_activity_date",
-            1000,
-            repNameFilter,
-          ),
-      cachedLight && cachedLight.tamRows !== undefined
-        ? Promise.resolve(cachedLight.tamRows)
-        : fetchAllRows("metrics_tam", "rep_name, tam", 1000, repNameFilter),
+      metricsDataSource.fetchTable("metrics_tam", "rep_name, tam", 1000, repNameFilter),
+      supabase
+        .from("win_snapshots")
+        .select("id,account_name,salesforce_accountid,win_date")
+        .then(({ data }) => (data ?? []) as DbWinSnapshot[]),
     ]);
+
+    const callRows = deriveCallRowsFromActivity(actRows);
+    const conRows = deriveConnectRowsFromActivity(actRows);
 
     const aggregateBy = (rows: Record<string, unknown>[], dateField: string, keyFn: (d: string) => string): AggCounts => {
       const result: AggCounts = new Map();
@@ -976,32 +885,25 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     const aggregateByWeek = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToWeekKey);
     const aggregateByMonth = (rows: Record<string, unknown>[], dateField: string) => aggregateBy(rows, dateField, dateToMonthKey);
 
-    const qualifiedWinsRows = winsRows.filter((r) =>
+    const winSnapshotById = new Map<string, DbWinSnapshot>();
+    for (const row of winSnapshots) {
+      if (!row.id) continue;
+      winSnapshotById.set(row.id, row);
+    }
+
+    const qualifiedWinsRows = opsRows.filter((r) =>
       isWinStage(r.opportunity_stage as string | null, r.opportunity_type as string | null)
     );
-
-    // Backfill line_items into ops rows that have none, using the richer
-    // metrics_wins data for the same opportunity id. The wins export captures
-    // line items at close time which the ops pipeline snapshot often omits.
-    const winsLineItemsById = new Map<string, string>();
-    for (const w of winsRows) {
-      const id = w.id as string | null;
-      const li = w.line_items as string | null;
-      if (id && li) winsLineItemsById.set(id, li);
-    }
-    const enrichedOpsRows = opsRows.map((op) => {
-      if (op.line_items != null) return op;
-      const li = winsLineItemsById.get(op.id as string);
-      return li ? { ...op, line_items: li } : op;
-    });
-
-    // Use metrics_wins.win_date only for attribution. Do not prefer
-    // metrics_ops.win_stage_date — bulk SFDC stage updates can shift many old
-    // closes into the current month while win_date stays correct.
-    const winsWithEffectiveDate = qualifiedWinsRows.map((r) => ({
+    const winsWithEffectiveDate: Record<string, unknown>[] = qualifiedWinsRows.map((r) => ({
       ...r,
-      _effective_date: (r.win_date as string | null) ?? "",
-      _win_name: (r.account_name as string | null) || (r.opportunity_name as string | null) || null,
+      account_name: (r.account_name as string | null) || winSnapshotById.get(String(r.id))?.account_name || null,
+      salesforce_accountid: (r.salesforce_accountid as string | null) || winSnapshotById.get(String(r.id))?.salesforce_accountid || null,
+      _effective_date: winSnapshotById.get(String(r.id))?.win_date ?? "",
+      _win_name:
+        (r.account_name as string | null) ||
+        winSnapshotById.get(String(r.id))?.account_name ||
+        (r.opportunity_name as string | null) ||
+        null,
     }));
 
     const byWeek: Record<string, AggCounts> = {
@@ -1114,7 +1016,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       winTypeNamesByMonth,
       opsTypesByMonth,
       opsTypeNamesByMonth,
-      opsRows: enrichedOpsRows,
+      opsRows,
       demoRows,
       actRows,
       callRows,
@@ -1124,26 +1026,9 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       tamRows,
       winsDetailRows: winsWithEffectiveDate,
     };
-    try {
-      sessionStorage.setItem(
-        metricsCacheKey,
-        JSON.stringify({
-          ts: Date.now(),
-          actRows,
-          callRows,
-          conRows,
-          demoRows,
-          fbRows,
-          shRows,
-          tamRows,
-        }),
-      );
-    } catch {
-      // non-fatal cache write
-    }
     cachedMetricsRef.current = metrics;
     return metrics;
-  }, []);
+  }, [metricsDataSource]);
 
   // ── load core data & assemble with metrics ──
   const loadCore = useCallback(async (metrics?: CachedMetrics) => {
@@ -1647,36 +1532,6 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
     debounceRef.current = setTimeout(() => loadAll(), 500);
   }, [loadAll]);
 
-  const invalidateMetricsCacheTable = useCallback((table: string | undefined) => {
-    if (!table) return;
-    const metricsCacheKey = "teamsContext.metricsCache.v3";
-    const keyByTable: Record<string, string | undefined> = {
-      metrics_activity: "actRows",
-      metrics_calls: "callRows",
-      metrics_connects: "conRows",
-      metrics_demos: "demoRows",
-      metrics_feedback: "fbRows",
-      superhex: "shRows",
-      metrics_tam: "tamRows",
-    };
-    const key = keyByTable[table];
-    if (!key) return;
-    try {
-      const raw = sessionStorage.getItem(metricsCacheKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      if (typeof parsed !== "object" || parsed === null) return;
-      delete parsed[key];
-      sessionStorage.setItem(metricsCacheKey, JSON.stringify(parsed));
-    } catch {
-      try {
-        sessionStorage.removeItem(metricsCacheKey);
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
   const debouncedLoadCore = useCallback(() => {
     if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
     coreDebounceRef.current = setTimeout(() => loadCore(), 500);
@@ -1685,38 +1540,26 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     loadAll();
 
-    const channel = supabase
+    const staticMetrics = import.meta.env.VITE_USE_STATIC_METRICS === "true";
+
+    let channel = supabase
       .channel("gtmx-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "members" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "weekly_funnels" }, debouncedLoadCore)
-      .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadCore)
-      .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_calls" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_connects" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_demos" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_ops" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_wins" }, debouncedLoadAll)
-      .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, (payload) => {
-        invalidateMetricsCacheTable(payload?.table);
-        debouncedLoadAll();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "win_entries" }, debouncedLoadCore);
+
+    if (!staticMetrics) {
+      channel = channel
+        .on("postgres_changes", { event: "*", schema: "public", table: "superhex" }, debouncedLoadAll)
+        .on("postgres_changes", { event: "*", schema: "public", table: "metrics_activity" }, debouncedLoadAll)
+        .on("postgres_changes", { event: "*", schema: "public", table: "metrics_demos" }, debouncedLoadAll)
+        .on("postgres_changes", { event: "*", schema: "public", table: "metrics_ops" }, debouncedLoadAll)
+        .on("postgres_changes", { event: "*", schema: "public", table: "metrics_feedback" }, debouncedLoadAll);
+    }
+
+    channel = channel
+      .on("postgres_changes", { event: "*", schema: "public", table: "win_snapshots" }, debouncedLoadAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_sales_teams" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "metrics_projected_bookings" }, debouncedLoadCore)
       .on("postgres_changes", { event: "*", schema: "public", table: "project_team_assignments" }, debouncedLoadCore)
@@ -1731,7 +1574,7 @@ export function TeamsProvider({ children }: { children: ReactNode }) {
       if (coreDebounceRef.current) clearTimeout(coreDebounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [loadAll, debouncedLoadAll, debouncedLoadCore, invalidateMetricsCacheTable]);
+  }, [loadAll, debouncedLoadAll, debouncedLoadCore]);
 
   // ── mutations ──
 

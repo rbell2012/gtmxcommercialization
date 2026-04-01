@@ -1,0 +1,3 @@
+# Netlify: cache static metrics JSON (see docs/snowflake-cutover-cleanup.md)
+/data/*
+  Cache-Control: public, max-age=300, must-revalidate

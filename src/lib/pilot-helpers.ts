@@ -429,9 +429,8 @@ export function sumWinsInWeekForReps(
 }
 
 function effectiveWinDate(row: Record<string, unknown>): string | null {
-  const wsd = row.win_stage_date as string | null | undefined;
   const od = row.op_date as string | null | undefined;
-  return wsd || od || null;
+  return od || null;
 }
 
 function monthKeyFromDateStr(dateStr: string | null | undefined): string | null {

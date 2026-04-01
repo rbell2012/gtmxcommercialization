@@ -65,7 +65,6 @@ A new project — connect to GitHub and Supabase using the steps below.
     NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
     ```
   - `.env.local` and `.env` are in `.gitignore` so keys are not pushed to GitHub.
-  - For Hex embed (optional): set `HEX_API_TOKEN` and `HEX_PROJECT_ID` in your Supabase Edge Function secrets or in the environment that runs the `hex-embed-url` function.
 
 ### Optional: Link Supabase to GitHub (CI/CD)
 
@@ -84,7 +83,6 @@ The app is a Vite + React (TypeScript) front end with Tailwind. Data is read fro
 ```bash
 cp .env.example .env.local
 # Edit .env.local: set VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
-# Optional: set VITE_HEX_EMBED_URL_API to your Supabase Edge Function URL for Hex embed
 
 npm install
 npm run dev
@@ -97,16 +95,6 @@ Open [http://localhost:5173](http://localhost:5173).
 Run the migration in Supabase (SQL Editor or `supabase db push`):
 
 - `supabase/migrations/20250223000000_create_findings.sql` — creates the `findings` table for app writes.
-
-### Hex embed
-
-To show your Hex project in the app:
-
-1. Deploy the Edge Function `hex-embed-url` (see `supabase/functions/hex-embed-url/README.md`). Full code is in that folder and in the README for copy-paste into Supabase.
-2. Set Supabase secrets: `HEX_API_TOKEN`, `HEX_PROJECT_ID`.
-3. Set `VITE_HEX_EMBED_URL_API` in `.env.local` to `https://YOUR_PROJECT_REF.supabase.co/functions/v1/hex-embed-url`.
-
----
 
 ## Documentation
 

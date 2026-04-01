@@ -9,8 +9,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import type { DbSuperhex, DbMemberTeamHistory } from "@/lib/database.types";
-import { isSuperhexWinStage, isWinStage } from "@/lib/metrics-helpers";
+import type { DbSuperhex, DbMemberTeamHistory, DbWinSnapshot } from "@/lib/database.types";
+import { isSuperhexWinStage, isWinStage, deriveCallRowsFromActivity, deriveConnectRowsFromActivity } from "@/lib/metrics-helpers";
+import { getMetricsDataSource } from "@/lib/metrics-data-source";
 
 interface TeamBasic {
   id: string;
@@ -135,7 +136,7 @@ const DATA_TYPE_CONFIG: Record<DataTypeKey, { table: string; dateCol: string; la
   calls: { table: "metrics_calls", dateCol: "call_date", label: "Calls" },
   connects: { table: "metrics_connects", dateCol: "connect_date", label: "Connects" },
   demos: { table: "metrics_demos", dateCol: "demo_date", label: "Demos" },
-  wins: { table: "metrics_wins", dateCol: "win_date", label: "Wins" },
+  wins: { table: "metrics_ops", dateCol: "win_date", label: "Wins" },
   ops: { table: "metrics_ops", dateCol: "op_created_date", label: "Ops" },
   feedback: { table: "metrics_feedback", dateCol: "feedback_date", label: "Feedback" },
   chorus: { table: "metrics_chorus", dateCol: "chorus_date", label: "Chorus" },
@@ -267,8 +268,9 @@ export default function Data() {
   useEffect(() => {
     loadArchivedMembers();
     async function load() {
-      const { data } = await supabase.from("superhex").select("*").limit(50000);
-      setMetricsData((data ?? []) as DbSuperhex[]);
+      const ds = getMetricsDataSource();
+      const rows = await ds.fetchTable("superhex", "*", 1000);
+      setMetricsData((rows ?? []) as DbSuperhex[]);
       setLocalLoading(false);
     }
     load();
@@ -377,30 +379,80 @@ export default function Data() {
       return;
     }
     let cancelled = false;
+    const { start, end } = activeTimeOption;
+
     async function fetchTestData() {
       setTestDataLoading(true);
-      const queries = types.map(async (type) => {
-        const cfg = DATA_TYPE_CONFIG[type];
-        const { data } = await supabase
-          .from(cfg.table)
-          .select("*")
-          .gte(cfg.dateCol, activeTimeOption!.start)
-          .lte(cfg.dateCol, activeTimeOption!.end)
-          .limit(50000);
-        return [type, data ?? []] as [string, any[]];
-      });
-      const results = await Promise.all(queries);
-      if (!cancelled) {
-        const newData: Record<string, any[]> = {};
-        for (const [type, rows] of results) {
-          newData[type] = rows;
-        }
-        setTestData(newData);
-        setTestDataLoading(false);
+      const ds = getMetricsDataSource();
+      const newData: Record<string, any[]> = {};
+
+      const needActivity = types.some((t) => t === "activity" || t === "calls" || t === "connects");
+      if (needActivity) {
+        const actRows = await ds.fetchTable(
+          "metrics_activity",
+          "id, rep_name, activity_date, salesforce_accountid, activity_type, activity_outcome, subject",
+          1000,
+          undefined,
+          { column: "activity_date", start, end },
+        );
+        if (cancelled) return;
+        if (types.includes("activity")) newData.activity = actRows;
+        if (types.includes("calls")) newData.calls = deriveCallRowsFromActivity(actRows);
+        if (types.includes("connects")) newData.connects = deriveConnectRowsFromActivity(actRows);
       }
+
+      if (types.includes("wins")) {
+        const [ops, snapRes] = await Promise.all([
+          ds.fetchTable(
+            "metrics_ops",
+            "id, rep_name, op_date, op_created_date, opportunity_name, opportunity_stage, win_stage_date, opportunity_type, opportunity_software_mrr, account_name, salesforce_accountid",
+            1000,
+            undefined,
+            { column: "op_created_date", start, end },
+          ),
+          supabase.from("win_snapshots").select("id,account_name,salesforce_accountid,win_date"),
+        ]);
+        if (cancelled) return;
+        const snapById = new Map<string, DbWinSnapshot>();
+        for (const s of (snapRes.data ?? []) as DbWinSnapshot[]) {
+          if (s.id) snapById.set(s.id, s);
+        }
+        newData.wins = ops
+          .filter((r) => isWinStage(r.opportunity_stage as string | null, r.opportunity_type as string | null))
+          .map((r) => ({
+            ...r,
+            win_date:
+              snapById.get(String(r.id))?.win_date ??
+              (r.win_stage_date as string | null) ??
+              (r.op_date as string | null) ??
+              null,
+            account_name: (r.account_name as string | null) ?? snapById.get(String(r.id))?.account_name ?? null,
+            salesforce_accountid:
+              (r.salesforce_accountid as string | null) ?? snapById.get(String(r.id))?.salesforce_accountid ?? null,
+          }));
+      }
+
+      const otherTypes = types.filter((t) => !["activity", "calls", "connects", "wins"].includes(t));
+      const otherResults = await Promise.all(
+        otherTypes.map(async (type) => {
+          const cfg = DATA_TYPE_CONFIG[type];
+          const rows = await ds.fetchTable(cfg.table, "*", 1000, undefined, { column: cfg.dateCol, start, end });
+          return [type, rows] as const;
+        }),
+      );
+      if (cancelled) return;
+      for (const [type, rows] of otherResults) {
+        newData[type] = rows;
+      }
+
+      setTestData(newData);
+      setTestDataLoading(false);
     }
+
     fetchTestData();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeTimeOption, testDataTypesKey]);
 
   const activeTypes = useMemo(

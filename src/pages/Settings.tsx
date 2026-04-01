@@ -254,6 +254,7 @@ const Settings = () => {
   const [endedExpanded, setEndedExpanded] = useState(false);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [unarchiveTeamId, setUnarchiveTeamId] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   const today = new Date().toISOString().slice(0, 10);
   const currentMonthKey = toMonthKey(new Date());
@@ -263,6 +264,23 @@ const Settings = () => {
   useEffect(() => {
     if (archivedExpanded) loadArchivedTeams();
   }, [archivedExpanded, loadArchivedTeams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/data/sync_metadata.json", { cache: "no-store" })
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (cancelled) return;
+        const raw = json?.[0]?.last_synced_at ?? json?.last_synced_at;
+        setLastSyncedAt(typeof raw === "string" && raw ? raw : null);
+      })
+      .catch(() => {
+        if (!cancelled) setLastSyncedAt(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!editTeamId) {
@@ -607,9 +625,14 @@ const Settings = () => {
       <div className="mx-auto max-w-5xl">
         <div className="mb-8 flex items-center gap-3">
           <SettingsIcon className="h-8 w-8 text-primary" />
-          <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
-            <span className="text-gradient-primary">Settings</span>
-          </h1>
+          <div>
+            <h1 className="font-display text-4xl font-bold tracking-tight text-foreground md:text-5xl">
+              <span className="text-gradient-primary">Settings</span>
+            </h1>
+            <p className="text-xs text-muted-foreground mt-1">
+              Metrics last synced: {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "unknown"}
+            </p>
+          </div>
         </div>
 
         {/* Teams Section */}

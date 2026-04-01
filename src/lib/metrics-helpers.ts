@@ -46,3 +46,40 @@ export function dateToMonthKey(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/** Mirrors Hex cell [36] filters on all_gtmx_activity (calls). */
+export function isDerivedCallActivityRow(row: Record<string, unknown>): boolean {
+  const activityType = String(row.activity_type ?? "");
+  const subject = String(row.subject ?? "");
+  return (
+    /call/i.test(activityType) &&
+    !/email|text/i.test(activityType) &&
+    !/other|chorus/i.test(subject)
+  );
+}
+
+/** Mirrors Hex cell [37] filters on all_gtmx_activity (connects). */
+export function isDerivedConnectActivityRow(row: Record<string, unknown>): boolean {
+  const outcome = String(row.activity_outcome ?? "");
+  return /connect/i.test(outcome) && !/gatekeeper/i.test(outcome);
+}
+
+/** Derive metrics_calls-shaped rows from metrics_activity (call_date = activity_date). */
+export function deriveCallRowsFromActivity(actRows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return actRows.filter(isDerivedCallActivityRow).map((r) => ({
+    ...r,
+    call_date: r.activity_date,
+    call_type: r.activity_type,
+    call_outcome: r.activity_outcome,
+  }));
+}
+
+/** Derive metrics_connects-shaped rows (connect_date = activity_date). */
+export function deriveConnectRowsFromActivity(actRows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return actRows.filter(isDerivedConnectActivityRow).map((r) => ({
+    ...r,
+    connect_date: r.activity_date,
+    connect_type: r.activity_type,
+    connect_outcome: r.activity_outcome,
+  }));
+}
